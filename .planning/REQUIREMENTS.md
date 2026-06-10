@@ -71,12 +71,12 @@
 | LOOP-01 | Phase 1 | Pending |
 | LOOP-02 | Phase 1 | Pending |
 | LOOP-03 | Phase 1 | Pending |
-| LOOP-04 | Phase 1 | Pending |
 | LOOP-05 | Phase 1 | Pending |
 | SHELL-01 | Phase 1 | Pending |
 | CLI-01 | Phase 1 | Pending |
 | CLI-02 | Phase 1 | Pending |
 | CLI-03 | Phase 1 | Pending |
+| LOOP-04 | Phase 2 | Pending |
 | SAFE-01 | Phase 2 | Pending |
 | SAFE-02 | Phase 2 | Pending |
 | SAFE-03 | Phase 2 | Pending |
@@ -92,4 +92,4 @@
 
 ---
 *Requirements defined: 2026-06-10*
-*Last updated: 2026-06-10 after initial definition*
+*Last updated: 2026-06-10 after roadmap creation (LOOP-04 reassigned Phase 1 → Phase 2: repetition guard is loop-control, pairs with max-steps in the safety/control phase)*
