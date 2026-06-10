@@ -1,25 +1,41 @@
 {
   "version": "1.0",
-  "timestamp": "2026-06-10T09:00:54.500Z",
+  "timestamp": "2026-06-11T00:00:00.000Z",
   "phase": "1",
-  "phase_name": "Core Loop + Shell Tool + CLI",
+  "phase_name": "core-loop-shell-tool-cli",
   "phase_dir": ".planning/phases/01-core-loop-shell-tool-cli",
-  "plan": 0,
+  "plan": null,
   "task": 0,
   "total_tasks": 0,
-  "status": "not_started",
-  "completed_tasks": [],
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 1, "name": "Research phase 1 (01-RESEARCH.md)", "status": "done"},
+    {"id": 2, "name": "Spawn gsd-planner -> 01-01-PLAN.md (Walking Skeleton) + 01-02-PLAN.md (smoke test)", "status": "done"},
+    {"id": 3, "name": "roadmap update-plan-progress + annotate-dependencies for phase 1", "status": "done", "progress": "fixed 2 markdown formatting bugs the tooling introduced into ROADMAP.md"},
+    {"id": 4, "name": "Spawn gsd-plan-checker iteration 1", "status": "done", "progress": "result: 1 BLOCKER (Dim 11 research-resolution markers), 2 WARNINGS (Dim 7c tier placement + Dim 10 unused rich dep, same root cause)"},
+    {"id": 5, "name": "Fix Dim 11 BLOCKER", "status": "done", "progress": "01-RESEARCH.md: heading -> '## Open Questions (RESOLVED)', added inline RESOLVED: markers to all 3 questions, each citing the exact adopting plan/task (verified against actual 01-01/01-02 PLAN content, not just checker summary). 0 blockers remain."}
+  ],
   "remaining_tasks": [
-    {"id": 1, "name": "Run /gsd-plan-phase 1 init step", "status": "not_started"},
-    {"id": 2, "name": "Research vs skip-research decision (no RESEARCH.md exists)", "status": "not_started"},
-    {"id": 3, "name": "Spawn gsd-planner -> 01-PLAN.md", "status": "not_started"},
-    {"id": 4, "name": "Spawn gsd-plan-checker, revision loop", "status": "not_started"},
-    {"id": 5, "name": "Requirements/decision coverage gates + commit plans", "status": "not_started"}
+    {"id": 6, "name": "Drop rich>=13 from 01-01-PLAN.md (resolves both warnings per advisor)", "status": "not_started", "progress": "7 occurrences at lines 109,123,137,140,144,149,340 -- remove rich from dep lists/strings; Phase 1 has no use for rich (confirm-gate is Phase 2), so drop entirely rather than wire rich-in-loop.py (which would deepen Dim 7c)"},
+    {"id": 7, "name": "No re-verify needed for rich removal", "status": "not_started", "progress": "advisor: size-gated, self-contained 1-line edits, checker only scoped re-verify to the cli.py-restructure alternative which we are NOT taking"},
+    {"id": 8, "name": "Run plan-phase step 13 coverage/requirement gates against 01-CONTEXT.md and REQUIREMENTS.md", "status": "not_started"},
+    {"id": 9, "name": "Commit plan docs (01-RESEARCH.md, 01-01-PLAN.md, 01-02-PLAN.md, ROADMAP.md, STATE.md)", "status": "not_started"},
+    {"id": 10, "name": "STOP and ask user before auto-advancing into execute-phase", "status": "not_started", "progress": "explicit gate flagged by advisor -- do not auto-advance even though mode=yolo/auto_advance=true, because execute-phase is a much larger commitment than plan-phase"}
   ],
   "blockers": [],
   "human_actions_pending": [],
-  "decisions": [],
-  "uncommitted_files": [".planning/STATE.md (pre-existing, from prior session, unrelated to this pause)"],
-  "next_action": "Re-run /gsd-plan-phase 1 from the top — nothing was in-flight, this is a clean cold-start re-entry.",
-  "context_notes": "Session was interrupted immediately after /clear, during /gsd-plan-phase 1. Only the workflow's required-reading reference docs (plan-phase.md, ui-brand.md, revision-loop.md, gate-prompts.md, agent-contracts.md, gates.md) were loaded into context. The init script (gsd-tools query init.plan-phase) was never executed. Note: this install's gsd-tools.cjs does NOT support the 'query <verb>' subcommand form used throughout plan-phase.md (e.g. 'gsd-tools query current-timestamp' fails with 'Unknown command: query'; the working form is 'gsd-tools current-timestamp full --raw'). The resuming agent should verify the correct invocation for 'init.plan-phase' against `gsd-tools.cjs --help` before relying on the documented bash blocks verbatim -- this may be a version mismatch between the installed get-shit-done CLI and the plan-phase.md skill."
+  "decisions": [
+    {"decision": "Fixed Dim 11 blocker directly (no gsd-planner re-spawn, no checker re-verify)", "rationale": "checker explicitly waived re-verify for this fix ('touches no plan content'); RESEARCH.md is the researcher's artifact not the planner's; mechanical heading+marker edit. Verified each RESOLVED: marker against actual plan content before writing it (advisor caveat: don't transcribe checker summary blind).", "phase": "1"},
+    {"decision": "Resolve both warnings (Dim 7c + Dim 10) by dropping rich from Phase 1 deps entirely, NOT by using rich in loop.py", "rationale": "advisor: swapping print()->Console().print() in loop.py fixes Dim10 but deepens Dim7c (rich rendering is a CLI-tier concern per the responsibility map). Dropping rich kills Dim10 (no unused dep) and moots Dim7c (no rich-in-loop question). Matches CLAUDE.md's own stated v1 fallback ('if no rich output is the real intent, drop rich, use stdlib print()'). rich's Phase-1-relevant use (confirm-gate) is Phase 2 -- nothing in Phase 1 needs it.", "phase": "1"},
+    {"decision": "rich removal does not require a full checker re-spawn (iteration 2/3)", "rationale": "advisor: size-gate re-verify by edit scope. 7 one-line dependency-string edits, no wiring/contract change -- proportionate self-review only. Checker's own re-verify scope was 'if print statements move to cli.py', which we are not doing.", "phase": "1"}
+  ],
+  "uncommitted_files": [
+    ".planning/HANDOFF.json (recreated this pause)",
+    ".planning/ROADMAP.md (M -- update-plan-progress + annotate-dependencies for phase 1, plus 2 manual formatting-bug fixes)",
+    ".planning/STATE.md (M -- PRE-EXISTING changes from a session BEFORE this one: milestone metadata, stopped_at, last_updated, footer. Not touched/caused this session.)",
+    ".planning/phases/01-core-loop-shell-tool-cli/01-RESEARCH.md (M -- Dim 11 blocker fix: heading + 3 RESOLVED markers)",
+    ".planning/phases/01-core-loop-shell-tool-cli/01-02-PLAN.md (?? new -- smoke-test plan from gsd-planner, not yet committed)"
+  ],
+  "next_action": "Edit 01-01-PLAN.md: remove 'rich>=13' (and 'rich' where listed standalone) from all 7 locations (lines 109,123,137,140,144,149,340 as of last grep -- re-grep to confirm line numbers haven't shifted). Then proceed to plan-phase step 13 gates -> commit -> ask before execute-phase.",
+  "context_notes": "Mid-revision-loop iteration 1/3 of /gsd-plan-phase 1. Blocker is fully resolved (0 blockers). Only the 2 non-blocking warnings remain, with a clear advisor-backed fix already chosen (drop rich). This is a small, mechanical follow-up -- do NOT re-spawn gsd-planner or gsd-plan-checker for it. After rich removal + gates + commit, the plan-phase workflow for phase 1 is essentially done; STOP before spawning execute-phase and ask the user explicitly, even under yolo/auto_advance, because execute-phase is the next major commitment (writing actual src/olla code)."
 }

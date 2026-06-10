@@ -589,22 +589,25 @@ packages = ["src/olla"]
 
 **If this table is empty:** N/A — see entries above. All five assumptions are LOW-risk-if-wrong because either (a) the recommended code/design is correct regardless of which way the assumption resolves, or (b) the failure mode is a harmless false-negative in smoke-test classification, not a broken loop.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should `--dry-run`/`--yes` be functional or stubbed in Phase 1?**
    - What we know: Phase 1's requirement IDs are LOOP-01/02/03/05, SHELL-01, CLI-01/02/03 — none of these are SAFE-01 (dry-run) or SAFE-04 (confirm/--yes), which are explicitly Phase 2 (REQUIREMENTS.md traceability table). However, the orchestrator's additional_context describes "a minimal click-based CLI with `--model`/`--dry-run`/`--max-steps`/`--yes` flags" as part of this phase's scope.
    - What's unclear: whether the planner should (a) implement these flags as fully no-op/accepted-but-ignored in Phase 1 (stable CLI surface, Phase 2 adds behavior), or (b) omit `--dry-run`/`--yes` from Phase 1's CLI entirely and add them in Phase 2's plan.
    - Recommendation: Include `--max-steps` as a REAL, functional flag in Phase 1 (the loop needs SOME termination condition regardless of SAFE-03's repetition-guard refinement — `range(max_steps)` is already in the Pattern 1/skeleton above and is load-bearing for LOOP-01/05). For `--dry-run` and `--yes`: accept them at the click layer as no-op stubs (so Phase 2 doesn't need a CLI signature change) but do NOT build any gating/confirm logic around them in Phase 1 — document this explicitly in the plan so it's not mistaken for SAFE-01/04 being "done."
+   - RESOLVED: Adopted as recommended in 01-01-PLAN.md Task 6 — `--max-steps` is functional (default 15, threaded into `run_loop`); `--dry-run`/`--yes` are accepted as no-op click flags for Phase 2 CLI-surface stability, with an explicit note that no SAFE-01/04 gating logic is implemented.
 
 2. **Does `think=True` improve tag-compliance enough on the 0.6B model to be worth the token cost?**
    - What we know: thinking mode gives the model a scratchpad before committing to output; the smallest models (0.6B) are most likely to benefit from this, per the general intuition that CoT improves small-model task-following.
    - What's unclear: whether this benefit, if real, outweighs (a) token/latency cost (core-value tension) and (b) the unverified think/stop interaction risk (Pitfall 4 / A4).
    - Recommendation: smoke test should run BOTH `think=False` (default) and `think=True` passes for the Qwen3-family models specifically (gemma3 may not support `think` at all per docs.ollama.com — verify per-model), and report both compliance numbers. This turns an assumption into an empirical finding the user can act on.
+   - RESOLVED: Adopted in 01-02-PLAN.md Task 1 — `call_model` gains a `think: bool = False` parameter, and `run_smoke_test` runs both `think=False` and `think=True` passes per model, printing a separate compliance line for each (Tests 6-8).
 
 3. **Will the `--smoke-test`'s "reverted to native format" detection (Pitfall 1) actually fire for JOSIEFIED-Qwen3 / gemma4 variants, or is this purely theoretical?**
    - What we know: Qwen3's base chat template and gemma3-tool-tuned variants are documented (via WebSearch, MEDIUM confidence) to use `<tool_call>{...}` / `<tool>{...}</tool>` JSON-wrapped formats when given tool definitions via Ollama's native `tools=` parameter.
    - What's unclear: olla does NOT use the native `tools=` parameter (explicitly excluded per STACK.md) — it only uses prompted instructions. It's possible the native tool-call format ONLY activates when `tools=[...]` is passed to `chat()`, in which case this entire failure mode may not manifest at all when olla calls `chat()` without `tools=`.
    - Recommendation: this is exactly what the smoke test is FOR — build the three-way classifier (Pattern in Code Examples) regardless, since it's cheap to implement and provides real signal either way. If "reverted_to_native_format" never fires across all 5 models, that's a useful negative result (Pitfall 1's risk profile shifts entirely to "non_compliant" / no-tags-at-all).
+   - RESOLVED: Adopted in 01-02-PLAN.md Task 1 — `classify_response()` implements the three-way classifier (compliant / reverted_to_native_format / non_compliant), with olla-tag checks ordered first (Tests 3-4).
 
 ## Environment Availability
 
