@@ -1,0 +1,25 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-06-10T09:00:54.500Z",
+  "phase": "1",
+  "phase_name": "Core Loop + Shell Tool + CLI",
+  "phase_dir": ".planning/phases/01-core-loop-shell-tool-cli",
+  "plan": 0,
+  "task": 0,
+  "total_tasks": 0,
+  "status": "not_started",
+  "completed_tasks": [],
+  "remaining_tasks": [
+    {"id": 1, "name": "Run /gsd-plan-phase 1 init step", "status": "not_started"},
+    {"id": 2, "name": "Research vs skip-research decision (no RESEARCH.md exists)", "status": "not_started"},
+    {"id": 3, "name": "Spawn gsd-planner -> 01-PLAN.md", "status": "not_started"},
+    {"id": 4, "name": "Spawn gsd-plan-checker, revision loop", "status": "not_started"},
+    {"id": 5, "name": "Requirements/decision coverage gates + commit plans", "status": "not_started"}
+  ],
+  "blockers": [],
+  "human_actions_pending": [],
+  "decisions": [],
+  "uncommitted_files": [".planning/STATE.md (pre-existing, from prior session, unrelated to this pause)"],
+  "next_action": "Re-run /gsd-plan-phase 1 from the top — nothing was in-flight, this is a clean cold-start re-entry.",
+  "context_notes": "Session was interrupted immediately after /clear, during /gsd-plan-phase 1. Only the workflow's required-reading reference docs (plan-phase.md, ui-brand.md, revision-loop.md, gate-prompts.md, agent-contracts.md, gates.md) were loaded into context. The init script (gsd-tools query init.plan-phase) was never executed. Note: this install's gsd-tools.cjs does NOT support the 'query <verb>' subcommand form used throughout plan-phase.md (e.g. 'gsd-tools query current-timestamp' fails with 'Unknown command: query'; the working form is 'gsd-tools current-timestamp full --raw'). The resuming agent should verify the correct invocation for 'init.plan-phase' against `gsd-tools.cjs --help` before relying on the documented bash blocks verbatim -- this may be a version mismatch between the installed get-shit-done CLI and the plan-phase.md skill."
+}
