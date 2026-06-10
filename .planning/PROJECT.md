@@ -16,17 +16,21 @@ Stay fast and accurate on small local models. Minimal per-turn token overhead so
 
 ### Active
 
-- [ ] ReAct loop core: think → act → observe cycle, parse `<tool>`/`<args>`/`<final>` XML-style tags from model output
-- [ ] Shell tool: run bash command, capture stdout/stderr, return to model
+- [ ] ReAct loop core: think → act → observe cycle, parse `<tool>`/`<args>`/`<final>` XML-style tags from model output, tolerant of markdown fences/whitespace/minor formatting drift
+- [ ] Stop-sequences passed to `ollama.chat()` so the model can't keep generating past a tool call and hallucinate its own observation/final
+- [ ] Explicit `num_ctx` set on every Ollama request; large tool outputs truncated before being appended to history (prevents silent context-window truncation dropping the system prompt)
+- [ ] Repetition guard: abort the loop with a diagnostic if the same tool+args is called 2-3 times in a row
+- [ ] Visible step-by-step progress output ("Step N: running `<cmd>`...") as the loop executes
+- [ ] Shell tool: `subprocess.run(shlex.split(cmd), shell=False)` — captures stdout/stderr, returned to model. No pipes/redirects/chaining in v1 (shell=False)
 - [ ] File tools: `read_file(path)`, `write_file(path, content)`
 - [ ] Scratchpad memory tool: `remember(key, value)` for cross-turn notes
-- [ ] `--dry-run` flag: print planned tool calls without executing
-- [ ] Safety: shell command blocklist (`rm -rf /`, `sudo`, `dd`, etc.)
+- [ ] `--dry-run` flag: single-step preview — show the next planned tool call without executing it or any side effects, then stop (can't honestly preview steps beyond the first without a real observation)
+- [ ] Safety: shell command blocklist (`rm -rf /`, `sudo`, `dd`, etc.) — speed-bump layer, not the primary boundary
 - [ ] Safety: `--max-steps` cap (default 15) to prevent infinite loops
-- [ ] Safety: confirm prompt before shell/write_file execution, overridable with `--yes`
+- [ ] Safety: confirm prompt (via `rich.Confirm.ask`) before shell/write_file execution, overridable with `--yes`
 - [ ] `--model` flag: target any local Ollama model, no hardcoded default
 - [ ] One-shot mode: `olla "task description"` runs loop to completion
-- [ ] pip-installable via `pyproject.toml`, `olla` console-script entry point
+- [ ] pip-installable via `pyproject.toml` (hatchling, src layout), `olla` console-script entry point
 
 ### Out of Scope
 
