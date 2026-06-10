@@ -31,7 +31,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Each step prints visible progress ("Step N: running `<cmd>`...") as the loop executes
   5. `pip install` exposes the `olla` console-script on PATH
   6. A format-validation smoke test reports tag-compliance rates for each target model (JOSIEFIED-Qwen3 0.6b/1.7b/4b, gemma4:e2b, gemma4-uncensored-aggressive), confirming the XML-tag bet or surfacing the need for a fallback format
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 01-01-PLAN.md — Walking Skeleton: CLI -> ReAct loop -> ollama.chat -> tag parser -> shell tool -> printed final answer (success criteria 1-5)
+- [ ] 01-02-PLAN.md — `olla --smoke-test` tag-compliance table across target models (success criterion 6, D-07/D-08)
 **Research flag**: NEEDS RESEARCH-PHASE. The XML-tag-compliance assumption (PITFALLS Pitfall 1) must be validated empirically via the smoke test against the listed target models before Phase 1 is "done." If compliance is <80% on the smallest models, a plain-delimiter fallback format should be validated in parallel and documented as an option.
 
 ### Phase 2: Safety Gate + Loop Control
@@ -74,7 +77,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Core Loop + Shell Tool + CLI | 0/TBD | Not started | - |
+| 1. Core Loop + Shell Tool + CLI | 0/2 | Not started | - |
 | 2. Safety Gate + Loop Control | 0/TBD | Not started | - |
 | 3. File Tools | 0/TBD | Not started | - |
 | 4. Memory Tool | 0/TBD | Not started | - |
