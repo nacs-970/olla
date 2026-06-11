@@ -1,34 +1,32 @@
 {
   "version": "1.0",
-  "timestamp": "2026-06-11T11:05:35.193Z",
+  "timestamp": "2026-06-11T15:30:00.000Z",
   "phase": "01",
   "phase_name": "core-loop-shell-tool-cli",
   "phase_dir": ".planning/phases/01-core-loop-shell-tool-cli",
-  "plan": null,
-  "task": null,
+  "plan": 1,
+  "task": 2,
   "total_tasks": 4,
   "status": "paused",
   "completed_tasks": [
-    {"id": 1, "name": "Phase 01 checkpoint audit (gsd-audit-milestone, scoped to phase-01)", "status": "done", "commit": "uncommitted"}
+    {"id": 1, "name": "Phase-01 checkpoint audit", "status": "done", "commit": "1f6988c"}
   ],
   "remaining_tasks": [
-    {"id": 2, "name": "SC6 empirical --smoke-test run across 5 target models (JOSIEFIED-Qwen3 0.6b/1.7b/4b, gemma4:e2b, gemma4-uncensored-aggressive)", "status": "not_started"},
-    {"id": 3, "name": "Fix WR-01 dead-code gap: loop.py combined-output should check stdout/stderr truthiness, not key presence, so real no-output success yields '(no output)'", "status": "not_started"},
-    {"id": 4, "name": "Add parsed['tool'] dispatch in run_loop (Finding 2) before Phase 3 adds a second tool", "status": "not_started"}
+    {"id": 2, "name": "SC6 multi-model smoke-test", "status": "blocked", "progress": "Model-list assumption invalidated this session — see blockers"},
+    {"id": 3, "name": "Fix WR-01 dead-code in loop.py", "status": "not_started"},
+    {"id": 4, "name": "Add tool-name dispatch in run_loop", "status": "not_started"}
   ],
-  "blockers": [],
+  "blockers": [
+    {"description": "SC6 target model list stale: only gemma4:e2b + evalengine/unbound-e2b:latest present on disk (manifests at /media/c/.ollama/manifests). Missing: tripolskypetr/gemma4-uncensored-aggressive:latest, goekdenizguelmez/JOSIEFIED-Qwen3:0.6b/1.7b/4b — removed since last checkpoint, likely for disk space (/media/c at 90%, ~20G avail).", "type": "human_action", "workaround": "User must choose: re-pull ~12GB missing models, rescope SC6 to 2 present models, or skip SC6 and revisit later"},
+    {"description": "systemd ollama.service crash-loops (no /var/lib/ollama, wrong OLLAMA_MODELS) — separate from working manual instance", "type": "external", "workaround": "Non-blocking. Active server is manual `ollama serve` as user nacs on :11434 with correct OLLAMA_MODELS=/media/c/.ollama/. Leave systemd unit alone (sudo-gated, separate housekeeping)."}
+  ],
   "human_actions_pending": [
-    {"action": "Decide how to run the SC6 multi-model --smoke-test (5 models x 4 ollama.chat calls each, ~20 live calls total, may be slow on this hardware)", "context": "User selected 'Option A' (SC6 run + code fixes before Phase 2), but the first foreground smoke-test invocation (Qwen3 0.6b) was rejected with no stated reason. Could mean: wants background/non-blocking run, wants per-model confirmation, wants fewer models first, or wants to skip SC6 for now and do only the code fixes (tasks 3-4).", "blocking": true}
+    {"action": "Decide SC6 path: re-pull missing 4 models / rescope to 2 present / skip SC6 entirely for now", "context": "3 of 5 named SC6 target models no longer on disk; daemon confirmed pointed at correct OLLAMA_MODELS path", "blocking": true}
   ],
   "decisions": [
-    {"decision": "Ran phase-01-only checkpoint audit instead of full v1.0 milestone audit", "rationale": "Milestone v1.0 is 25% complete (1/4 phases); a full audit would trivially report 12 orphaned requirements for phases 2-4 that haven't started", "phase": "01"},
-    {"decision": "Corrected REQUIREMENTS.md traceability: LOOP-02, LOOP-03, LOOP-05, SHELL-01, CLI-01, CLI-02, CLI-03 marked Complete (were stale 'Pending')", "rationale": "3-source cross-check (SUMMARY frontmatter requirements-completed + VALIDATION.md per-task green + UAT 8/8) confirmed all 8 phase-01 reqs satisfied", "phase": "01"},
-    {"decision": "Selected 'Option A': run SC6 empirical smoke-test + fix WR-01 + fix tool-dispatch (Finding 2) before starting Phase 2", "rationale": "SC6 was the original 'NEEDS RESEARCH-PHASE' empirical validation of the XML-tag bet, still pending; WR-01/Finding-2 are small isolated loop.py fixes surfaced by the integration check", "phase": "01"}
+    {"decision": "Paused before resolving SC6 model-list question, to get fresh context budget", "rationale": "Session was at 85% context when the model-availability discrepancy was confirmed", "phase": "01"}
   ],
-  "uncommitted_files": [
-    ".planning/REQUIREMENTS.md",
-    ".planning/phases/01-core-loop-shell-tool-cli/01-AUDIT.md"
-  ],
-  "next_action": "Ask user how to run SC6 (foreground per-model w/ longer timeout vs background vs skip-for-now), then run `PYTHONPATH=src .venv/bin/olla --smoke-test --model <name>` for each of the 5 models in `ollama list` (all 5 target models confirmed present). After SC6, apply WR-01 fix (loop.py combined-output truthiness check) and Finding-2 tool-dispatch fix via /gsd:quick (small, isolated, code-touching — route through GSD per CLAUDE.md).",
-  "context_notes": "Integration-checker (agentId a09edfbe13abd6be8) ran 41/41 tests, confirmed all 4 phase-01 E2E flows wired, 0 blockers. Two new WARNINGs not previously tracked: (1) WR-01's '(no output)' branch is dead on the real success path because run_shell always returns stdout/stderr keys (even as '') on success -- loop.py's `elif 'stdout' in result or 'stderr' in result` is always true, so combined='' for no-output commands instead of '(no output)'. Fix: check truthiness (`result.get('stdout','') or result.get('stderr','')`) not key presence. (2) parsed['tool'] is parsed but never read -- run_shell called unconditionally for any type=='tool'. Harmless with Phase 1's single tool; needs name-based dispatch before Phase 3 file tools. Both fixes are small and isolated to loop.py -- good /gsd:quick candidates. SC6 is a pure empirical run (no code change), just execute olla --smoke-test --model <name> for each of: tripolskypetr/gemma4-uncensored-aggressive:latest, gemma4:e2b, goekdenizguelmez/JOSIEFIED-Qwen3:0.6b/1.7b/4b -- record think=False/True compliance % and any D-08 sub-80% warnings, then append results to 01-AUDIT.md (or a new SC6-RESULTS section)."
+  "uncommitted_files": [],
+  "next_action": "Ask user how to proceed with SC6 (re-pull/rescope/skip), per human_actions_pending. Tasks 3-4 (loop.py fixes) are independent and can run first via /gsd:quick regardless of SC6 outcome.",
+  "context_notes": "Confirmed via /proc/<pid>/environ that the live ollama serve daemon (user nacs) has OLLAMA_MODELS=/media/c/.ollama/, and find on that manifests dir shows only 2 model manifests (gemma4:e2b, evalengine/unbound-e2b:latest). The 3 JOSIEFIED-Qwen3 variants and gemma4-uncensored-aggressive from the original SC6 target list are gone. evalengine/unbound-e2b:latest is new (pulled ~2h before this check, not in original target list). Tasks 3-4 are small isolated loop.py edits, independently scoped, route through /gsd:quick per CLAUDE.md."
 }
