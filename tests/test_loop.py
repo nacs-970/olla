@@ -75,6 +75,27 @@ def test_run_loop_tool_then_final(mocker, capsys):
     assert obs_messages[0]["content"] == "Observation: hi\n"
 
 
+def test_run_loop_unknown_tool_returns_observation(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>write_file</tool><args>foo.txt</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ]
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+
+    run_loop(task="write a file", model="test-model", max_steps=15, system_prompt="sys")
+
+    captured = capsys.readouterr()
+    assert "unknown tool 'write_file'" in captured.out
+    mock_run_shell.assert_not_called()
+
+    call_args = mock_chat.call_args_list[1]
+    messages = call_args.kwargs["messages"]
+    obs_messages = [m for m in messages if m["role"] == "user" and m["content"].startswith("Observation:")]
+    assert len(obs_messages) == 1
+    assert obs_messages[0]["content"] == "Observation: unknown tool 'write_file'"
+
+
 def test_run_loop_malformed_args_recovers(mocker, capsys):
     mock_chat = mocker.patch("olla.loop.ollama.chat")
     mock_chat.side_effect = [
