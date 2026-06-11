@@ -19,9 +19,9 @@ def truncate_output(text: str, limit: int = MAX_OBSERVATION_CHARS) -> str:
     return f"{head}\n[...truncated {len(text) - limit} chars...]\n{tail}"
 
 
-def call_model(model: str, messages: list[dict]) -> str:
+def call_model(model: str, messages: list[dict], think: bool = False) -> str:
     """Call ollama.chat() with the stop-sequences and context size for the ReAct loop."""
-    response = ollama.chat(model=model, messages=messages, options={"stop": ["</args>", "Observation:"], "num_ctx": 8192}, think=False)
+    response = ollama.chat(model=model, messages=messages, options={"stop": ["</args>", "Observation:"], "num_ctx": 8192}, think=think)
     return response["message"]["content"]
 
 
