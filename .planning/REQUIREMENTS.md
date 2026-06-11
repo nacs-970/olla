@@ -8,14 +8,14 @@
 ### Loop
 
 - [x] **LOOP-01**: ReAct loop parses `<tool>`/`<args>`/`<final>` tags from model output, tolerant of markdown fences, whitespace, and minor formatting drift
-- [ ] **LOOP-02**: Stop-sequences passed to `ollama.chat()` so the model can't generate past a tool call and hallucinate its own observation/final
-- [ ] **LOOP-03**: Explicit `num_ctx` set on every Ollama request; large tool outputs truncated before being appended to history
+- [x] **LOOP-02**: Stop-sequences passed to `ollama.chat()` so the model can't generate past a tool call and hallucinate its own observation/final
+- [x] **LOOP-03**: Explicit `num_ctx` set on every Ollama request; large tool outputs truncated before being appended to history
 - [ ] **LOOP-04**: Repetition guard aborts the loop with a diagnostic if the same tool+args is called 2-3 times in a row
-- [ ] **LOOP-05**: Visible step-by-step progress output ("Step N: running `<cmd>`...") as the loop executes
+- [x] **LOOP-05**: Visible step-by-step progress output ("Step N: running `<cmd>`...") as the loop executes
 
 ### Shell
 
-- [ ] **SHELL-01**: Shell tool runs `subprocess.run(shlex.split(cmd), shell=False)`, captures stdout/stderr, returns to model — no pipes/redirects/chaining in v1
+- [x] **SHELL-01**: Shell tool runs `subprocess.run(shlex.split(cmd), shell=False)`, captures stdout/stderr, returns to model — no pipes/redirects/chaining in v1
 
 ### Files
 
@@ -35,9 +35,9 @@
 
 ### CLI
 
-- [ ] **CLI-01**: `--model` flag targets any local Ollama model, no hardcoded default
-- [ ] **CLI-02**: One-shot mode — `olla "task description"` runs the loop to completion
-- [ ] **CLI-03**: Pip-installable via `pyproject.toml` (hatchling, src layout), `olla` console-script entry point
+- [x] **CLI-01**: `--model` flag targets any local Ollama model, no hardcoded default
+- [x] **CLI-02**: One-shot mode — `olla "task description"` runs the loop to completion
+- [x] **CLI-03**: Pip-installable via `pyproject.toml` (hatchling, src layout), `olla` console-script entry point
 
 ## v2 Requirements
 
@@ -69,13 +69,13 @@
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | LOOP-01 | Phase 1 | Complete |
-| LOOP-02 | Phase 1 | Pending |
-| LOOP-03 | Phase 1 | Pending |
-| LOOP-05 | Phase 1 | Pending |
-| SHELL-01 | Phase 1 | Pending |
-| CLI-01 | Phase 1 | Pending |
-| CLI-02 | Phase 1 | Pending |
-| CLI-03 | Phase 1 | Pending |
+| LOOP-02 | Phase 1 | Complete |
+| LOOP-03 | Phase 1 | Complete |
+| LOOP-05 | Phase 1 | Complete |
+| SHELL-01 | Phase 1 | Complete |
+| CLI-01 | Phase 1 | Complete |
+| CLI-02 | Phase 1 | Complete |
+| CLI-03 | Phase 1 | Complete |
 | LOOP-04 | Phase 2 | Pending |
 | SAFE-01 | Phase 2 | Pending |
 | SAFE-02 | Phase 2 | Pending |

@@ -1,0 +1,34 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-06-11T11:05:35.193Z",
+  "phase": "01",
+  "phase_name": "core-loop-shell-tool-cli",
+  "phase_dir": ".planning/phases/01-core-loop-shell-tool-cli",
+  "plan": null,
+  "task": null,
+  "total_tasks": 4,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 1, "name": "Phase 01 checkpoint audit (gsd-audit-milestone, scoped to phase-01)", "status": "done", "commit": "uncommitted"}
+  ],
+  "remaining_tasks": [
+    {"id": 2, "name": "SC6 empirical --smoke-test run across 5 target models (JOSIEFIED-Qwen3 0.6b/1.7b/4b, gemma4:e2b, gemma4-uncensored-aggressive)", "status": "not_started"},
+    {"id": 3, "name": "Fix WR-01 dead-code gap: loop.py combined-output should check stdout/stderr truthiness, not key presence, so real no-output success yields '(no output)'", "status": "not_started"},
+    {"id": 4, "name": "Add parsed['tool'] dispatch in run_loop (Finding 2) before Phase 3 adds a second tool", "status": "not_started"}
+  ],
+  "blockers": [],
+  "human_actions_pending": [
+    {"action": "Decide how to run the SC6 multi-model --smoke-test (5 models x 4 ollama.chat calls each, ~20 live calls total, may be slow on this hardware)", "context": "User selected 'Option A' (SC6 run + code fixes before Phase 2), but the first foreground smoke-test invocation (Qwen3 0.6b) was rejected with no stated reason. Could mean: wants background/non-blocking run, wants per-model confirmation, wants fewer models first, or wants to skip SC6 for now and do only the code fixes (tasks 3-4).", "blocking": true}
+  ],
+  "decisions": [
+    {"decision": "Ran phase-01-only checkpoint audit instead of full v1.0 milestone audit", "rationale": "Milestone v1.0 is 25% complete (1/4 phases); a full audit would trivially report 12 orphaned requirements for phases 2-4 that haven't started", "phase": "01"},
+    {"decision": "Corrected REQUIREMENTS.md traceability: LOOP-02, LOOP-03, LOOP-05, SHELL-01, CLI-01, CLI-02, CLI-03 marked Complete (were stale 'Pending')", "rationale": "3-source cross-check (SUMMARY frontmatter requirements-completed + VALIDATION.md per-task green + UAT 8/8) confirmed all 8 phase-01 reqs satisfied", "phase": "01"},
+    {"decision": "Selected 'Option A': run SC6 empirical smoke-test + fix WR-01 + fix tool-dispatch (Finding 2) before starting Phase 2", "rationale": "SC6 was the original 'NEEDS RESEARCH-PHASE' empirical validation of the XML-tag bet, still pending; WR-01/Finding-2 are small isolated loop.py fixes surfaced by the integration check", "phase": "01"}
+  ],
+  "uncommitted_files": [
+    ".planning/REQUIREMENTS.md",
+    ".planning/phases/01-core-loop-shell-tool-cli/01-AUDIT.md"
+  ],
+  "next_action": "Ask user how to run SC6 (foreground per-model w/ longer timeout vs background vs skip-for-now), then run `PYTHONPATH=src .venv/bin/olla --smoke-test --model <name>` for each of the 5 models in `ollama list` (all 5 target models confirmed present). After SC6, apply WR-01 fix (loop.py combined-output truthiness check) and Finding-2 tool-dispatch fix via /gsd:quick (small, isolated, code-touching — route through GSD per CLAUDE.md).",
+  "context_notes": "Integration-checker (agentId a09edfbe13abd6be8) ran 41/41 tests, confirmed all 4 phase-01 E2E flows wired, 0 blockers. Two new WARNINGs not previously tracked: (1) WR-01's '(no output)' branch is dead on the real success path because run_shell always returns stdout/stderr keys (even as '') on success -- loop.py's `elif 'stdout' in result or 'stderr' in result` is always true, so combined='' for no-output commands instead of '(no output)'. Fix: check truthiness (`result.get('stdout','') or result.get('stderr','')`) not key presence. (2) parsed['tool'] is parsed but never read -- run_shell called unconditionally for any type=='tool'. Harmless with Phase 1's single tool; needs name-based dispatch before Phase 3 file tools. Both fixes are small and isolated to loop.py -- good /gsd:quick candidates. SC6 is a pure empirical run (no code change), just execute olla --smoke-test --model <name> for each of: tripolskypetr/gemma4-uncensored-aggressive:latest, gemma4:e2b, goekdenizguelmez/JOSIEFIED-Qwen3:0.6b/1.7b/4b -- record think=False/True compliance % and any D-08 sub-80% warnings, then append results to 01-AUDIT.md (or a new SC6-RESULTS section)."
+}
