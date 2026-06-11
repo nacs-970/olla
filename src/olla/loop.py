@@ -43,6 +43,11 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str) -> None:
             return
 
         if parsed["type"] == "tool":
+            if parsed["tool"] != "shell":
+                preview = f"unknown tool '{parsed['tool']}'"
+                print(preview)
+                messages.append({"role": "user", "content": f"Observation: {preview}"})
+                continue
             try:
                 argv = shlex.split(parsed["args_raw"])
             except ValueError as e:
@@ -54,10 +59,10 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str) -> None:
             result = run_shell(parsed["args_raw"])
             if "error" in result:
                 combined = result["error"]
-            elif "stdout" in result or "stderr" in result:
-                combined = result.get("stdout", "") + result.get("stderr", "")
             else:
-                combined = "(no output)"
+                combined = result.get("stdout", "") + result.get("stderr", "")
+                if not combined:
+                    combined = "(no output)"
             preview = truncate_output(combined)
             print(preview)
             messages.append({"role": "user", "content": f"Observation: {preview}"})
