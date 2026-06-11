@@ -35,20 +35,29 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str) -> None:
     for step in range(1, max_steps + 1):
         content = call_model(model, messages)
         parsed = parse_response(content)
-        messages.append({"role": "assistant", "content": content})
+        history_content = truncate_output(content) if parsed["type"] == "none" else content
+        messages.append({"role": "assistant", "content": history_content})
 
         if parsed["type"] == "final":
             print(parsed["text"])
             return
 
         if parsed["type"] == "tool":
-            argv = shlex.split(parsed["args_raw"])
+            try:
+                argv = shlex.split(parsed["args_raw"])
+            except ValueError as e:
+                preview = f"error: could not parse command: {e}"
+                print(preview)
+                messages.append({"role": "user", "content": f"Observation: {preview}"})
+                continue
             print(f"Step {step}: running {argv}...")
             result = run_shell(parsed["args_raw"])
             if "error" in result:
                 combined = result["error"]
-            else:
+            elif "stdout" in result or "stderr" in result:
                 combined = result.get("stdout", "") + result.get("stderr", "")
+            else:
+                combined = "(no output)"
             preview = truncate_output(combined)
             print(preview)
             messages.append({"role": "user", "content": f"Observation: {preview}"})
