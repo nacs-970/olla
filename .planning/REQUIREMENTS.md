@@ -7,7 +7,7 @@
 
 ### Loop
 
-- [ ] **LOOP-01**: ReAct loop parses `<tool>`/`<args>`/`<final>` tags from model output, tolerant of markdown fences, whitespace, and minor formatting drift
+- [x] **LOOP-01**: ReAct loop parses `<tool>`/`<args>`/`<final>` tags from model output, tolerant of markdown fences, whitespace, and minor formatting drift
 - [ ] **LOOP-02**: Stop-sequences passed to `ollama.chat()` so the model can't generate past a tool call and hallucinate its own observation/final
 - [ ] **LOOP-03**: Explicit `num_ctx` set on every Ollama request; large tool outputs truncated before being appended to history
 - [ ] **LOOP-04**: Repetition guard aborts the loop with a diagnostic if the same tool+args is called 2-3 times in a row
@@ -68,7 +68,7 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LOOP-01 | Phase 1 | Pending |
+| LOOP-01 | Phase 1 | Complete |
 | LOOP-02 | Phase 1 | Pending |
 | LOOP-03 | Phase 1 | Pending |
 | LOOP-05 | Phase 1 | Pending |
@@ -86,6 +86,7 @@
 | MEM-01 | Phase 4 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 16 total
 - Mapped to phases: 16
 - Unmapped: 0 ✓

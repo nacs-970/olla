@@ -13,7 +13,7 @@ olla ships as a vertical-slice build that de-risks the core bet first and layers
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Core Loop + Shell Tool + CLI** - Working ReAct loop that parses model tags, runs shell commands, and installs as `olla`; format compliance validated against target models
+- [x] **Phase 1: Core Loop + Shell Tool + CLI** - Working ReAct loop that parses model tags, runs shell commands, and installs as `olla`; format compliance validated against target models (completed 2026-06-11)
 - [ ] **Phase 2: Safety Gate + Loop Control** - Blocklist, confirm-before-execute, dry-run, step cap, and repetition guard gate every dangerous action
 - [ ] **Phase 3: File Tools** - Model can read and write files through the safety gate
 - [ ] **Phase 4: Memory Tool** - Model can store and recall cross-turn scratchpad notes
@@ -35,7 +35,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   5. `pip install` exposes the `olla` console-script on PATH
   6. A format-validation smoke test reports tag-compliance rates for each target model (JOSIEFIED-Qwen3 0.6b/1.7b/4b, gemma4:e2b, gemma4-uncensored-aggressive), confirming the XML-tag bet or surfacing the need for a fallback format
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 **Wave 1**
 
@@ -43,7 +43,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 2** *(ready — Wave 1 complete)*
 
-- [ ] 01-02-PLAN.md — `olla --smoke-test` tag-compliance table across target models (success criterion 6, D-07/D-08)
+- [x] 01-02-PLAN.md — `olla --smoke-test` tag-compliance table across target models (success criterion 6, D-07/D-08)
 
 **Research flag**: NEEDS RESEARCH-PHASE. The XML-tag-compliance assumption (PITFALLS Pitfall 1) must be validated empirically via the smoke test against the listed target models before Phase 1 is "done." If compliance is <80% on the smallest models, a plain-delimiter fallback format should be validated in parallel and documented as an option.
 
@@ -96,7 +96,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Core Loop + Shell Tool + CLI | 0/2 | Planned | - |
+| 1. Core Loop + Shell Tool + CLI | 2/2 | Complete   | 2026-06-11 |
 | 2. Safety Gate + Loop Control | 0/TBD | Not started | - |
 | 3. File Tools | 0/TBD | Not started | - |
 | 4. Memory Tool | 0/TBD | Not started | - |
