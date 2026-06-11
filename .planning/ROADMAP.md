@@ -35,13 +35,13 @@ Decimal phases appear between their surrounding integers in numeric order.
   5. `pip install` exposes the `olla` console-script on PATH
   6. A format-validation smoke test reports tag-compliance rates for each target model (JOSIEFIED-Qwen3 0.6b/1.7b/4b, gemma4:e2b, gemma4-uncensored-aggressive), confirming the XML-tag bet or surfacing the need for a fallback format
 
-**Plans:** 0/2 plans executed
+**Plans:** 1/2 plans executed
 
 **Wave 1**
 
-- [ ] 01-01-PLAN.md — Walking Skeleton: CLI -> ReAct loop -> ollama.chat -> tag parser -> shell tool -> printed final answer (success criteria 1-5)
+- [x] 01-01-PLAN.md — Walking Skeleton: CLI -> ReAct loop -> ollama.chat -> tag parser -> shell tool -> printed final answer (success criteria 1-5)
 
-**Wave 2** *(blocked on Wave 1 completion)*
+**Wave 2** *(ready — Wave 1 complete)*
 
 - [ ] 01-02-PLAN.md — `olla --smoke-test` tag-compliance table across target models (success criterion 6, D-07/D-08)
 
