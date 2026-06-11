@@ -32,3 +32,21 @@ def test_quoted_argument_survives_shlex():
     result = run_shell('echo "hello world"')
     assert result["argv"] == ["echo", "hello world"]
     assert "hello world" in result["stdout"]
+
+
+def test_empty_args():
+    result = run_shell("")
+    assert result["argv"] == []
+    assert "empty command" in result["error"]
+
+
+def test_whitespace_only_args():
+    result = run_shell("   ")
+    assert result["argv"] == []
+    assert "empty command" in result["error"]
+
+
+def test_unbalanced_quote():
+    result = run_shell('echo "unterminated')
+    assert "could not parse command" in result["error"]
+    assert "argv" not in result

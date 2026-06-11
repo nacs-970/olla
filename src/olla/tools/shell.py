@@ -12,7 +12,12 @@ def run_shell(args_raw: str, timeout: int = 30) -> ToolResult:
     Returns a ToolResult dict. On success: argv, returncode, stdout, stderr.
     On FileNotFoundError or timeout: argv plus an `error` message.
     """
-    argv = shlex.split(args_raw)
+    try:
+        argv = shlex.split(args_raw)
+    except ValueError as e:
+        return {"error": f"could not parse command: {e}"}
+    if not argv:
+        return {"argv": argv, "error": "empty command"}
     try:
         result = subprocess.run(argv, shell=False, capture_output=True, text=True, timeout=timeout)
         return {
