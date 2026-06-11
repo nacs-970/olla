@@ -97,14 +97,14 @@ def test_run_loop_malformed_args_recovers(mocker, capsys):
     assert "could not parse command" in obs_messages[0]["content"]
 
 
-def test_run_loop_tool_result_missing_output_keys(mocker, capsys):
+def test_run_loop_tool_result_real_no_output_success(mocker, capsys):
     mock_chat = mocker.patch("olla.loop.ollama.chat")
     mock_chat.side_effect = [
         {"message": {"content": "<tool>shell</tool><args>touch foo</args>"}},
         {"message": {"content": "<final>done</final>"}},
     ]
     mock_run_shell = mocker.patch("olla.loop.run_shell")
-    mock_run_shell.return_value = {"argv": ["touch", "foo"], "returncode": 0}
+    mock_run_shell.return_value = {"argv": ["touch", "foo"], "returncode": 0, "stdout": "", "stderr": ""}
 
     run_loop(task="touch a file", model="test-model", max_steps=15, system_prompt="sys")
 
