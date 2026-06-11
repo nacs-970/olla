@@ -106,3 +106,13 @@ None - no external service configuration required.
 ---
 *Phase: 01-core-loop-shell-tool-cli*
 *Completed: 2026-06-11*
+
+## Self-Check: PASSED
+
+- FOUND: src/olla/smoke.py
+- FOUND: tests/test_smoke.py
+- FOUND: .planning/phases/01-core-loop-shell-tool-cli/01-02-SUMMARY.md
+- FOUND commit: dd25f3c (test: smoke classifier/runner failing tests)
+- FOUND commit: 47dc8d1 (feat: think param + smoke classifier/runner)
+- FOUND commit: e4f2358 (test: --smoke-test CLI failing tests)
+- FOUND commit: f8edddc (feat: wire --smoke-test flag into CLI)
