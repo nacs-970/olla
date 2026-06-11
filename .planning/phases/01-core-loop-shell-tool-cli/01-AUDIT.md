@@ -59,13 +59,30 @@ LOOP-04 not in scope (assigned Phase 2).
 
 ## Tech Debt (aggregated, carried into backlog)
 
-1. **SC6 empirical smoke-test run** — run `olla --smoke-test --model <name>` against all 5 target models (JOSIEFIED-Qwen3 0.6b/1.7b/4b, gemma4:e2b, gemma4-uncensored-aggressive), record think=False/True compliance %, check for D-08 sub-80% warnings. Tooling is ready; this is a one-time empirical run, not a code change.
+1. **SC6 empirical smoke-test run** — PARTIAL/RESCOPED, see "SC6 Results" section below. 3 of 5 original target models (JOSIEFIED-Qwen3 0.6b/1.7b/4b, gemma4-uncensored-aggressive) no longer on disk; ran against the 2 models present instead. Success criterion 6 as written (5 named models, 0.6B-4B size class) remains UNVALIDATED.
 2. **Finding 1 (WR-01 gap)** — fix `loop.py`'s combined-output branch so a real no-output success (`stdout=""`, `stderr=""`) actually produces `(no output)` instead of an empty `Observation:`. Likely fix: check `result.get("stdout","") or result.get("stderr","")` truthiness, not key presence.
 3. **Finding 2 (tool dispatch)** — before Phase 3 adds a second tool, add a `parsed["tool"]` → handler dispatch in `run_loop` (currently hardcoded to `run_shell`).
 4. **IN-01** (01-REVIEW.md) — `smoke.classify_response` checks olla-compliant patterns before native-format patterns; a response containing both is always "compliant". Minor, test-support code only.
 5. **IN-02** (01-REVIEW.md) — magic number `80` (D-08 threshold) in `smoke.py` lacks a named constant.
 
-None of these block Phase 2 start. Items 1 and 3 are the most relevant to revisit before declaring v1 fully shipped (item 1 affects model-visible output correctness across all future tools).
+None of these block Phase 2 start. Items 1 and 3 are the most relevant to revisit before declaring v1 fully shipped (item 1 affects model-visible output correctness across all future tools). Item 1 (SC6) is now PARTIAL/OPEN per the SC6 Results section below — does not block Phase 2 but should be revisited.
+
+## SC6 Results — Rescoped (2026-06-11)
+
+**Rescope rationale**: 3 of 5 original target models (JOSIEFIED-Qwen3 0.6b/1.7b/4b, gemma4-uncensored-aggressive) no longer on disk (`/media/c` at 90%, ~21G free). User chose to run against the 2 models currently available rather than re-pull (~12GB) or skip. This is a roadmap deviation — see caveat below.
+
+**Results**:
+
+| Model | Size | think=False | think=True | Notes |
+|---|---|---|---|---|
+| `gemma4:e2b` | 7.2GB | — | — | **CRASHED** — `ollama._types.ResponseError: llama-server process has terminated: signal: killed (status code: 500)`. Host has 7.1GB total RAM, ~3.1GB available (swap 2.9/7GB used). Model does not fit — likely OOM-killed. |
+| `evalengine/unbound-e2b:latest` | 3.4GB | 100% (2/2) | 50% (1/2, 1 non-compliant) | think=False passes D-08 (≥80%). think=True drops to 50% — `smoke.py` only checks the D-08 threshold on think=False, so no WARNING printed, but this is a real compliance gap worth tracking. |
+
+**Caveat — SC6 NOT satisfied as written**: Success criterion 6 names 5 specific models spanning the 0.6B-4B range plus gemma4:e2b, explicitly to validate the XML-tag-format bet on the *smallest* models (the actual risk class per PITFALLS Pitfall 1). The 2 models tested here are both ~3-7B gemma-family — zero coverage of the 0.6B-4B Qwen3 range, zero cross-family diversity. The roadmap's `<80%-on-smallest-models → build fallback format` question remains **open**.
+
+**New finding — hardware fit**: `gemma4:e2b` (7.2GB) cannot run on this machine (7.1GB total RAM). This directly touches the project's Core Value ("must run well on a resource-constrained laptop") and should inform which models are realistically in-scope for future testing/defaults.
+
+**Status**: SC6 — PARTIAL, OPEN. Revisit when smaller models are available again (re-pull or new pulls), ideally including at least one sub-1B/1-2B model to actually probe the compliance floor.
 
 ## Nyquist
 
