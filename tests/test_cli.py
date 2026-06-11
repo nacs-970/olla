@@ -51,6 +51,28 @@ def test_max_steps_option_threaded_through(mocker):
     )
 
 
+def test_dry_run_flag_prints_inert_notice(mocker):
+    mock_run_loop = mocker.patch("olla.cli.run_loop")
+    runner = CliRunner()
+
+    result = runner.invoke(main, ["do something", "--model", "some-model", "--dry-run"])
+
+    assert result.exit_code == 0
+    assert "--dry-run is not yet enforced" in result.output
+    mock_run_loop.assert_called_once()
+
+
+def test_yes_flag_prints_inert_notice(mocker):
+    mock_run_loop = mocker.patch("olla.cli.run_loop")
+    runner = CliRunner()
+
+    result = runner.invoke(main, ["do something", "--model", "some-model", "--yes"])
+
+    assert result.exit_code == 0
+    assert "--yes is not yet enforced" in result.output
+    mock_run_loop.assert_called_once()
+
+
 def test_smoke_test_flag_calls_run_smoke_test(mocker):
     mock_run_smoke_test = mocker.patch("olla.cli.run_smoke_test")
     mock_run_loop = mocker.patch("olla.cli.run_loop")
