@@ -49,3 +49,40 @@ def test_max_steps_option_threaded_through(mocker):
     mock_run_loop.assert_called_once_with(
         task="do something", model="some-model", max_steps=5, system_prompt=SYSTEM_PROMPT
     )
+
+
+def test_smoke_test_flag_calls_run_smoke_test(mocker):
+    mock_run_smoke_test = mocker.patch("olla.cli.run_smoke_test")
+    mock_run_loop = mocker.patch("olla.cli.run_loop")
+    runner = CliRunner()
+
+    result = runner.invoke(main, ["--smoke-test", "--model", "some-model"])
+
+    assert result.exit_code == 0
+    mock_run_smoke_test.assert_called_once_with("some-model")
+    mock_run_loop.assert_not_called()
+
+
+def test_smoke_test_without_model_raises_usage_error(mocker):
+    mock_run_smoke_test = mocker.patch("olla.cli.run_smoke_test")
+    mock_run_loop = mocker.patch("olla.cli.run_loop")
+    runner = CliRunner()
+
+    result = runner.invoke(main, ["--smoke-test"])
+
+    assert result.exit_code != 0
+    assert "--model" in result.output
+    mock_run_smoke_test.assert_not_called()
+    mock_run_loop.assert_not_called()
+
+
+def test_smoke_test_with_model_does_not_require_task(mocker):
+    mocker.patch("olla.cli.run_smoke_test")
+    mock_run_loop = mocker.patch("olla.cli.run_loop")
+    runner = CliRunner()
+
+    result = runner.invoke(main, ["--smoke-test", "--model", "some-model"])
+
+    assert "TASK argument is required" not in result.output
+    assert result.exit_code == 0
+    mock_run_loop.assert_not_called()

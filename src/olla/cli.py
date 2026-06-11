@@ -4,6 +4,7 @@ import click
 
 from olla.loop import run_loop
 from olla.prompts import SYSTEM_PROMPT
+from olla.smoke import run_smoke_test
 
 
 @click.command()
@@ -12,8 +13,15 @@ from olla.prompts import SYSTEM_PROMPT
 @click.option("--dry-run", is_flag=True)
 @click.option("--max-steps", default=15, show_default=True, type=int)
 @click.option("--yes", is_flag=True)
-def main(task, model, dry_run, max_steps, yes):
+@click.option("--smoke-test", is_flag=True, help="Run format-compliance check against --model")
+def main(task, model, dry_run, max_steps, yes, smoke_test):
     """Run an agentic task against a local Ollama model."""
+    if smoke_test:
+        if not model:
+            raise click.UsageError("--smoke-test requires --model")
+        run_smoke_test(model)
+        return
+
     if not task:
         raise click.UsageError("TASK argument is required")
     if not model:
