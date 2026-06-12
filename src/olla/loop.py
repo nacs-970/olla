@@ -34,6 +34,39 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
         {"role": "user", "content": task},
     ]
 
+    if dry_run:
+        content = call_model(model, messages)
+        parsed = parse_response(content)
+
+        if parsed["type"] == "final":
+            print(f"Model would answer directly: {parsed['text']}")
+            return
+
+        if parsed["type"] == "none":
+            print(f"Model produced no valid <tool>/<final> tag: {content}")
+            return
+
+        if parsed["tool"] != "shell":
+            print(f"Model would call unknown tool '{parsed['tool']}'")
+            return
+
+        try:
+            argv = shlex.split(parsed["args_raw"])
+        except ValueError as e:
+            print(f"error: could not parse command: {e}")
+            return
+
+        decision = check(argv, yes=yes)
+        if decision["kind"] == "ALLOW":
+            verdict = "auto-approved (read-only allowlist)"
+        elif decision["kind"] == "CONFIRM":
+            verdict = "would prompt for confirmation"
+        else:
+            verdict = f"BLOCKED: {decision['reason']}"
+
+        print(f"Step 1 would run: {argv} — {verdict}")
+        return
+
     for step in range(1, max_steps + 1):
         content = call_model(model, messages)
         parsed = parse_response(content)
