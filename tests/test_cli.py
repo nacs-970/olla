@@ -35,7 +35,7 @@ def test_task_and_model_call_run_loop_with_defaults(mocker):
 
     assert result.exit_code == 0
     mock_run_loop.assert_called_once_with(
-        task="do something", model="some-model", max_steps=15, system_prompt=SYSTEM_PROMPT
+        task="do something", model="some-model", max_steps=15, system_prompt=SYSTEM_PROMPT, yes=False, dry_run=False
     )
 
 
@@ -47,7 +47,7 @@ def test_max_steps_option_threaded_through(mocker):
 
     assert result.exit_code == 0
     mock_run_loop.assert_called_once_with(
-        task="do something", model="some-model", max_steps=5, system_prompt=SYSTEM_PROMPT
+        task="do something", model="some-model", max_steps=5, system_prompt=SYSTEM_PROMPT, yes=False, dry_run=False
     )
 
 
@@ -59,18 +59,22 @@ def test_dry_run_flag_prints_inert_notice(mocker):
 
     assert result.exit_code == 0
     assert "--dry-run is not yet enforced" in result.output
-    mock_run_loop.assert_called_once()
+    mock_run_loop.assert_called_once_with(
+        task="do something", model="some-model", max_steps=15, system_prompt=SYSTEM_PROMPT, yes=False, dry_run=True
+    )
 
 
-def test_yes_flag_prints_inert_notice(mocker):
+def test_yes_flag_threaded_through(mocker):
     mock_run_loop = mocker.patch("olla.cli.run_loop")
     runner = CliRunner()
 
     result = runner.invoke(main, ["do something", "--model", "some-model", "--yes"])
 
     assert result.exit_code == 0
-    assert "--yes is not yet enforced" in result.output
-    mock_run_loop.assert_called_once()
+    assert "--yes is not yet enforced" not in result.output
+    mock_run_loop.assert_called_once_with(
+        task="do something", model="some-model", max_steps=15, system_prompt=SYSTEM_PROMPT, yes=True, dry_run=False
+    )
 
 
 def test_smoke_test_flag_calls_run_smoke_test(mocker):

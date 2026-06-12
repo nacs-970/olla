@@ -29,7 +29,5 @@ def main(task, model, dry_run, max_steps, yes, smoke_test):
 
     if dry_run:
         click.echo("Note: --dry-run is not yet enforced (Phase 2); the agent may execute real commands.")
-    if yes:
-        click.echo("Note: --yes is not yet enforced (Phase 2); confirmation prompts are not implemented yet.")
 
-    run_loop(task=task, model=model, max_steps=max_steps, system_prompt=SYSTEM_PROMPT)
+    run_loop(task=task, model=model, max_steps=max_steps, system_prompt=SYSTEM_PROMPT, yes=yes, dry_run=dry_run)
