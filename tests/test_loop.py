@@ -415,3 +415,84 @@ def test_dry_run_malformed_args_prints_error_and_stops(mocker, capsys):
     assert mock_chat.call_count == 1
     mock_run_shell.assert_not_called()
     mock_confirm.assert_not_called()
+
+
+def test_run_loop_repetition_guard_aborts_before_third_call(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>shell</tool><args>ls -la</args>"}},
+        {"message": {"content": "<tool>shell</tool><args>ls -la</args>"}},
+        {"message": {"content": "<tool>shell</tool><args>ls -la</args>"}},
+    ]
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+    mock_run_shell.return_value = {"argv": ["ls", "-la"], "returncode": 0, "stdout": "file1\n", "stderr": ""}
+
+    run_loop(task="list files repeatedly", model="test-model", max_steps=15, system_prompt="sys")
+
+    captured = capsys.readouterr()
+    assert "olla stopped: same shell call repeated 3x — model likely stuck" in captured.out
+    assert mock_run_shell.call_count == 2
+    assert mock_chat.call_count == 3
+
+
+def test_run_loop_two_repeats_then_different_proceeds_normally(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>shell</tool><args>ls -la</args>"}},
+        {"message": {"content": "<tool>shell</tool><args>ls -la</args>"}},
+        {"message": {"content": "<tool>shell</tool><args>pwd</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ]
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+    mock_run_shell.side_effect = [
+        {"argv": ["ls", "-la"], "returncode": 0, "stdout": "file1\n", "stderr": ""},
+        {"argv": ["ls", "-la"], "returncode": 0, "stdout": "file1\n", "stderr": ""},
+        {"argv": ["pwd"], "returncode": 0, "stdout": "/home\n", "stderr": ""},
+    ]
+
+    run_loop(task="list then pwd", model="test-model", max_steps=15, system_prompt="sys")
+
+    captured = capsys.readouterr()
+    assert "olla stopped: same shell call repeated 3x" not in captured.out
+    assert mock_run_shell.call_count == 3
+    assert mock_chat.call_count == 4
+
+
+def test_run_loop_block_interrupted_sequence_does_not_abort(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>shell</tool><args>ls -la</args>"}},
+        {"message": {"content": "<tool>shell</tool><args>rm -rf /</args>"}},
+        {"message": {"content": "<tool>shell</tool><args>ls -la</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ]
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+    mock_run_shell.return_value = {"argv": ["ls", "-la"], "returncode": 0, "stdout": "file1\n", "stderr": ""}
+
+    run_loop(task="list, blocked, list", model="test-model", max_steps=15, system_prompt="sys")
+
+    captured = capsys.readouterr()
+    assert "olla stopped: same shell call repeated 3x" not in captured.out
+    assert mock_run_shell.call_count == 2
+
+
+def test_run_loop_max_steps_with_varied_shell_calls(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>shell</tool><args>ls</args>"}},
+        {"message": {"content": "<tool>shell</tool><args>pwd</args>"}},
+        {"message": {"content": "<tool>shell</tool><args>wc -l</args>"}},
+    ]
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+    mock_run_shell.side_effect = [
+        {"argv": ["ls"], "returncode": 0, "stdout": "file1\n", "stderr": ""},
+        {"argv": ["pwd"], "returncode": 0, "stdout": "/home\n", "stderr": ""},
+        {"argv": ["wc", "-l"], "returncode": 0, "stdout": "3\n", "stderr": ""},
+    ]
+
+    run_loop(task="do something", model="m", max_steps=3, system_prompt="sys", dry_run=False)
+
+    captured = capsys.readouterr()
+    assert "Reached max steps (3) without a <final> answer." in captured.out
+    assert "olla stopped: same shell call repeated 3x" not in captured.out
+    assert mock_chat.call_count == 3
