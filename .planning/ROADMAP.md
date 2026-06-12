@@ -14,7 +14,7 @@ olla ships as a vertical-slice build that de-risks the core bet first and layers
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Core Loop + Shell Tool + CLI** - Working ReAct loop that parses model tags, runs shell commands, and installs as `olla`; format compliance validated against target models (completed 2026-06-11)
-- [ ] **Phase 2: Safety Gate + Loop Control** - Blocklist, confirm-before-execute, dry-run, step cap, and repetition guard gate every dangerous action
+- [x] **Phase 2: Safety Gate + Loop Control** - Blocklist, confirm-before-execute, dry-run, step cap, and repetition guard gate every dangerous action (completed 2026-06-12)
 - [ ] **Phase 3: File Tools** - Model can read and write files through the safety gate
 - [ ] **Phase 4: Memory Tool** - Model can store and recall cross-turn scratchpad notes
 
@@ -60,7 +60,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. `--dry-run` shows the next planned tool call and stops without executing it or causing any side effect
   4. The loop aborts with a diagnostic when it hits `--max-steps` (default 15) or when the same tool+args is called 2-3 times in a row
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 **Wave 1**
 
@@ -68,7 +68,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 2** *(depends on Wave 1 — Decision contract from safety.py)*
 
-- [ ] 02-02-PLAN.md — Dry-run preview + repetition guard: --dry-run single-call preview reusing safety.check() for an honest verdict, 3x-repeat repetition guard with diagnostic distinct from max-steps message, SAFE-03 regression test (success criteria 3-4, SAFE-01, LOOP-04, SAFE-03)
+- [x] 02-02-PLAN.md — Dry-run preview + repetition guard: --dry-run single-call preview reusing safety.check() for an honest verdict, 3x-repeat repetition guard with diagnostic distinct from max-steps message, SAFE-03 regression test (success criteria 3-4, SAFE-01, LOOP-04, SAFE-03)
 
 ### Phase 3: File Tools
 
@@ -105,6 +105,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Core Loop + Shell Tool + CLI | 2/2 | Complete   | 2026-06-11 |
-| 2. Safety Gate + Loop Control | 1/2 | In Progress|  |
+| 2. Safety Gate + Loop Control | 2/2 | Complete   | 2026-06-12 |
 | 3. File Tools | 0/TBD | Not started | - |
 | 4. Memory Tool | 0/TBD | Not started | - |
