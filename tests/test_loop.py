@@ -476,6 +476,23 @@ def test_run_loop_block_interrupted_sequence_does_not_abort(mocker, capsys):
     assert mock_run_shell.call_count == 2
 
 
+def test_run_loop_repeated_block_triggers_repetition_guard(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>shell</tool><args>rm -rf /</args>"}},
+        {"message": {"content": "<tool>shell</tool><args>rm -rf /</args>"}},
+        {"message": {"content": "<tool>shell</tool><args>rm -rf /</args>"}},
+    ]
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+
+    run_loop(task="delete everything repeatedly", model="test-model", max_steps=15, system_prompt="sys")
+
+    captured = capsys.readouterr()
+    assert "olla stopped: same shell call repeated 3x — model likely stuck" in captured.out
+    mock_run_shell.assert_not_called()
+    assert mock_chat.call_count == 3
+
+
 def test_run_loop_max_steps_with_varied_shell_calls(mocker, capsys):
     mock_chat = mocker.patch("olla.loop.ollama.chat")
     mock_chat.side_effect = [
