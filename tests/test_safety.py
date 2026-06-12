@@ -4,7 +4,7 @@ from olla.safety import ALLOWLIST, check
 
 
 def test_allowlist_members_allow():
-    for binary in ("ls", "pwd", "cat", "echo", "find", "grep", "head", "tail", "wc", "file", "date", "whoami", "env"):
+    for binary in ("ls", "pwd", "cat", "echo", "grep", "head", "tail", "wc", "file", "date", "whoami"):
         assert check([binary, "arg"], yes=False)["kind"] == "ALLOW", binary
 
 
@@ -15,6 +15,50 @@ def test_non_allowlisted_non_blocked_binary_confirms():
 def test_allowlist_matches_whole_binary_only_not_subcommand():
     # argv[0] is "git", not allowlisted — never matches on subcommand.
     assert check(["git", "rm", "-rf", "."], yes=False)["kind"] != "ALLOW"
+
+
+def test_env_not_in_allowlist():
+    assert "env" not in ALLOWLIST
+
+
+def test_find_not_in_allowlist():
+    assert "find" not in ALLOWLIST
+
+
+def test_env_wrapping_blocked_command_blocks():
+    decision = check(["env", "rm", "-rf", "/"], yes=False)
+    assert decision["kind"] == "BLOCK"
+    assert "'env' wraps a blocked command" in decision["reason"]
+
+
+def test_env_wrapping_rm_dangerous_target_blocks():
+    decision = check(["env", "rm", "-rf", "/"], yes=False)
+    assert decision["kind"] == "BLOCK"
+    assert "rm" in decision["reason"]
+
+
+def test_env_wrapping_sudo_blocks():
+    assert check(["env", "sudo", "ls"], yes=False)["kind"] == "BLOCK"
+
+
+def test_env_wrapping_dd_on_raw_device_blocks():
+    assert check(["env", "dd", "if=/dev/zero", "of=/dev/sda"], yes=False)["kind"] == "BLOCK"
+
+
+def test_env_with_var_assignment_and_harmless_command_confirms():
+    assert check(["env", "FOO=bar", "ls", "-la"], yes=False)["kind"] == "CONFIRM"
+
+
+def test_find_exec_rm_on_placeholder_confirms_not_allow():
+    assert check(["find", ".", "-exec", "rm", "-rf", "{}", ";"], yes=False)["kind"] != "ALLOW"
+
+
+def test_find_exec_sudo_blocks():
+    assert check(["find", "/", "-exec", "sudo", "rm", "{}", ";"], yes=False)["kind"] == "BLOCK"
+
+
+def test_fork_bomb_unspaced_variant_blocks():
+    assert check([":(){:|:&};:"], yes=False)["kind"] == "BLOCK"
 
 
 def test_hard_blocked_binaries_block():
