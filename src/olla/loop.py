@@ -94,6 +94,17 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                 messages.append({"role": "user", "content": f"Observation: {preview}"})
                 continue
 
+            sig = ("shell", tuple(argv))
+            if sig == prev_sig:
+                repeat_count += 1
+            else:
+                prev_sig = sig
+                repeat_count = 1
+
+            if repeat_count >= 3:
+                print("olla stopped: same shell call repeated 3x — model likely stuck")
+                return
+
             decision = check(argv, yes=yes)
 
             if decision["kind"] == "BLOCK":
@@ -110,17 +121,6 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                 if not approved:
                     messages.append({"role": "user", "content": "Observation: declined by user"})
                     continue
-
-            sig = ("shell", tuple(argv))
-            if sig == prev_sig:
-                repeat_count += 1
-            else:
-                prev_sig = sig
-                repeat_count = 1
-
-            if repeat_count >= 3:
-                print("olla stopped: same shell call repeated 3x — model likely stuck")
-                return
 
             print(f"Step {step}: running {argv}...")
 
