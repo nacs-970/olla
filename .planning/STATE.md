@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: context exhaustion at 78% (2026-06-12)
-last_updated: "2026-06-12T17:10:32.585Z"
-last_activity: 2026-06-12 -- Phase 02 execution started
+stopped_at: context exhaustion at 100% (2026-06-12)
+last_updated: "2026-06-12T19:36:16.067Z"
+last_activity: 2026-06-12 -- Phase 02 planning complete
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 5
-  completed_plans: 4
+  total_plans: 6
+  completed_plans: 5
   percent: 25
 ---
 
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 
 Phase: 02 (safety-gate-loop-control) — EXECUTING
 Plan: 1 of 3
-Status: Executing Phase 02
-Last activity: 2026-06-12 -- Phase 02 execution started
+Status: Ready to execute
+Last activity: 2026-06-12 -- Phase 02 planning complete
 
 Progress: [██░░░░░░░░] 25%
 
@@ -71,7 +71,8 @@ None yet.
 
 ### Blockers/Concerns
 
-- [Phase 2]: CR-01 reopened at narrower tier by 02-REVIEW.md (2026-06-13, post-02-03 gap closure). `_unwrap_env` mishandles env flags taking a separate arg (`-u FOO`, `-C DIR`, `-a ARG`, `-S STR`) — `env -u FOO sudo rm -rf /` resolves CONFIRM not BLOCK. `_unwrap_find_exec` only inspects the first `-exec` clause — a later `-exec sudo rm -rf / ;` in the same find invocation is never checked. Under `--yes` both bypass to ALLOW with zero gating (SAFE-02/SAFE-04 still at risk). Also WR-02 regression: `_FORK_BOMB_RE` now false-positives on the pattern as literal text inside an allowlisted command's args. WR-03 (chmod -Rf bypass, pre-existing) also flagged. 1 critical/2 warning/1 info total — see 02-REVIEW.md. Needs a 02-04 gap-closure plan before phase verification will pass.
+- [Phase 2]: CR-01/WR-02/WR-03/IN-01 from 02-REVIEW.md re-review are now covered by 02-04-PLAN.md (gap_closure:true, commit `6249335`, gsd-plan-checker PASSED). Code fixes not yet applied — pending `/gsd:execute-phase 02`.
+- [Phase 2 planning]: Decision-coverage override (step 13a, 2026-06-13): D-02/D-04-D-10 uncovered by literal citation in `*-PLAN.md` (`check.decision-coverage-plan`: 2/10 covered). All 8 are implemented + tested in executed plans 02-01/02-02 (88 tests green, shipped). Gate (#2492) postdates those plans — citation gap, not implementation gap. 02-04 (SAFE-02/04 fixes) embodies D-04's invariant in its must_haves without the literal ID. Proceeding; non-blocking for verify-phase, which may re-surface this for awareness only.
 - [Phase 1]: SC6 (multi-model tag-compliance smoke-test) ran but PARTIAL/OPEN — rescoped to 2 on-disk models (`gemma4:e2b` crashed/OOM on this 7.1GB-RAM host, `evalengine/unbound-e2b:latest` 100% compliant think=False / 50% think=True). 0.6B-4B Qwen3 risk class still unvalidated; roadmap's <80%-on-smallest-models fallback-format question remains open. See 01-AUDIT.md "SC6 Results".
 - [Hardware]: `gemma4:e2b` (7.2GB) does not fit in this host's 7.1GB RAM (OOM-killed). Affects which models are realistically usable for future dev/testing on this machine.
 
@@ -91,6 +92,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-12T13:05:28.981Z
-Stopped at: context exhaustion at 78% (2026-06-12)
+Last session: 2026-06-12T19:36:16.027Z
+Stopped at: context exhaustion at 100% (2026-06-12)
 Resume file: None
