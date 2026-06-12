@@ -3,8 +3,10 @@
 import shlex
 
 import ollama
+from rich.prompt import Confirm
 
 from olla.parser import parse_response
+from olla.safety import check
 from olla.tools.shell import run_shell
 
 MAX_OBSERVATION_CHARS = 2000
@@ -25,7 +27,7 @@ def call_model(model: str, messages: list[dict], think: bool = False) -> str:
     return response["message"]["content"]
 
 
-def run_loop(task: str, model: str, max_steps: int, system_prompt: str) -> None:
+def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: bool = False, dry_run: bool = False) -> None:
     """Drive the reason-act-observe loop until a <final> answer or max_steps."""
     messages = [
         {"role": "system", "content": system_prompt},
@@ -55,7 +57,27 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str) -> None:
                 print(preview)
                 messages.append({"role": "user", "content": f"Observation: {preview}"})
                 continue
-            print(f"Step {step}: running {argv}...")
+
+            decision = check(argv, yes=yes)
+
+            if decision["kind"] == "BLOCK":
+                preview = f"blocked by safety policy: {decision['reason']}"
+                print(preview)
+                messages.append({"role": "user", "content": f"Observation: {preview}"})
+                continue
+
+            if decision["kind"] == "CONFIRM" and not yes:
+                print(f"Step {step}: running {argv}...")
+                try:
+                    approved = Confirm.ask(f"Run `{' '.join(argv)}`?", default=False)
+                except EOFError:
+                    approved = False
+                if not approved:
+                    messages.append({"role": "user", "content": "Observation: declined by user"})
+                    continue
+            else:
+                print(f"Step {step}: running {argv}...")
+
             result = run_shell(parsed["args_raw"])
             if "error" in result:
                 combined = result["error"]

@@ -121,13 +121,13 @@ def test_run_loop_malformed_args_recovers(mocker, capsys):
 def test_run_loop_tool_result_real_no_output_success(mocker, capsys):
     mock_chat = mocker.patch("olla.loop.ollama.chat")
     mock_chat.side_effect = [
-        {"message": {"content": "<tool>shell</tool><args>touch foo</args>"}},
+        {"message": {"content": "<tool>shell</tool><args>cat /dev/null</args>"}},
         {"message": {"content": "<final>done</final>"}},
     ]
     mock_run_shell = mocker.patch("olla.loop.run_shell")
-    mock_run_shell.return_value = {"argv": ["touch", "foo"], "returncode": 0, "stdout": "", "stderr": ""}
+    mock_run_shell.return_value = {"argv": ["cat", "/dev/null"], "returncode": 0, "stdout": "", "stderr": ""}
 
-    run_loop(task="touch a file", model="test-model", max_steps=15, system_prompt="sys")
+    run_loop(task="read a file", model="test-model", max_steps=15, system_prompt="sys")
 
     captured = capsys.readouterr()
     assert "(no output)" in captured.out
@@ -177,3 +177,134 @@ def test_run_loop_max_steps_no_final(mocker, capsys):
         if m["role"] == "user" and "No <tool> or <final> tag found" in m["content"]
     ]
     assert len(corrective) == 2
+
+
+def test_run_loop_allow_tier_no_prompt(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>shell</tool><args>ls -la</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ]
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+    mock_run_shell.return_value = {"argv": ["ls", "-la"], "returncode": 0, "stdout": "file1\n", "stderr": ""}
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop(task="list files", model="test-model", max_steps=15, system_prompt="sys")
+
+    captured = capsys.readouterr()
+    assert "file1\n" in captured.out
+    mock_confirm.assert_not_called()
+    mock_run_shell.assert_called_once()
+
+
+def test_run_loop_block_tier_never_calls_run_shell(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>shell</tool><args>rm -rf /</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ]
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+
+    run_loop(task="delete everything", model="test-model", max_steps=15, system_prompt="sys")
+
+    captured = capsys.readouterr()
+    assert "blocked by safety policy:" in captured.out
+    mock_run_shell.assert_not_called()
+
+    call_args = mock_chat.call_args_list[1]
+    messages = call_args.kwargs["messages"]
+    obs_messages = [m for m in messages if m["role"] == "user" and m["content"].startswith("Observation:")]
+    assert len(obs_messages) == 1
+    assert "blocked by safety policy:" in obs_messages[0]["content"]
+
+
+def test_run_loop_confirm_approved_runs_shell(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>shell</tool><args>git status</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ]
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+    mock_run_shell.return_value = {"argv": ["git", "status"], "returncode": 0, "stdout": "clean\n", "stderr": ""}
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask", return_value=True)
+
+    run_loop(task="check status", model="test-model", max_steps=15, system_prompt="sys")
+
+    captured = capsys.readouterr()
+    assert "clean\n" in captured.out
+    mock_confirm.assert_called_once()
+    mock_run_shell.assert_called_once()
+
+
+def test_run_loop_confirm_declined_does_not_run_shell(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>shell</tool><args>git status</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ]
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask", return_value=False)
+
+    run_loop(task="check status", model="test-model", max_steps=15, system_prompt="sys")
+
+    mock_confirm.assert_called_once()
+    mock_run_shell.assert_not_called()
+    assert mock_chat.call_count == 2
+
+    call_args = mock_chat.call_args_list[1]
+    messages = call_args.kwargs["messages"]
+    obs_messages = [m for m in messages if m["role"] == "user" and m["content"].startswith("Observation:")]
+    assert len(obs_messages) == 1
+    assert obs_messages[0]["content"] == "Observation: declined by user"
+
+
+def test_run_loop_confirm_tier_with_yes_skips_prompt(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>shell</tool><args>git status</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ]
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+    mock_run_shell.return_value = {"argv": ["git", "status"], "returncode": 0, "stdout": "clean\n", "stderr": ""}
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop(task="check status", model="test-model", max_steps=15, system_prompt="sys", yes=True)
+
+    mock_confirm.assert_not_called()
+    mock_run_shell.assert_called_once()
+
+
+def test_run_loop_confirm_eoferror_declines_safely(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>shell</tool><args>git status</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ]
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+    mocker.patch("olla.loop.Confirm.ask", side_effect=EOFError)
+
+    run_loop(task="check status", model="test-model", max_steps=15, system_prompt="sys")
+
+    mock_run_shell.assert_not_called()
+    assert mock_chat.call_count == 2
+
+    call_args = mock_chat.call_args_list[1]
+    messages = call_args.kwargs["messages"]
+    obs_messages = [m for m in messages if m["role"] == "user" and m["content"].startswith("Observation:")]
+    assert len(obs_messages) == 1
+    assert obs_messages[0]["content"] == "Observation: declined by user"
+
+
+def test_run_loop_block_tier_with_yes_still_blocks(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>shell</tool><args>rm -rf /</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ]
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+
+    run_loop(task="delete everything", model="test-model", max_steps=15, system_prompt="sys", yes=True)
+
+    captured = capsys.readouterr()
+    assert "blocked by safety policy:" in captured.out
+    mock_run_shell.assert_not_called()
