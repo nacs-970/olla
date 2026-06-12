@@ -1,6 +1,7 @@
 """Pure safety-gate decision: blocklist/allowlist check against resolved argv."""
 
 import fnmatch
+import re
 from typing import Literal, NotRequired, TypedDict
 
 
@@ -11,12 +12,14 @@ class Decision(TypedDict):
 
 # D-01: whole-binary allowlist — read-only, side-effect-free commands that
 # auto-run without a confirm prompt. Matches argv[0] only (D-02).
+# `env` and `find` are excluded: both can execute arbitrary subcommands via
+# their arguments (not side-effect-free), so they fall through to CONFIRM by
+# default and are further gated below via _unwrap_env/_unwrap_find_exec.
 ALLOWLIST: set[str] = {
     "ls",
     "pwd",
     "cat",
     "echo",
-    "find",
     "grep",
     "head",
     "tail",
@@ -24,7 +27,6 @@ ALLOWLIST: set[str] = {
     "file",
     "date",
     "whoami",
-    "env",
 }
 
 # D-03: binaries that are blocked outright — no safe invocation exists.
@@ -52,8 +54,13 @@ _RM_DANGEROUS_TARGETS: set[str] = {
 _DEVICE_GLOB = "/dev/*"
 _DEVICE_PREFIXES = ("sd", "nvme", "hd")
 
-# D-03: fork-bomb pattern, matched as an exact argv equality.
-_FORK_BOMB_TOKENS = [":(){", ":|:&", "};:"]
+# D-03: fork-bomb pattern, matched via regex over the joined argv so both the
+# spaced 3-token form (`:(){`, `:|:&`, `};:`) and the unspaced single-token
+# form (`:(){:|:&};:`) are caught (WR-02).
+_FORK_BOMB_RE = re.compile(r":\s*\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:")
+
+# find flags that introduce a wrapped command terminated by ';' or '+'.
+_FIND_EXEC_FLAGS: set[str] = {"-exec", "-execdir", "-ok", "-okdir"}
 
 
 def _is_dangerous_device_arg(arg: str) -> bool:
@@ -68,6 +75,35 @@ def _is_dangerous_device_arg(arg: str) -> bool:
     return device_name.startswith(_DEVICE_PREFIXES)
 
 
+def _unwrap_env(argv: list[str]) -> list[str]:
+    """Return the wrapped command argv from an `env ...` invocation.
+
+    Skips env's own flags (e.g. `-i`, `-u`) and leading `KEY=VALUE`
+    assignments to find where the wrapped command begins. Returns `[]` if
+    no wrapped command is found (e.g. `env` alone, or `env -i`)."""
+    for i, arg in enumerate(argv[1:], start=1):
+        if arg.startswith("-"):
+            continue
+        if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", arg):
+            continue
+        return argv[i:]
+    return []
+
+
+def _unwrap_find_exec(argv: list[str]) -> list[str]:
+    """Return the wrapped command argv from a `find ... -exec ... ;` (or `+`)
+    invocation. Returns `[]` if no exec-style flag is present."""
+    for i, arg in enumerate(argv):
+        if arg in _FIND_EXEC_FLAGS:
+            wrapped: list[str] = []
+            for tok in argv[i + 1:]:
+                if tok in (";", "+"):
+                    break
+                wrapped.append(tok)
+            return wrapped
+    return []
+
+
 def _blocklist_match(argv: list[str]) -> str | None:
     """Return a human-readable BLOCK reason if argv matches a D-03 blocklist
     rule, else None. Checked in order; first match wins."""
@@ -77,23 +113,39 @@ def _blocklist_match(argv: list[str]) -> str | None:
     if binary in _HARD_BLOCKED_BINARIES:
         return f"'{binary}' is blocked outright (no safe invocation)"
 
-    # (2) rm targeting a dangerous path.
+    # (2) env wraps a command — recursively gate the wrapped command.
+    if binary == "env":
+        wrapped = _unwrap_env(argv)
+        if wrapped:
+            reason = _blocklist_match(wrapped)
+            if reason is not None:
+                return f"'env' wraps a blocked command: {reason}"
+
+    # (3) find -exec/-execdir/-ok/-okdir wraps a command — recursively gate it.
+    if binary == "find":
+        wrapped = _unwrap_find_exec(argv)
+        if wrapped:
+            reason = _blocklist_match(wrapped)
+            if reason is not None:
+                return f"'find' -exec wraps a blocked command: {reason}"
+
+    # (4) rm targeting a dangerous path.
     if binary == "rm":
         for arg in argv[1:]:
             if arg in _RM_DANGEROUS_TARGETS:
                 return f"'rm' targeting '{arg}' is a dangerous deletion target"
 
-    # (3) dd / mkfs* targeting a raw block device.
+    # (5) dd / mkfs* targeting a raw block device.
     if binary == "dd" or fnmatch.fnmatch(binary, "mkfs*"):
         for arg in argv[1:]:
             if _is_dangerous_device_arg(arg):
                 return f"'{binary}' targeting raw block device '{arg}' is destructive"
 
-    # (4) Fork-bomb pattern.
-    if argv == _FORK_BOMB_TOKENS:
+    # (6) Fork-bomb pattern.
+    if _FORK_BOMB_RE.search(" ".join(argv)):
         return "fork-bomb pattern detected"
 
-    # (5) chmod/chown -R on /.
+    # (7) chmod/chown -R on /.
     if binary in ("chmod", "chown") and "-R" in argv and "/" in argv:
         return f"'{binary} -R' targeting '/' is destructive"
 
