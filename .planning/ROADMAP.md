@@ -60,7 +60,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. `--dry-run` shows the next planned tool call and stops without executing it or causing any side effect
   4. The loop aborts with a diagnostic when it hits `--max-steps` (default 15) or when the same tool+args is called 2-3 times in a row
 
-**Plans:** 2/2 plans complete
+**Plans:** 3/3 plans complete
 
 **Wave 1**
 
@@ -105,6 +105,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Core Loop + Shell Tool + CLI | 2/2 | Complete   | 2026-06-11 |
-| 2. Safety Gate + Loop Control | 2/2 | Complete   | 2026-06-12 |
+| 2. Safety Gate + Loop Control | 3/3 | Complete   | 2026-06-12 |
 | 3. File Tools | 0/TBD | Not started | - |
 | 4. Memory Tool | 0/TBD | Not started | - |
