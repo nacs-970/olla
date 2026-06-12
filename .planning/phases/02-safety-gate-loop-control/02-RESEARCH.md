@@ -501,22 +501,25 @@ def test_confirm_eof_treated_as_decline(mocker):
 | A2 | The `echo hi; rm -rf /` style argv (literal `;` token from `shlex.split`) is acceptable to leave unhandled because `argv[0]` (`echo`) is allowlisted and the dangerous tokens never reach a shell interpreter | Architecture Patterns / Pattern 2 | Low — SHELL-01 already guarantees `subprocess.run(argv, shell=False)` never interprets `;`/`$()`/backticks as shell syntax; `rm` literally never executes in this scenario. Worth a code comment but not a blocking gap. |
 | A3 | `safety.check()` should accept `yes: bool` even though it doesn't affect the BLOCK/ALLOW/CONFIRM decision itself (per D-04, `--yes` only affects whether `loop.py` shows the prompt for a CONFIRM decision) | Architecture Patterns / Pattern 1 | Low — if `check()` is written WITHOUT the `yes` param (simpler signature), `loop.py` still works fine; the param was included for symmetry/dry-run clarity but isn't load-bearing. Planner can drop it from the signature if it adds confusion. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **What happens when the user DECLINES a confirm prompt?**
    - What we know: SC1 says the user "can decline." D-04 establishes the pattern for BLOCK (denial-as-observation, loop continues). D-09/D-10 establish dry-run's stop behavior.
    - What's unclear: CONTEXT.md does not explicitly state whether a CONFIRM-tier decline (a) feeds an "Observation: declined by user" back to the model and continues the loop (consistent with D-04's denial-as-observation pattern for BLOCK), or (b) aborts the whole run immediately.
    - Recommendation: Use the same denial-as-observation pattern as BLOCK (option a) — `messages.append({"role": "user", "content": "Observation: declined by user"})` and `continue`. This is consistent with D-04's stated rationale ("denial reported back so the model can adjust") and lets a single declined step not nuke an otherwise-useful multi-step task. Flag this as the default the planner should encode unless the user specifies otherwise during planning.
+   - **RESOLVED:** Adopted in 02-01 Task 2 — the CONFIRM-declined and EOFError-as-decline `<behavior>` bullets both specify the appended observation message content is exactly `"Observation: declined by user"`, and the loop continues to the next step (option a).
 
 2. **`pyproject.toml` rich version constraint: `>=13,<14` (per CLAUDE.md's Recommended Stack) vs. `>=13` (matches installed 15.0.0)?**
    - What we know: `Confirm.ask`'s signature and behavior are verified identical across the installed 15.0.0 and documented for 13.x/14.x — no breaking change affects this phase's usage.
    - What's unclear: Whether `<14` was an intentional pin (e.g., for some other rich feature used elsewhere, or anticipating a future breaking change) or simply the version current at the time CLAUDE.md's stack research was written.
    - Recommendation: Use `rich>=13` (no upper bound) so `pip install -e .` resolves to the already-installed 15.0.0 without forcing a downgrade. One-line `pyproject.toml` decision — surface to the user/planner for a quick confirm, not a blocker.
+   - **RESOLVED:** Adopted in 02-01 Task 3 — the action adds `"rich>=13",` (no upper bound) to `pyproject.toml`'s `dependencies` list, per the Package Legitimacy Audit.
 
 3. **Order of repetition-guard check vs. safety-gate check within the loop body.**
    - What we know: Both checks happen "before `run_shell` executes" per CONTEXT.md's Integration Points. D-06/D-08 define the repetition signature as `(tool_name, resolved argv)` — the same value the gate also needs.
    - What's unclear: If a model repeats a BLOCKed command 3 times in a row (e.g., keeps trying `sudo rm -rf /`), should the user see "blocked by safety policy" (BLOCK observation, loop continues) three times and then the repetition-abort on the 3rd, or should the repetition-abort fire first (since the *attempt* itself is the "stuck" signal, regardless of whether it's blocked)?
    - Recommendation: Check repetition guard AFTER the safety gate's BLOCK case is handled as an observation+continue — i.e., compute `argv`, run `safety.check()`, handle BLOCK (observation+continue, do NOT update repetition state for blocked attempts since they never "ran"), THEN for ALLOW/CONFIRM outcomes update the repetition signature. This keeps "model is stuck repeating a blocked command" distinguishable (it'll just keep getting BLOCK observations, which is arguably fine — the model gets feedback each time) from "model is stuck repeating an allowed/confirmed command that produces no useful new info" (the actual LOOP-04 scenario PITFALLS Pitfall 9 describes). Either ordering is defensible; this is a minor sequencing detail for the planner to lock down in the task breakdown.
+   - **RESOLVED:** Adopted in 02-02 Task 2 — the "Ordering note" specifies the repetition check sits AFTER the BLOCK/CONFIRM-decline `continue` points (those paths don't reach this code, so they correctly don't affect `prev_sig`/`repeat_count`), but BEFORE the existing "Step N: running..." print and `run_shell` call.
 
 ## Environment Availability
 
