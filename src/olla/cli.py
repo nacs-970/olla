@@ -27,7 +27,4 @@ def main(task, model, dry_run, max_steps, yes, smoke_test):
     if not model:
         raise click.UsageError("--model is required (no hardcoded default model, CLI-01)")
 
-    if dry_run:
-        click.echo("Note: --dry-run is not yet enforced (Phase 2); the agent may execute real commands.")
-
     run_loop(task=task, model=model, max_steps=max_steps, system_prompt=SYSTEM_PROMPT, yes=yes, dry_run=dry_run)

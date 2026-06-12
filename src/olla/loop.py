@@ -67,6 +67,9 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
         print(f"Step 1 would run: {argv} — {verdict}")
         return
 
+    prev_sig: tuple | None = None
+    repeat_count = 0
+
     for step in range(1, max_steps + 1):
         content = call_model(model, messages)
         parsed = parse_response(content)
@@ -100,7 +103,6 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                 continue
 
             if decision["kind"] == "CONFIRM" and not yes:
-                print(f"Step {step}: running {argv}...")
                 try:
                     approved = Confirm.ask(f"Run `{' '.join(argv)}`?", default=False)
                 except EOFError:
@@ -108,8 +110,19 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                 if not approved:
                     messages.append({"role": "user", "content": "Observation: declined by user"})
                     continue
+
+            sig = ("shell", tuple(argv))
+            if sig == prev_sig:
+                repeat_count += 1
             else:
-                print(f"Step {step}: running {argv}...")
+                prev_sig = sig
+                repeat_count = 1
+
+            if repeat_count >= 3:
+                print("olla stopped: same shell call repeated 3x — model likely stuck")
+                return
+
+            print(f"Step {step}: running {argv}...")
 
             result = run_shell(parsed["args_raw"])
             if "error" in result:
