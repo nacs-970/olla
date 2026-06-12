@@ -51,14 +51,14 @@ def test_max_steps_option_threaded_through(mocker):
     )
 
 
-def test_dry_run_flag_prints_inert_notice(mocker):
+def test_dry_run_flag_threaded_through(mocker):
     mock_run_loop = mocker.patch("olla.cli.run_loop")
     runner = CliRunner()
 
     result = runner.invoke(main, ["do something", "--model", "some-model", "--dry-run"])
 
     assert result.exit_code == 0
-    assert "--dry-run is not yet enforced" in result.output
+    assert "--dry-run is not yet enforced" not in result.output
     mock_run_loop.assert_called_once_with(
         task="do something", model="some-model", max_steps=15, system_prompt=SYSTEM_PROMPT, yes=False, dry_run=True
     )
