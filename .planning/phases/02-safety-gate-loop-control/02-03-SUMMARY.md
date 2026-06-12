@@ -113,3 +113,13 @@ None - no external service configuration required.
 ---
 *Phase: 02-safety-gate-loop-control*
 *Completed: 2026-06-13*
+
+## Self-Check: PASSED
+
+- FOUND: .planning/phases/02-safety-gate-loop-control/02-03-SUMMARY.md
+- FOUND: src/olla/safety.py
+- FOUND: src/olla/loop.py
+- FOUND commit: c515662 (test(02-03): add failing tests for CR-01 env/find ALLOWLIST bypass and fork-bomb regex)
+- FOUND commit: 81cdcb4 (feat(02-03): close CR-01 ALLOWLIST bypass and WR-02 fork-bomb gap in safety.py)
+- FOUND commit: eacbac5 (test(02-03): add failing test for repetition guard covering BLOCK repeats (WR-01))
+- FOUND commit: 6ef00d3 (feat(02-03): move repetition guard before BLOCK/CONFIRM dispatch (WR-01))
