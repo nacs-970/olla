@@ -1,6 +1,6 @@
 ---
 phase: 02-safety-gate-loop-control
-reviewed: 2026-06-12T00:00:00Z
+reviewed: 2026-06-13T00:00:00Z
 depth: standard
 files_reviewed: 6
 files_reviewed_list:
@@ -20,156 +20,169 @@ status: issues_found
 
 # Phase 02: Code Review Report
 
-**Reviewed:** 2026-06-12T00:00:00Z
+**Reviewed:** 2026-06-13T00:00:00Z
 **Depth:** standard
 **Files Reviewed:** 6
 **Status:** issues_found
 
 ## Summary
 
-Reviewed the safety-gate (`safety.py`) and loop-control (`loop.py`, `cli.py`) implementation plus their test suites. The dry-run preview, repetition guard, and CONFIRM/ALLOW/BLOCK plumbing through `run_loop` are implemented coherently and well covered by tests for the scenarios they target.
+This is a re-review after 02-03 (gap closure for CR-01, WR-01, WR-02 from the prior 02-REVIEW.md). The full test suite passes (88 tests).
 
-However, the allowlist design has a critical gap: `check()` only inspects `argv[0]` against the blocklist/allowlist, but two allowlisted binaries (`env`, `find`) can execute **arbitrary subcommands** as their own arguments. This means a model can trivially bypass the entire blocklist and CONFIRM gate — including the "hard-blocked" binaries and `rm` dangerous-target rules — by prefixing the real command with `env` or wrapping it in `find ... -exec`. Given the project's explicit non-negotiable safety requirement ("blocklist, confirm-gating, and dry-run are non-negotiable from v1") and the D-01 comment's claim that the allowlist is "read-only, side-effect-free," this directly contradicts the documented invariant and is a real, exploitable bypass.
+The repetition-guard reordering (WR-01) is sound: `sig`/`repeat_count` are now computed immediately after `argv` is parsed, before `decision = check(argv, yes=yes)`, so a 3x-repeated BLOCK or declined-CONFIRM call now aborts before `max_steps`. `_blocklist_match`'s `if not argv` short-circuit in `check()` prevents the empty-argv crash that the new code path could otherwise hit.
 
-Two additional warnings: the repetition guard does not cover BLOCK or declined-CONFIRM outcomes (a model that repeatedly emits the same blocked/declined command runs unguarded until max-steps), and the fork-bomb blocklist rule uses brittle exact-list matching that misses a syntactically valid alternate spelling of the same pattern.
+However, **CR-01 (the env/find ALLOWLIST bypass) is only partially closed.** The recursive `_unwrap_env`/`_unwrap_find_exec` helpers correctly handle the simple cases tested (`env rm -rf /`, `env sudo ls`, `find / -exec sudo rm {} ;`), but both have enumeration gaps that let a "hard-blocked, no safe invocation" binary (e.g. `sudo`) reach **CONFIRM** instead of **BLOCK** — for example `env -u FOO sudo rm -rf /` and `find . -exec true ; -exec sudo rm -rf / ;`. Per `loop.py:116` (`if decision["kind"] == "CONFIRM" and not yes:`), a CONFIRM decision under `--yes` skips the prompt entirely and runs unconfirmed — which directly contradicts the tested invariant in `test_yes_does_not_change_block_kind` / `test_run_loop_block_tier_with_yes_still_blocks` that hard-blocked binaries stay blocked regardless of `--yes`. This is the same root cause as the original CR-01 (incomplete modeling of how a wrapper binary introduces a subcommand), now manifesting one tier lower.
+
+Additionally, the WR-02 fork-bomb fix (switching from exact-list matching to a regex over `" ".join(argv)`) trades a false negative for a new false positive: a harmless `echo` of the fork-bomb string as data (e.g. documentation, a warning message) now gets BLOCKed, where it previously resolved to ALLOW (since `echo` is allowlisted and the old exact-3-token-list check never matched a 2-element argv).
+
+A pre-existing issue (in scope for this review, not part of 02-03's diff) is also noted: rule (7) for `chmod`/`chown -R /` only matches the exact token `-R`, so combined short flags like `-Rf` bypass it down to CONFIRM.
 
 ## Critical Issues
 
-### CR-01: Allowlisted `env` and `find` allow arbitrary command execution with zero confirmation
+### CR-01 (re-opened, narrower): `env`/`find -exec` unwrap helpers miss flag-with-argument and multi-clause forms, letting hard-blocked binaries reach CONFIRM and execute unconfirmed under `--yes`
 
-**File:** `src/olla/safety.py:14-28` and `src/olla/safety.py:103-119`
+**File:** `src/olla/safety.py:78-104`
 **Issue:**
 
-`check()` classifies a command as `ALLOW` (auto-run, no confirmation, no blocklist re-check of the *effective* command) purely based on `argv[0]` membership in `ALLOWLIST`. `ALLOWLIST` includes `env` and `find`, both of which can execute arbitrary subcommands as part of their normal argument syntax:
-
-- `env CMD [ARGS...]` runs `CMD` with a modified environment when any non-`KEY=VALUE` argument is given. `env rm -rf /` executes `rm -rf /` directly.
-- `find ... -exec CMD {} ;` (or `+`) executes `CMD` for every matched path. `find . -exec rm -rf {} \;` deletes recursively with zero confirmation.
-
-Verified directly against the shipped `check()`:
+`_unwrap_env` assumes any non-flag, non-`KEY=VALUE` token is the start of the wrapped command. This breaks for `env` flags that take a **separate argument**, such as `-C DIR` (`--chdir`), `-u NAME` (`--unset`), `-a ARG` (`--argv0`), and `-S STRING` (`--split-string`). The argument to these flags is itself a non-`-`-prefixed, non-`KEY=VALUE` token, so `_unwrap_env` mistakes it for the wrapped command's binary:
 
 ```python
->>> check(['env', 'rm', '-rf', '/'], yes=False)
-{'kind': 'ALLOW'}
->>> check(['env', 'sudo', 'ls'], yes=False)
-{'kind': 'ALLOW'}
->>> check(['find', '.', '-exec', 'rm', '-rf', '{}', ';'], yes=False)
-{'kind': 'ALLOW'}
+>>> _unwrap_env(["env", "-u", "FOO", "sudo", "rm", "-rf", "/"])
+['FOO', 'sudo', 'rm', '-rf', '/']   # "FOO" is treated as argv[0] of the wrapped command
+>>> _blocklist_match(['FOO', 'sudo', 'rm', '-rf', '/'])
+None   # "FOO" matches nothing -> falls through
+>>> check(["env", "-u", "FOO", "sudo", "rm", "-rf", "/"], yes=False)
+{'kind': 'CONFIRM'}   # should be BLOCK ("sudo" is hard-blocked)
 ```
 
-This means:
-1. The "hard-blocked" binaries (`sudo`, `su`, `shutdown`, `reboot`, `poweroff`, `halt`) can all be invoked via `env <binary> ...` and run with **zero gate**.
-2. The `rm` dangerous-target blocklist (`/`, `~`, `/*`, `$HOME`, `.`) is bypassed entirely via `env rm -rf /` or `find . -exec rm -rf / ;`.
-3. `dd`/`mkfs*` raw-device blocks are bypassable the same way (`env dd if=/dev/zero of=/dev/sda`).
+Similarly, `_unwrap_find_exec` only inspects the **first** `-exec`/`-execdir`/`-ok`/`-okdir` clause it encounters and stops (`for i, arg in enumerate(argv): ... return wrapped`). A `find` invocation with multiple `-exec` clauses has every clause after the first executed unchecked:
 
-This contradicts the D-01 comment's claim that `ALLOWLIST` contains only "read-only, side-effect-free commands" and undermines the entire safety design — a 0.6B-7B model emitting `env rm -rf /` (which is a plausible hallucination pattern, e.g. "set env var then run command") would execute it with no confirmation and no observable warning.
+```python
+>>> check(["find", ".", "-exec", "true", ";", "-exec", "sudo", "rm", "-rf", "/", ";"], yes=False)
+{'kind': 'CONFIRM'}   # second clause "sudo rm -rf /" never inspected; should be BLOCK
+```
+
+Both cases land at `CONFIRM`, not `ALLOW` — so interactively, a human still sees a prompt. But `loop.py:116` skips the CONFIRM prompt entirely when `yes=True`:
+
+```python
+if decision["kind"] == "CONFIRM" and not yes:
+    ...prompt...
+```
+
+This means running olla with `--yes` and a model that emits `env -u FOO sudo rm -rf /` (or the multi-`-exec` find form) executes `sudo rm -rf /` with **zero gating** — directly violating the invariant encoded by `test_yes_does_not_change_block_kind` and `test_run_loop_block_tier_with_yes_still_blocks` (hard-blocked binaries must stay BLOCK regardless of `--yes`). This is the same class of bug as the original CR-01 (allowlist/blocklist classification based on an incomplete model of how a wrapper introduces a subcommand) — 02-03 closed the cases it tested but did not close the general case.
 
 **Fix:**
 
-Remove `env` and `find` from the whole-binary allowlist (both are not actually side-effect-free in the general case), or special-case them:
+For `_unwrap_env`, track which env flags consume a following argument and skip that argument too:
 
 ```python
-ALLOWLIST: set[str] = {
-    "ls",
-    "pwd",
-    "cat",
-    "echo",
-    "grep",
-    "head",
-    "tail",
-    "wc",
-    "file",
-    "date",
-    "whoami",
-    # "env" and "find" removed: both can execute arbitrary subcommands
-    # (env CMD..., find ... -exec CMD ...) and must go through CONFIRM.
-}
+_ENV_FLAGS_WITH_ARG: set[str] = {"-u", "--unset", "-C", "--chdir", "-a", "--argv0", "-S", "--split-string"}
+
+def _unwrap_env(argv: list[str]) -> list[str]:
+    i = 1
+    while i < len(argv):
+        arg = argv[i]
+        if arg in _ENV_FLAGS_WITH_ARG:
+            i += 2  # skip flag and its argument
+            continue
+        if arg.startswith("-"):
+            i += 1
+            continue
+        if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", arg):
+            i += 1
+            continue
+        return argv[i:]
+    return []
 ```
 
-If `env`/`find` are needed for read-only use (e.g. `env` to inspect variables, `find` to search paths), add a targeted check that demotes them to `CONFIRM` (or `BLOCK`) when dangerous flags/arguments are present:
+(Note: `--chdir=DIR`/`--unset=NAME`/etc. with `=` are already handled correctly since they start with `-`.)
+
+For `_unwrap_find_exec`, check **all** `-exec`-family clauses, not just the first, and BLOCK if any clause is dangerous:
 
 ```python
-def _blocklist_match(argv: list[str]) -> str | None:
-    ...
-    # env with any non-KEY=VALUE argument executes an arbitrary command.
-    if binary == "env":
-        for arg in argv[1:]:
-            if "=" not in arg.split("/")[-1]:
-                return "'env' with a command argument can execute arbitrary commands"
+def _unwrap_find_exec(argv: list[str]) -> list[list[str]]:
+    """Return all wrapped-command argvs from `find ... -exec ... ;|+` clauses."""
+    clauses: list[list[str]] = []
+    i = 0
+    while i < len(argv):
+        if argv[i] in _FIND_EXEC_FLAGS:
+            wrapped: list[str] = []
+            for tok in argv[i + 1:]:
+                if tok in (";", "+"):
+                    break
+                wrapped.append(tok)
+            if wrapped:
+                clauses.append(wrapped)
+            i += 1 + len(wrapped) + 1
+            continue
+        i += 1
+    return clauses
 
-    # find with -exec/-execdir/-ok/-okdir executes arbitrary commands.
-    if binary == "find" and any(a in ("-exec", "-execdir", "-ok", "-okdir") for a in argv[1:]):
-        return "'find' with -exec/-execdir/-ok/-okdir can execute arbitrary commands"
+# in _blocklist_match:
+if binary == "find":
+    for wrapped in _unwrap_find_exec(argv):
+        reason = _blocklist_match(wrapped)
+        if reason is not None:
+            return f"'find' -exec wraps a blocked command: {reason}"
 ```
 
-At minimum, `env` and `find` should not be in the auto-run `ALLOWLIST` — fall through to `CONFIRM` so a human reviews the actual argv before it runs.
+Given the `--yes` interaction, treat this as the same severity as the original CR-01: a model-emitted `env`/`find` wrapper around `sudo`/`rm -rf /`/etc. must resolve to `BLOCK`, not `CONFIRM`, for the documented "stays blocked regardless of `--yes`" guarantee to hold.
 
 ## Warnings
 
-### WR-01: Repetition guard does not cover BLOCK or declined-CONFIRM outcomes
+### WR-02 (regression): Fork-bomb regex now false-positives on the pattern as literal data
 
-**File:** `src/olla/loop.py:97-123`
+**File:** `src/olla/safety.py:60, 145-146`
 **Issue:**
 
-The repetition guard (`prev_sig`/`repeat_count`, intended to detect "model likely stuck") is only updated when execution reaches line 114 — i.e., after a `BLOCK` or a declined `CONFIRM` has already taken the `continue` branch at lines 103 and 111-112. A model that repeatedly emits the exact same `BLOCK`ed command (e.g. `rm -rf /`, 15 times in a row) or the exact same `CONFIRM`-tier command that a user keeps declining will never trip the "same shell call repeated 3x — model likely stuck" guard, and will run all the way to `max_steps` instead of stopping early at 3 repeats.
+`_FORK_BOMB_RE.search(" ".join(argv))` matches the fork-bomb signature anywhere in the joined argv string, including inside a quoted string argument that is pure data (not shell syntax). Before WR-02, the check was `argv == _FORK_BOMB_TOKENS` (exact 3-element equality), so a 2-element argv like `["echo", ":(){ :|:& };:"]` never matched and `echo` (allowlisted) resolved to `ALLOW`.
 
-This is the same "model likely stuck" scenario the guard is meant to catch, just for a different decision tier — the current implementation only catches it for commands that actually executed.
-
-**Fix:** Compute the signature and update `prev_sig`/`repeat_count` before branching on the decision (or in all three branches), and check `repeat_count >= 3` regardless of which branch is taken:
+After WR-02, the same command is BLOCKed:
 
 ```python
-sig = ("shell", tuple(argv))
-if sig == prev_sig:
-    repeat_count += 1
-else:
-    prev_sig = sig
-    repeat_count = 1
-
-if repeat_count >= 3:
-    print("olla stopped: same shell call repeated 3x — model likely stuck")
-    return
-
-if decision["kind"] == "BLOCK":
-    ...
-    continue
-
-if decision["kind"] == "CONFIRM" and not yes:
-    ...
-    if not approved:
-        ...
-        continue
-
-print(f"Step {step}: running {argv}...")
-...
+>>> check(["echo", "Avoid running :(){ :|:& };: it's a fork bomb"], yes=False)
+{'kind': 'BLOCK', 'reason': 'fork-bomb pattern detected'}
 ```
 
-### WR-02: Fork-bomb blocklist rule uses brittle exact-list matching, misses common alternate spelling
+This is a genuinely harmless command (printing a warning/documentation string) that now cannot run at all — a usability regression introduced by the fix for the unspaced-fork-bomb gap (WR-02). The fix correctly closed a false negative but opened a false positive on the same surface.
 
-**File:** `src/olla/safety.py:55-56, 92-94`
-**Issue:**
-
-`_FORK_BOMB_TOKENS = [":(){", ":|:&", "};:"]` and `_blocklist_match` checks `argv == _FORK_BOMB_TOKENS` (exact 3-element list equality). This only matches the spaced form `:(){ :|:& };:`. The equally valid, unspaced form `:(){:|:&};:` produces `shlex.split` → `[':(){:|:&};:']`, a single-element list that does **not** equal `_FORK_BOMB_TOKENS`, so it falls through to `CONFIRM` (since `:(){:|:&};:` is not in `ALLOWLIST`) instead of `BLOCK`.
-
-Verified:
-```python
->>> shlex.split(':(){ :|:& };:')
-[':(){', ':|:&', '};:']   # matches _FORK_BOMB_TOKENS -> BLOCK
->>> shlex.split(':(){:|:&};:')
-[':(){:|:&};:']           # does not match -> CONFIRM
-```
-
-While `CONFIRM` still requires a human (or `--yes`) to proceed, the D-03 comment frames this rule as a hard block for a pattern with "no safe invocation," and the exact-list approach gives a false sense of coverage — any whitespace variation defeats it.
-
-**Fix:** Match on a normalized/substring basis instead of exact list equality, e.g. check whether the joined argv contains the fork-bomb signature regardless of tokenization:
+**Fix:** Restrict the fork-bomb check to `argv[0]` (or the unwrapped command's `argv[0]`/full argv when the entire command *is* the fork-bomb pattern, e.g. via `bash -c`), rather than matching arbitrary substrings of arbitrary arguments:
 
 ```python
-import re
-
-_FORK_BOMB_RE = re.compile(r":\s*\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:")
-
-# in _blocklist_match:
-if _FORK_BOMB_RE.search(" ".join(argv)):
+# Only flag when the fork-bomb pattern is itself the command being run
+# (argv[0] or the sole argument to a shell -c invocation), not when it
+# appears as a string literal inside another command's arguments.
+if _FORK_BOMB_RE.search(argv[0]):
     return "fork-bomb pattern detected"
+if binary in ("bash", "sh", "zsh") and "-c" in argv:
+    c_index = argv.index("-c")
+    if len(argv) > c_index + 1 and _FORK_BOMB_RE.search(argv[c_index + 1]):
+        return "fork-bomb pattern detected"
 ```
+
+### WR-03 (pre-existing): `chmod`/`chown -R /` rule misses combined short flags
+
+**File:** `src/olla/safety.py:148-150`
+**Issue:**
+
+Rule (7) checks `"-R" in argv and "/" in argv` — an exact-token match. Combined short flags bypass it:
+
+```python
+>>> check(["chmod", "-Rf", "777", "/"], yes=False)
+{'kind': 'CONFIRM'}   # "-Rf" != "-R", so the rule never fires
+```
+
+`chmod -Rf 777 /` is just as destructive as `chmod -R 777 /` (recursive chmod on root), but resolves to `CONFIRM` instead of `BLOCK`. This is in scope for this review (not part of the 02-03 diff, but a real gap in the D-03 blocklist that adversarial review should surface) — it follows the same "combined-flags evade exact-token matching" pattern as the original `_FORK_BOMB_TOKENS` issue.
+
+**Fix:** Match any `-` flag token that contains `R` (and starts with `-`, not `--`) alongside `chmod`/`chown`:
+
+```python
+if binary in ("chmod", "chown") and "/" in argv:
+    if any(a.startswith("-") and not a.startswith("--") and "R" in a for a in argv[1:]):
+        return f"'{binary} -R' targeting '/' is destructive"
+```
+
+(GNU long-form `--recursive` should also be checked if relevant to this project's supported coreutils.)
 
 ## Info
 
@@ -178,9 +191,9 @@ if _FORK_BOMB_RE.search(" ".join(argv)):
 **File:** `src/olla/loop.py:90, 127`
 **Issue:**
 
-`run_loop` calls `shlex.split(parsed["args_raw"])` at line 90 to obtain `argv` for the safety check, then at line 127 passes the original raw string `parsed["args_raw"]` to `run_shell`, which calls `shlex.split` again internally (`src/olla/tools/shell.py:16`). This is redundant — `shlex.split` is deterministic so the two calls always agree, but it's wasted work and a minor coupling smell (two call sites must stay in sync on parsing semantics).
+`run_loop` calls `shlex.split(parsed["args_raw"])` at line 90 to obtain `argv` for the safety check (and now also for the repetition-guard signature), then at line 127 passes the original raw string `parsed["args_raw"]` to `run_shell`, which calls `shlex.split` again internally (`src/olla/tools/shell.py:16`). Still present after 02-03 — carried forward from the prior review, unaddressed.
 
-**Fix:** Have `run_shell` accept the already-parsed `argv` directly (or add an `argv`-accepting variant), avoiding double parsing:
+**Fix:** Have `run_shell` accept the already-parsed `argv` directly:
 
 ```python
 # tools/shell.py
@@ -199,6 +212,6 @@ result = run_shell(argv)
 
 ---
 
-_Reviewed: 2026-06-12T00:00:00Z_
+_Reviewed: 2026-06-13T00:00:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
