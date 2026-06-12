@@ -49,6 +49,23 @@ def test_env_with_var_assignment_and_harmless_command_confirms():
     assert check(["env", "FOO=bar", "ls", "-la"], yes=False)["kind"] == "CONFIRM"
 
 
+def test_env_unset_flag_with_arg_wrapping_sudo_blocks():
+    decision = check(["env", "-u", "FOO", "sudo", "rm", "-rf", "/"], yes=False)
+    assert decision["kind"] == "BLOCK"
+    assert "env" in decision["reason"]
+    assert "sudo" in decision["reason"]
+
+
+def test_env_chdir_flag_with_arg_wrapping_sudo_blocks():
+    assert check(["env", "-C", "/tmp", "sudo", "ls"], yes=False)["kind"] == "BLOCK"
+
+
+def test_env_split_string_flag_wrapping_sudo_confirms():
+    # -S consumes its argument as a single string for env to re-split itself;
+    # _unwrap_env does not parse into that string, so this remains CONFIRM.
+    assert check(["env", "-S", "sudo rm -rf /"], yes=False)["kind"] == "CONFIRM"
+
+
 def test_find_exec_rm_on_placeholder_confirms_not_allow():
     assert check(["find", ".", "-exec", "rm", "-rf", "{}", ";"], yes=False)["kind"] != "ALLOW"
 
@@ -57,8 +74,27 @@ def test_find_exec_sudo_blocks():
     assert check(["find", "/", "-exec", "sudo", "rm", "{}", ";"], yes=False)["kind"] == "BLOCK"
 
 
+def test_find_multi_exec_second_clause_sudo_blocks():
+    decision = check(
+        ["find", ".", "-exec", "true", ";", "-exec", "sudo", "rm", "-rf", "/", ";"],
+        yes=False,
+    )
+    assert decision["kind"] == "BLOCK"
+    assert "find" in decision["reason"]
+    assert "sudo" in decision["reason"]
+
+
 def test_fork_bomb_unspaced_variant_blocks():
     assert check([":(){:|:&};:"], yes=False)["kind"] == "BLOCK"
+
+
+def test_fork_bomb_as_echo_data_allows():
+    decision = check(["echo", "Avoid running :(){ :|:& };: it's a fork bomb"], yes=False)
+    assert decision["kind"] == "ALLOW"
+
+
+def test_fork_bomb_via_bash_dash_c_blocks():
+    assert check(["bash", "-c", ":(){ :|:& };:"], yes=False)["kind"] == "BLOCK"
 
 
 def test_hard_blocked_binaries_block():
@@ -103,6 +139,17 @@ def test_chown_recursive_on_root_blocks():
 
 def test_chmod_recursive_not_on_root_confirms():
     assert check(["chmod", "-R", "755", "/tmp/x"], yes=False)["kind"] == "CONFIRM"
+
+
+def test_chmod_combined_recursive_force_on_root_blocks():
+    decision = check(["chmod", "-Rf", "777", "/"], yes=False)
+    assert decision["kind"] == "BLOCK"
+    assert "chmod -R" in decision["reason"]
+    assert "/" in decision["reason"]
+
+
+def test_chown_combined_recursive_force_on_root_blocks():
+    assert check(["chown", "-Rf", "user", "/"], yes=False)["kind"] == "BLOCK"
 
 
 def test_block_takes_precedence_over_allow():
