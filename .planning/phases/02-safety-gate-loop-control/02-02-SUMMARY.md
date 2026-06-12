@@ -103,3 +103,14 @@ None - plan executed as written. The single print-site restructure was explicitl
 ---
 *Phase: 02-safety-gate-loop-control*
 *Completed: 2026-06-12*
+
+## Self-Check: PASSED
+
+- FOUND: .planning/phases/02-safety-gate-loop-control/02-02-SUMMARY.md
+- FOUND: src/olla/loop.py
+- FOUND: src/olla/cli.py
+- FOUND commit: a2ba029 (Task 1 RED)
+- FOUND commit: 9bca488 (Task 1 GREEN)
+- FOUND commit: 9ad8ce4 (Task 2 RED)
+- FOUND commit: 167b9c1 (Task 2 GREEN)
+- FOUND commit: d77395f (plan metadata)
