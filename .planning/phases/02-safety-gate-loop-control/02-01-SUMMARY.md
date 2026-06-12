@@ -104,3 +104,12 @@ None - plan executed as written, with the dd/mkfs `key=` prefix-stripping refine
 ---
 *Phase: 02-safety-gate-loop-control*
 *Completed: 2026-06-12*
+
+## Self-Check: PASSED
+
+- FOUND: src/olla/safety.py
+- FOUND: tests/test_safety.py
+- FOUND: .planning/phases/02-safety-gate-loop-control/02-01-SUMMARY.md
+- FOUND commit: 17204c9 (Task 1)
+- FOUND commit: c680646 (Task 2)
+- FOUND commit: c2d4b48 (Task 3)
