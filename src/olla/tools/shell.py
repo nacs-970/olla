@@ -1,21 +1,17 @@
-"""Shell tool: shlex.split() + subprocess.run(shell=False)."""
+"""Shell tool: subprocess.run(shell=False) over a pre-parsed argv."""
 
-import shlex
 import subprocess
 
 from olla.tools.base import ToolResult
 
 
-def run_shell(args_raw: str, timeout: int = 30) -> ToolResult:
-    """Run a shell command safely via shlex.split() + subprocess.run(shell=False).
+def run_shell(argv: list[str], timeout: int = 30) -> ToolResult:
+    """Run a shell command safely via subprocess.run(shell=False).
 
+    `argv` must already be parsed (e.g. via shlex.split() by the caller).
     Returns a ToolResult dict. On success: argv, returncode, stdout, stderr.
     On FileNotFoundError or timeout: argv plus an `error` message.
     """
-    try:
-        argv = shlex.split(args_raw)
-    except ValueError as e:
-        return {"error": f"could not parse command: {e}"}
     if not argv:
         return {"argv": argv, "error": "empty command"}
     try:

@@ -124,7 +124,7 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
 
             print(f"Step {step}: running {argv}...")
 
-            result = run_shell(parsed["args_raw"])
+            result = run_shell(argv)
             if "error" in result:
                 combined = result["error"]
             else:

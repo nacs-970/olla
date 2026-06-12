@@ -311,6 +311,41 @@ def test_run_loop_block_tier_with_yes_still_blocks(mocker, capsys):
     mock_run_shell.assert_not_called()
 
 
+def test_run_loop_env_unset_sudo_with_yes_still_blocks(mocker, capsys):
+    # CR-01 regression: `env -u FOO sudo rm -rf /` must BLOCK even with --yes.
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>shell</tool><args>env -u FOO sudo rm -rf /</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ]
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+
+    run_loop(task="delete everything", model="test-model", max_steps=15, system_prompt="sys", yes=True)
+
+    captured = capsys.readouterr()
+    assert "blocked by safety policy:" in captured.out
+    assert "sudo" in captured.out
+    mock_run_shell.assert_not_called()
+
+
+def test_run_loop_find_multi_exec_sudo_with_yes_still_blocks(mocker, capsys):
+    # CR-01 regression: a find call chaining multiple -exec clauses, where a
+    # later clause wraps `sudo rm -rf /`, must BLOCK even with --yes.
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>shell</tool><args>find . -exec true ; -exec sudo rm -rf / ;</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ]
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+
+    run_loop(task="clean up files", model="test-model", max_steps=15, system_prompt="sys", yes=True)
+
+    captured = capsys.readouterr()
+    assert "blocked by safety policy:" in captured.out
+    assert "sudo" in captured.out
+    mock_run_shell.assert_not_called()
+
+
 def test_dry_run_final_response_prints_preview_and_stops(mocker, capsys):
     mock_chat = mocker.patch("olla.loop.ollama.chat")
     mock_chat.return_value = {"message": {"content": "<final>42</final>"}}

@@ -54,13 +54,24 @@ _RM_DANGEROUS_TARGETS: set[str] = {
 _DEVICE_GLOB = "/dev/*"
 _DEVICE_PREFIXES = ("sd", "nvme", "hd")
 
-# D-03: fork-bomb pattern, matched via regex over the joined argv so both the
-# spaced 3-token form (`:(){`, `:|:&`, `};:`) and the unspaced single-token
-# form (`:(){:|:&};:`) are caught (WR-02).
+# D-03: fork-bomb pattern, matched via regex so both the spaced 3-token form
+# (`:(){`, `:|:&`, `};:`) and the unspaced single-token form (`:(){:|:&};:`)
+# are caught. Matched with .match() (anchored at position 0 of the joined
+# argv) rather than .search(), so that argv[0] itself being fork-bomb syntax
+# is BLOCKed, but the same text appearing later as a *data* argument to an
+# unrelated command (e.g. `echo "...:(){ :|:& };:..."`) is not (WR-02 false
+# positive). The separate `bash/sh/zsh -c <command>` case is checked
+# explicitly below with .search() against just that argument, since that
+# argument *is* the command to be executed by the shell.
 _FORK_BOMB_RE = re.compile(r":\s*\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:")
 
 # find flags that introduce a wrapped command terminated by ';' or '+'.
 _FIND_EXEC_FLAGS: set[str] = {"-exec", "-execdir", "-ok", "-okdir"}
+
+# env flags that take a separate following argument (must skip both tokens
+# when unwrapping, else the flag's argument is mistaken for the wrapped
+# command's binary name) (CR-01).
+_ENV_FLAGS_WITH_ARG: set[str] = {"-u", "--unset", "-C", "--chdir", "-a", "--argv0", "-S", "--split-string"}
 
 
 def _is_dangerous_device_arg(arg: str) -> bool:
@@ -79,20 +90,34 @@ def _unwrap_env(argv: list[str]) -> list[str]:
     """Return the wrapped command argv from an `env ...` invocation.
 
     Skips env's own flags (e.g. `-i`, `-u`) and leading `KEY=VALUE`
-    assignments to find where the wrapped command begins. Returns `[]` if
-    no wrapped command is found (e.g. `env` alone, or `env -i`)."""
-    for i, arg in enumerate(argv[1:], start=1):
-        if arg.startswith("-"):
+    assignments to find where the wrapped command begins. Flags in
+    `_ENV_FLAGS_WITH_ARG` (e.g. `-u FOO`, `-C /tmp`) consume their following
+    argument as well, so both tokens are skipped (CR-01). Returns `[]` if
+    no wrapped command is found (e.g. `env` alone, `env -i`, or `env -S
+    "..."` where the wrapped command is embedded in a single string argument
+    rather than as separate argv elements)."""
+    i = 1
+    while i < len(argv):
+        if argv[i] in _ENV_FLAGS_WITH_ARG:
+            i += 2
             continue
-        if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", arg):
+        if argv[i].startswith("-"):
+            i += 1
+            continue
+        if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", argv[i]):
+            i += 1
             continue
         return argv[i:]
     return []
 
 
-def _unwrap_find_exec(argv: list[str]) -> list[str]:
-    """Return the wrapped command argv from a `find ... -exec ... ;` (or `+`)
-    invocation. Returns `[]` if no exec-style flag is present."""
+def _unwrap_find_exec(argv: list[str]) -> list[list[str]]:
+    """Return the wrapped command argvs from every `-exec`/`-execdir`/`-ok`/
+    `-okdir ... ;` (or `+`) clause in a `find` invocation (CR-01: a single
+    `find` call may chain multiple -exec clauses, any of which may wrap a
+    blocked command). Empty clauses are skipped. Returns `[]` if no
+    exec-style flag is present."""
+    clauses: list[list[str]] = []
     for i, arg in enumerate(argv):
         if arg in _FIND_EXEC_FLAGS:
             wrapped: list[str] = []
@@ -100,8 +125,9 @@ def _unwrap_find_exec(argv: list[str]) -> list[str]:
                 if tok in (";", "+"):
                     break
                 wrapped.append(tok)
-            return wrapped
-    return []
+            if wrapped:
+                clauses.append(wrapped)
+    return clauses
 
 
 def _blocklist_match(argv: list[str]) -> str | None:
@@ -121,10 +147,10 @@ def _blocklist_match(argv: list[str]) -> str | None:
             if reason is not None:
                 return f"'env' wraps a blocked command: {reason}"
 
-    # (3) find -exec/-execdir/-ok/-okdir wraps a command — recursively gate it.
+    # (3) find -exec/-execdir/-ok/-okdir wraps a command — recursively gate
+    # every clause (a single find call may chain multiple -exec clauses).
     if binary == "find":
-        wrapped = _unwrap_find_exec(argv)
-        if wrapped:
+        for wrapped in _unwrap_find_exec(argv):
             reason = _blocklist_match(wrapped)
             if reason is not None:
                 return f"'find' -exec wraps a blocked command: {reason}"
@@ -141,13 +167,23 @@ def _blocklist_match(argv: list[str]) -> str | None:
             if _is_dangerous_device_arg(arg):
                 return f"'{binary}' targeting raw block device '{arg}' is destructive"
 
-    # (6) Fork-bomb pattern.
-    if _FORK_BOMB_RE.search(" ".join(argv)):
+    # (6) Fork-bomb pattern: argv[0] (joined with the rest) is itself
+    # fork-bomb syntax, anchored so data arguments to other commands don't
+    # false-positive (WR-02).
+    joined = " ".join(argv)
+    if _FORK_BOMB_RE.match(joined):
         return "fork-bomb pattern detected"
 
-    # (7) chmod/chown -R on /.
-    if binary in ("chmod", "chown") and "-R" in argv and "/" in argv:
-        return f"'{binary} -R' targeting '/' is destructive"
+    # (6b) Fork-bomb pattern passed as the command string to bash/sh/zsh -c.
+    if binary in ("bash", "sh", "zsh") and "-c" in argv:
+        c_index = argv.index("-c")
+        if len(argv) > c_index + 1 and _FORK_BOMB_RE.search(argv[c_index + 1]):
+            return "fork-bomb pattern detected"
+
+    # (7) chmod/chown -R (including combined short flags like -Rf) on /.
+    if binary in ("chmod", "chown") and "/" in argv:
+        if any(a.startswith("-") and not a.startswith("--") and "R" in a for a in argv[1:]):
+            return f"'{binary} -R' targeting '/' is destructive"
 
     return None
 
