@@ -14,7 +14,7 @@ olla ships as a vertical-slice build that de-risks the core bet first and layers
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Core Loop + Shell Tool + CLI** - Working ReAct loop that parses model tags, runs shell commands, and installs as `olla`; format compliance validated against target models (completed 2026-06-11)
-- [x] **Phase 2: Safety Gate + Loop Control** - Blocklist, confirm-before-execute, dry-run, step cap, and repetition guard gate every dangerous action (completed 2026-06-12)
+- [ ] **Phase 2: Safety Gate + Loop Control** - Blocklist, confirm-before-execute, dry-run, step cap, and repetition guard gate every dangerous action (gap closure round 2 in progress — 02-04 pending)
 - [ ] **Phase 3: File Tools** - Model can read and write files through the safety gate
 - [ ] **Phase 4: Memory Tool** - Model can store and recall cross-turn scratchpad notes
 
@@ -60,7 +60,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. `--dry-run` shows the next planned tool call and stops without executing it or causing any side effect
   4. The loop aborts with a diagnostic when it hits `--max-steps` (default 15) or when the same tool+args is called 2-3 times in a row
 
-**Plans:** 3/3 plans complete
+**Plans:** 4 plans (3 original + 2 gap-closure rounds; 02-04 pending)
 
 **Wave 1**
 
@@ -69,6 +69,11 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Wave 2** *(depends on Wave 1 — Decision contract from safety.py)*
 
 - [x] 02-02-PLAN.md — Dry-run preview + repetition guard: --dry-run single-call preview reusing safety.check() for an honest verdict, 3x-repeat repetition guard with diagnostic distinct from max-steps message, SAFE-03 regression test (success criteria 3-4, SAFE-01, LOOP-04, SAFE-03)
+
+**Gap Closure**
+
+- [x] 02-03-PLAN.md — Gap closure round 1: env/find ALLOWLIST bypass (CR-01), repetition-guard ordering (WR-01), fork-bomb unspaced-variant detection (WR-02) (SAFE-02, SAFE-04, LOOP-04)
+- [ ] 02-04-PLAN.md — Gap closure round 2: narrower env/find unwrap gaps under `--yes` (CR-01 re-opened), fork-bomb data-argument false positive (WR-02 regression), chmod/chown -Rf bypass (WR-03), run_shell double-parse cleanup (IN-01) (SAFE-02, SAFE-04)
 
 ### Phase 3: File Tools
 
@@ -105,6 +110,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Core Loop + Shell Tool + CLI | 2/2 | Complete   | 2026-06-11 |
-| 2. Safety Gate + Loop Control | 3/3 | Complete   | 2026-06-12 |
+| 2. Safety Gate + Loop Control | 3/4 | Gap closure (02-04 pending) | - |
 | 3. File Tools | 0/TBD | Not started | - |
 | 4. Memory Tool | 0/TBD | Not started | - |
