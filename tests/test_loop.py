@@ -1,6 +1,7 @@
 """Tests for olla.loop."""
 
 from olla.loop import MAX_OBSERVATION_CHARS, call_model, run_loop, truncate_output
+from olla.safety import check
 
 
 def test_truncate_output_under_limit():
@@ -308,3 +309,109 @@ def test_run_loop_block_tier_with_yes_still_blocks(mocker, capsys):
     captured = capsys.readouterr()
     assert "blocked by safety policy:" in captured.out
     mock_run_shell.assert_not_called()
+
+
+def test_dry_run_final_response_prints_preview_and_stops(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.return_value = {"message": {"content": "<final>42</final>"}}
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop(task="what is the answer", model="test-model", max_steps=15, system_prompt="sys", dry_run=True)
+
+    captured = capsys.readouterr()
+    assert "Model would answer directly: 42" in captured.out
+    assert mock_chat.call_count == 1
+    mock_run_shell.assert_not_called()
+    mock_confirm.assert_not_called()
+
+
+def test_dry_run_none_response_prints_preview_and_stops(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.return_value = {"message": {"content": "I am thinking about it."}}
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop(task="ponder", model="test-model", max_steps=15, system_prompt="sys", dry_run=True)
+
+    captured = capsys.readouterr()
+    assert "Model produced no valid <tool>/<final> tag: I am thinking about it." in captured.out
+    assert mock_chat.call_count == 1
+    mock_run_shell.assert_not_called()
+    mock_confirm.assert_not_called()
+
+
+def test_dry_run_unknown_tool_prints_preview_and_stops(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.return_value = {"message": {"content": "<tool>browse</tool><args>https://example.com</args>"}}
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop(task="browse the web", model="test-model", max_steps=15, system_prompt="sys", dry_run=True)
+
+    captured = capsys.readouterr()
+    assert "Model would call unknown tool 'browse'" in captured.out
+    assert mock_chat.call_count == 1
+    mock_run_shell.assert_not_called()
+    mock_confirm.assert_not_called()
+
+
+def test_dry_run_allow_tier_prints_preview_and_stops(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.return_value = {"message": {"content": "<tool>shell</tool><args>ls -la</args>"}}
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop(task="list files", model="test-model", max_steps=15, system_prompt="sys", dry_run=True)
+
+    captured = capsys.readouterr()
+    assert "Step 1 would run: ['ls', '-la'] — auto-approved (read-only allowlist)" in captured.out
+    assert mock_chat.call_count == 1
+    mock_run_shell.assert_not_called()
+    mock_confirm.assert_not_called()
+
+
+def test_dry_run_confirm_tier_prints_preview_and_stops(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.return_value = {"message": {"content": "<tool>shell</tool><args>git status</args>"}}
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop(task="check status", model="test-model", max_steps=15, system_prompt="sys", dry_run=True)
+
+    captured = capsys.readouterr()
+    assert "Step 1 would run: ['git', 'status'] — would prompt for confirmation" in captured.out
+    assert mock_chat.call_count == 1
+    mock_run_shell.assert_not_called()
+    mock_confirm.assert_not_called()
+
+
+def test_dry_run_block_tier_prints_preview_and_stops(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.return_value = {"message": {"content": "<tool>shell</tool><args>rm -rf /</args>"}}
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop(task="delete everything", model="test-model", max_steps=15, system_prompt="sys", dry_run=True)
+
+    captured = capsys.readouterr()
+    expected_reason = check(["rm", "-rf", "/"], yes=False)["reason"]
+    assert f"Step 1 would run: ['rm', '-rf', '/'] — BLOCKED: {expected_reason}" in captured.out
+    assert mock_chat.call_count == 1
+    mock_run_shell.assert_not_called()
+    mock_confirm.assert_not_called()
+
+
+def test_dry_run_malformed_args_prints_error_and_stops(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.return_value = {"message": {"content": '<tool>shell</tool><args>echo "unterminated</args>'}}
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop(task="say hi", model="test-model", max_steps=15, system_prompt="sys", dry_run=True)
+
+    captured = capsys.readouterr()
+    assert "could not parse command" in captured.out
+    assert mock_chat.call_count == 1
+    mock_run_shell.assert_not_called()
+    mock_confirm.assert_not_called()
