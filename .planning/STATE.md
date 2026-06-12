@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: context exhaustion at 100% (2026-06-12)
-last_updated: "2026-06-12T22:34:25.495Z"
-last_activity: 2026-06-12 -- Phase 02 execution started
+stopped_at: phase 02 re-verification gaps_found, awaiting gap-closure plan (2026-06-12)
+last_updated: "2026-06-12T23:37:47.486Z"
+last_activity: 2026-06-12 -- Phase 02 re-verification: gaps_found (SAFE-02/SAFE-04, 3/5 must-haves)
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 6
-  completed_plans: 5
-  percent: 25
+  completed_plans: 6
+  percent: 50
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 
 ## Current Position
 
-Phase: 02 (safety-gate-loop-control) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 02
-Last activity: 2026-06-12 -- Phase 02 execution started
+Phase: 02 (safety-gate-loop-control) — GAPS_FOUND
+Plan: 4 of 4 done, gap-closure plan pending (re-verification: 3/5 must-haves)
+Status: Re-verification found SAFE-02/SAFE-04 gaps — awaiting /gsd:plan-phase 02 --gaps
+Last activity: 2026-06-12 -- Phase 02 re-verification: gaps_found
 
-Progress: [██░░░░░░░░] 25%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -71,7 +71,7 @@ None yet.
 
 ### Blockers/Concerns
 
-- [Phase 2]: CR-01/WR-02/WR-03/IN-01 from 02-REVIEW.md re-review are now covered by 02-04-PLAN.md (gap_closure:true, commit `6249335`, gsd-plan-checker PASSED). Code fixes not yet applied — pending `/gsd:execute-phase 02`.
+- [Phase 2]: Re-verification (post-02-04) found NEW SAFE-02/SAFE-04 gaps — 3 reproducible blocklist bypasses, all CONFIRM (execute under `--yes`) instead of BLOCK: `bash -c "sudo rm -rf /"` (CR-01, safety.py:177-181, fork-bomb rule doesn't recurse full blocklist for `-c` wrappers), `chmod --recursive 777 /` (CR-02, safety.py:183-186, `-R` check misses `--recursive`), `rm -rf //` (CR-03, safety.py:45-51, `_RM_DANGEROUS_TARGETS` missing `//`/`///`). See 02-VERIFICATION.md (gaps_found, 3/5) and 02-REVIEW.md (088cf31). Each is a known one-line fix, no override eligible. Next: `/gsd:plan-phase 02 --gaps` → 02-05.
 - [Phase 2 planning]: Decision-coverage override (step 13a, 2026-06-13): D-02/D-04-D-10 uncovered by literal citation in `*-PLAN.md` (`check.decision-coverage-plan`: 2/10 covered). All 8 are implemented + tested in executed plans 02-01/02-02 (88 tests green, shipped). Gate (#2492) postdates those plans — citation gap, not implementation gap. 02-04 (SAFE-02/04 fixes) embodies D-04's invariant in its must_haves without the literal ID. Proceeding; non-blocking for verify-phase, which may re-surface this for awareness only.
 - [Phase 1]: SC6 (multi-model tag-compliance smoke-test) ran but PARTIAL/OPEN — rescoped to 2 on-disk models (`gemma4:e2b` crashed/OOM on this 7.1GB-RAM host, `evalengine/unbound-e2b:latest` 100% compliant think=False / 50% think=True). 0.6B-4B Qwen3 risk class still unvalidated; roadmap's <80%-on-smallest-models fallback-format question remains open. See 01-AUDIT.md "SC6 Results".
 - [Hardware]: `gemma4:e2b` (7.2GB) does not fit in this host's 7.1GB RAM (OOM-killed). Affects which models are realistically usable for future dev/testing on this machine.
@@ -92,6 +92,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-12T19:36:16.027Z
-Stopped at: context exhaustion at 100% (2026-06-12)
+Last session: 2026-06-12T23:37:47.486Z
+Stopped at: phase 02 re-verification gaps_found, awaiting gap-closure plan (2026-06-12)
 Resume file: None
