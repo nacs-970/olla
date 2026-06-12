@@ -60,7 +60,15 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. `--dry-run` shows the next planned tool call and stops without executing it or causing any side effect
   4. The loop aborts with a diagnostic when it hits `--max-steps` (default 15) or when the same tool+args is called 2-3 times in a row
 
-**Plans**: TBD
+**Plans:** 2 plans
+
+**Wave 1**
+
+- [ ] 02-01-PLAN.md — Confirm-gate end-to-end: safety.py decision module (ALLOWLIST + blocklist rule table + check()), BLOCK/CONFIRM/ALLOW dispatch wired into run_loop with EOFError-safe confirm, --yes threaded through cli.py, rich added as dependency (success criteria 1-2, SAFE-02, SAFE-04)
+
+**Wave 2** *(depends on Wave 1 — Decision contract from safety.py)*
+
+- [ ] 02-02-PLAN.md — Dry-run preview + repetition guard: --dry-run single-call preview reusing safety.check() for an honest verdict, 3x-repeat repetition guard with diagnostic distinct from max-steps message, SAFE-03 regression test (success criteria 3-4, SAFE-01, LOOP-04, SAFE-03)
 
 ### Phase 3: File Tools
 
@@ -97,6 +105,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Core Loop + Shell Tool + CLI | 2/2 | Complete   | 2026-06-11 |
-| 2. Safety Gate + Loop Control | 0/TBD | Not started | - |
+| 2. Safety Gate + Loop Control | 0/2 | Not started | - |
 | 3. File Tools | 0/TBD | Not started | - |
 | 4. Memory Tool | 0/TBD | Not started | - |

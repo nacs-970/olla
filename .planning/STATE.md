@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Gathering context for Phase 02
-stopped_at: Phase 2 context gathered
+status: Ready to execute Phase 02
+stopped_at: Phase 2 planned (2 plans, 2 waves)
 last_updated: "2026-06-12T06:12:07.611Z"
-last_activity: 2026-06-12 -- Phase 01 closed out, Phase 02 discussion started
+last_activity: 2026-06-12 -- Phase 02 planned as 2 plans (02-01 confirm-gate end-to-end, 02-02 dry-run + repetition guard)
 progress:
   total_phases: 4
   completed_phases: 1
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 
 ## Current Position
 
-Phase: 02 (safety-gate-loop-control) — DISCUSSING
-Plan: 0 of TBD
-Status: Gathering context for Phase 02
-Last activity: 2026-06-12 -- Phase 01 closed out, Phase 02 discussion started
+Phase: 02 (safety-gate-loop-control) — PLANNED
+Plan: 0 of 2
+Status: Ready to execute Phase 02
+Last activity: 2026-06-12 -- Phase 02 planned as 2 plans (02-01 confirm-gate end-to-end, 02-02 dry-run + repetition guard)
 
 Progress: [██░░░░░░░░] 25%
 
@@ -63,6 +63,7 @@ Recent decisions affecting current work:
 - [Roadmap]: ReAct loop with XML-style tags, no JSON tool schema — small models are unreliable at JSON function calling
 - [Roadmap]: No hardcoded default model; target via `--model`
 - [Roadmap]: Shell uses `shell=False` + `shlex.split()`, no pipes/redirects in v1 (SHELL-01) — resolves the STACK vs ARCHITECTURE/PITFALLS shell-mode conflict in favor of the safer model
+- [Phase 2 planning]: Restructured from 3 plans to 2 — safety.py (D-01..D-08 decision module) folded into 02-01 as its first task alongside the confirm-gate dispatch, so 02-01 delivers the first user-observable change (shell commands prompt/block) end-to-end; 02-02 covers dry-run preview + repetition guard (depends on 02-01 for the Decision contract)
 
 ### Pending Todos
 
@@ -90,5 +91,5 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-06-12T06:12:07.602Z
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-safety-gate-loop-control/02-CONTEXT.md
+Stopped at: Phase 2 planned (2 plans, 2 waves) — ready to execute
+Resume file: .planning/phases/02-safety-gate-loop-control/02-01-PLAN.md
