@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: phase 02 re-verification gaps_found, awaiting gap-closure plan (2026-06-12)
-last_updated: "2026-06-13T07:42:29.537Z"
-last_activity: 2026-06-13 -- Phase 02 execution started
+stopped_at: phase 02 all plans merged, verify_phase_goal pending — code review found round-3 CR-01/02/03 bypasses (2026-06-13)
+last_updated: "2026-06-13T08:16:19.383Z"
+last_activity: 2026-06-13 -- Phase 02 wave 3 (02-05) merged, code review complete
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 7
-  completed_plans: 6
+  completed_plans: 7
   percent: 25
 ---
 
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 
 ## Current Position
 
-Phase: 02 (safety-gate-loop-control) — EXECUTING
-Plan: 1 of 5
-Status: Executing Phase 02
-Last activity: 2026-06-13 -- Phase 02 execution started
+Phase: 02 (safety-gate-loop-control) — PLANS COMPLETE, VERIFICATION PENDING
+Plan: 5 of 5 (all merged)
+Status: Awaiting verify_phase_goal — code review (1f14ef7) found 3 NEW Critical bypasses (round 3)
+Last activity: 2026-06-13 -- Wave 3 (02-05) merged, code review complete
 
-Progress: [█████░░░░░] 50%
+Progress: [██░░░░░░░░] 25%
 
 ## Performance Metrics
 
@@ -71,7 +71,8 @@ None yet.
 
 ### Blockers/Concerns
 
-- [Phase 2]: Re-verification (post-02-04) found NEW SAFE-02/SAFE-04 gaps — 3 reproducible blocklist bypasses (CR-01/CR-02/CR-03), all CONFIRM instead of BLOCK under `--yes`. See 02-VERIFICATION.md (gaps_found, 3/5) and 02-REVIEW.md (088cf31). Gap-closure plan `02-05-PLAN.md` created 2026-06-13 (2 plan-checker passes — pass 1 found and fixed an `IndexError` blocker on malformed `bash -c` input; pass 2 PASSED). Next: `/gsd:execute-phase 02` (plan 5).
+- [Phase 2]: Re-verification (post-02-04) found NEW SAFE-02/SAFE-04 gaps — 3 reproducible blocklist bypasses (CR-01/CR-02/CR-03), all CONFIRM instead of BLOCK under `--yes`. See 02-VERIFICATION.md (gaps_found, 3/5) and 02-REVIEW.md (088cf31). Gap-closure plan `02-05-PLAN.md` created 2026-06-13, executed as wave 3 — commits `528472d`/`55dd1dc`/`c6bcb12`, 109/109 tests green.
+- [Phase 2]: Post-wave-3 code review (1f14ef7, 2026-06-13) found a THIRD round of the same CR-01/02/03 bypass class — equivalent-form variants 02-05's fixes didn't cover: CR-01 round 3 (`bash -lc "..."` combined short-flags bypass rule 6b's exact `-c` token check), CR-02 round 3 (`chmod/chown -R //` — `//`->`/` normalization only wired into `rm` rule, not chmod/chown), CR-03 round 3 (`dd`/`mkfs` `of=//dev/sda` doubled-slash bypasses `_is_dangerous_device_arg`). All `--yes`-exploitable. verify_phase_goal not yet run; expect `gaps_found` again -> likely 02-06 gap-closure plan. See `.planning/phases/02-safety-gate-loop-control/.continue-here.md`.
 - [Phase 2 planning]: Decision-coverage override (step 13a, 2026-06-13): D-02/D-04-D-10 uncovered by literal citation in `*-PLAN.md` (`check.decision-coverage-plan`: 2/10 covered). All 8 are implemented + tested in executed plans 02-01/02-02 (88 tests green, shipped). Gate (#2492) postdates those plans — citation gap, not implementation gap. 02-04 (SAFE-02/04 fixes) embodies D-04's invariant in its must_haves without the literal ID. Proceeding; non-blocking for verify-phase, which may re-surface this for awareness only. Re-surfaced for 02-05 (2026-06-13) as predicted: now 3/10 covered (02-05's must_haves literally cite D-04 for CR-01's `yes=True` truth, +1). Remaining 7 (D-02, D-05-D-10) unchanged from earlier shipped phases 02-01/02-02, outside 02-05's scope (safety.py rules 4/6b/7 only) — same non-blocking disposition.
 - [Phase 1]: SC6 (multi-model tag-compliance smoke-test) ran but PARTIAL/OPEN — rescoped to 2 on-disk models (`gemma4:e2b` crashed/OOM on this 7.1GB-RAM host, `evalengine/unbound-e2b:latest` 100% compliant think=False / 50% think=True). 0.6B-4B Qwen3 risk class still unvalidated; roadmap's <80%-on-smallest-models fallback-format question remains open. See 01-AUDIT.md "SC6 Results".
 - [Hardware]: `gemma4:e2b` (7.2GB) does not fit in this host's 7.1GB RAM (OOM-killed). Affects which models are realistically usable for future dev/testing on this machine.
@@ -92,6 +93,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-12T23:37:47.486Z
-Stopped at: phase 02 re-verification gaps_found, awaiting gap-closure plan (2026-06-12)
-Resume file: None
+Last session: 2026-06-13T08:16:19.383Z
+Stopped at: phase 02 all plans merged, verify_phase_goal pending — code review found round-3 CR-01/02/03 bypasses (2026-06-13)
+Resume file: .planning/phases/02-safety-gate-loop-control/.continue-here.md
