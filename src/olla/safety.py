@@ -1,6 +1,7 @@
 """Pure safety-gate decision: blocklist/allowlist check against resolved argv."""
 
 import fnmatch
+import os
 import re
 import shlex
 from typing import Literal, NotRequired, TypedDict
@@ -228,8 +229,13 @@ def _blocklist_match(argv: list[str]) -> str | None:
 
     # (7) chmod/chown -R (including combined short flags like -Rf, and the
     # long-form --recursive synonym (CR-02)) on / or a doubled-leading-slash
-    # equivalent-form target (`//`, `///`, ...) (CR-02 round 3).
-    if binary in ("chmod", "chown") and any(_normalize_slash_target(a) == "/" for a in argv[1:]):
+    # equivalent-form target (`//`, `///`, ...) (CR-02 round 3), or a
+    # dot-segment equivalent-form target (`/.`, `//.`, `/./`, ...) that
+    # os.path.normpath resolves to `/` or `//` (round 4).
+    if binary in ("chmod", "chown") and any(
+        _normalize_slash_target(a) == "/" or os.path.normpath(a).rstrip("/") == ""
+        for a in argv[1:]
+    ):
         if any(
             (a.startswith("-") and not a.startswith("--") and "R" in a) or a == "--recursive"
             for a in argv[1:]
