@@ -106,3 +106,13 @@ None - no external service configuration required.
 ---
 *Phase: 02-safety-gate-loop-control*
 *Completed: 2026-06-13*
+
+## Self-Check: PASSED
+
+- FOUND: src/olla/safety.py
+- FOUND: tests/test_safety.py
+- FOUND: tests/test_loop.py
+- FOUND: .planning/phases/02-safety-gate-loop-control/02-06-SUMMARY.md
+- FOUND commit: dd85f58 (fix(02-06): close round-3 equivalent-form blocklist bypasses)
+- FOUND commit: ec33508 (test(02-06): verify bash -lc sudo rm -rf / blocks via run_loop with --yes)
+- FOUND commit: 7b7faf4 (docs(02-06): record round-3 bypass closure summary)
