@@ -75,12 +75,13 @@ _FIND_EXEC_FLAGS: set[str] = {"-exec", "-execdir", "-ok", "-okdir"}
 _ENV_FLAGS_WITH_ARG: set[str] = {"-u", "--unset", "-C", "--chdir", "-a", "--argv0", "-S", "--split-string"}
 
 
-def _normalize_rm_target(arg: str) -> str:
+def _normalize_slash_target(arg: str) -> str:
     """Collapse a literal target consisting entirely of 2+ leading slashes
     (`//`, `///`, ...) to a single `/` for D-03 matching against
-    `_RM_DANGEROUS_TARGETS` (CR-03). Linux path resolution treats repeated
-    leading slashes as equivalent to `/`, so `rm -rf //` and `rm -rf ///`
-    are filesystem-equivalent to `rm -rf /`.
+    `_RM_DANGEROUS_TARGETS` (rule 4) and against `/` for the chmod/chown -R
+    root-target check (rule 7) (CR-03). Linux path resolution treats repeated
+    leading slashes as equivalent to `/`, so `rm -rf //`, `chmod -R 777 //`,
+    and similar are filesystem-equivalent to their single-slash form.
 
     The regex is fully anchored (`^...$`) so it only matches a string made
     up entirely of 2+ slashes — it does not affect `/*`, `~`, `.`, `$HOME`,
@@ -95,6 +96,11 @@ def _is_dangerous_device_arg(arg: str) -> bool:
     # dd uses if=/of= prefixes; mkfs* takes a bare path. Strip any "key="
     # prefix before matching so both shapes are handled uniformly.
     path = arg.split("=")[-1]
+    # Collapse doubled leading slashes (`//dev/sda` -> `/dev/sda`) before
+    # glob matching, since they are filesystem-equivalent on Linux (CR-03).
+    # Not anchored at the end (unlike _normalize_slash_target) because
+    # `path` has trailing non-slash content after the device prefix.
+    path = re.sub(r"^/{2,}", "/", path)
     if not fnmatch.fnmatch(path, _DEVICE_GLOB):
         return False
     device_name = path.removeprefix("/dev/")
@@ -175,7 +181,7 @@ def _blocklist_match(argv: list[str]) -> str | None:
     # filesystem-equivalent on Linux (CR-03).
     if binary == "rm":
         for arg in argv[1:]:
-            if _normalize_rm_target(arg) in _RM_DANGEROUS_TARGETS:
+            if _normalize_slash_target(arg) in _RM_DANGEROUS_TARGETS:
                 return f"'rm' targeting '{arg}' is a dangerous deletion target"
 
     # (5) dd / mkfs* targeting a raw block device.
@@ -194,14 +200,20 @@ def _blocklist_match(argv: list[str]) -> str | None:
     # (6b) bash/sh/zsh -c "<command>": checked both for the fork-bomb pattern
     # AND, via shlex-split-and-recurse against the full D-03 blocklist, for
     # any other blocked command (CR-01) — the same wrap-and-recurse shape
-    # already used for env/find -exec (rules 2/3). Both checks are nested
-    # inside a single `len(argv) > c_index + 1` guard so a bare `bash -c`/
-    # `sh -c` with no trailing command (a realistic malformed/truncated
+    # already used for env/find -exec (rules 2/3). The flag scan matches any
+    # `-`-prefixed, non-`--`, `c`-containing token (e.g. `-c`, `-lc`, `-ic`,
+    # `-xc`), not just an exact `-c` argv member, so combined short-flag
+    # forms (CR-01 round 3) are caught. Both checks are nested inside a
+    # single `len(argv) > c_index + 1` guard so a bare `bash -c`/`sh -c`/
+    # `bash -lc` with no trailing command (a realistic malformed/truncated
     # model emission) skips this entire block and falls through to CONFIRM
     # without raising IndexError.
-    if binary in ("bash", "sh", "zsh") and "-c" in argv:
-        c_index = argv.index("-c")
-        if len(argv) > c_index + 1:
+    if binary in ("bash", "sh", "zsh"):
+        c_index = next(
+            (i for i, a in enumerate(argv) if a.startswith("-") and not a.startswith("--") and "c" in a),
+            None,
+        )
+        if c_index is not None and len(argv) > c_index + 1:
             c_string = argv[c_index + 1]
             if _FORK_BOMB_RE.search(c_string):
                 return "fork-bomb pattern detected"
@@ -215,8 +227,9 @@ def _blocklist_match(argv: list[str]) -> str | None:
                     return f"'{binary} -c' wraps a blocked command: {reason}"
 
     # (7) chmod/chown -R (including combined short flags like -Rf, and the
-    # long-form --recursive synonym (CR-02)) on /.
-    if binary in ("chmod", "chown") and "/" in argv:
+    # long-form --recursive synonym (CR-02)) on / or a doubled-leading-slash
+    # equivalent-form target (`//`, `///`, ...) (CR-02 round 3).
+    if binary in ("chmod", "chown") and any(_normalize_slash_target(a) == "/" for a in argv[1:]):
         if any(
             (a.startswith("-") and not a.startswith("--") and "R" in a) or a == "--recursive"
             for a in argv[1:]

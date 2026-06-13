@@ -143,6 +143,40 @@ def test_sh_dash_c_no_command_confirms():
     assert check(["sh", "-c"], yes=False)["kind"] == "CONFIRM"
 
 
+def test_bash_dash_lc_sudo_rm_rf_root_blocks():
+    # CR-01 (round 3): combined short flag `-lc` (login shell + -c) must be
+    # caught by the same wrap-and-recurse scan as a bare `-c`.
+    decision = check(["bash", "-lc", "sudo rm -rf /"], yes=False)
+    assert decision["kind"] == "BLOCK"
+    assert "sudo" in decision["reason"]
+
+
+def test_bash_dash_lc_sudo_rm_rf_root_blocks_with_yes():
+    # D-04: yes never changes the gate decision's kind, even for the
+    # combined-short-flag bypass.
+    assert check(["bash", "-lc", "sudo rm -rf /"], yes=True)["kind"] == "BLOCK"
+
+
+def test_sh_dash_ic_sudo_blocks():
+    # CR-01 (round 3): `-ic` (interactive + -c) combined short flag.
+    decision = check(["sh", "-ic", "sudo ls"], yes=False)
+    assert decision["kind"] == "BLOCK"
+    assert "sudo" in decision["reason"]
+
+
+def test_zsh_dash_xc_sudo_blocks():
+    # CR-01 (round 3): `-xc` (xtrace + -c) combined short flag.
+    decision = check(["zsh", "-xc", "sudo ls"], yes=False)
+    assert decision["kind"] == "BLOCK"
+    assert "sudo" in decision["reason"]
+
+
+def test_bash_dash_lc_no_command_confirms():
+    # Malformed/truncated model emission: no command after combined -lc.
+    # Must not raise IndexError.
+    assert check(["bash", "-lc"], yes=False)["kind"] == "CONFIRM"
+
+
 def test_hard_blocked_binaries_block():
     for binary in ("sudo", "su", "shutdown", "reboot", "poweroff", "halt"):
         decision = check([binary, "ls"], yes=False)
@@ -182,6 +216,16 @@ def test_dd_not_targeting_raw_block_device_confirms():
     assert check(["dd", "if=/dev/zero", "of=/tmp/test.img"], yes=False)["kind"] == "CONFIRM"
 
 
+def test_dd_double_slash_raw_block_device_blocks():
+    # CR-03 (round 3): doubled leading slash (`//dev/sda`) is
+    # filesystem-equivalent to `/dev/sda` and must still BLOCK.
+    assert check(["dd", "if=/dev/zero", "of=//dev/sda"], yes=False)["kind"] == "BLOCK"
+
+
+def test_mkfs_double_slash_raw_block_device_blocks():
+    assert check(["mkfs.ext4", "//dev/sda"], yes=False)["kind"] == "BLOCK"
+
+
 def test_fork_bomb_pattern_blocks():
     assert check([":(){", ":|:&", "};:"], yes=False)["kind"] == "BLOCK"
 
@@ -218,6 +262,29 @@ def test_chmod_recursive_long_flag_on_root_blocks():
 
 def test_chown_recursive_long_flag_on_root_blocks():
     assert check(["chown", "--recursive", "user", "/"], yes=False)["kind"] == "BLOCK"
+
+
+def test_chmod_recursive_double_slash_target_blocks():
+    # CR-02 (round 3): `//` is filesystem-equivalent to `/`.
+    decision = check(["chmod", "-R", "777", "//"], yes=False)
+    assert decision["kind"] == "BLOCK"
+    assert "chmod -R" in decision["reason"]
+
+
+def test_chown_recursive_double_slash_target_blocks():
+    decision = check(["chown", "-R", "user", "//"], yes=False)
+    assert decision["kind"] == "BLOCK"
+    assert "chown -R" in decision["reason"]
+
+
+def test_chmod_recursive_triple_slash_target_blocks():
+    assert check(["chmod", "-R", "777", "///"], yes=False)["kind"] == "BLOCK"
+
+
+def test_chmod_recursive_long_flag_double_slash_blocks():
+    decision = check(["chmod", "--recursive", "777", "//"], yes=False)
+    assert decision["kind"] == "BLOCK"
+    assert "chmod -R" in decision["reason"]
 
 
 def test_block_takes_precedence_over_allow():
