@@ -93,3 +93,12 @@ None - no external service configuration required.
 ---
 *Phase: 02-safety-gate-loop-control*
 *Completed: 2026-06-14*
+
+## Self-Check: PASSED
+
+- FOUND: src/olla/safety.py
+- FOUND: tests/test_safety.py
+- FOUND: .planning/phases/02-safety-gate-loop-control/02-07-SUMMARY.md
+- FOUND commit: be792e9 (test RED)
+- FOUND commit: 6ff02cc (feat GREEN)
+- FOUND commit: 4eca971 (docs SUMMARY)
