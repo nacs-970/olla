@@ -2,6 +2,7 @@
 
 import fnmatch
 import re
+import shlex
 from typing import Literal, NotRequired, TypedDict
 
 
@@ -72,6 +73,20 @@ _FIND_EXEC_FLAGS: set[str] = {"-exec", "-execdir", "-ok", "-okdir"}
 # when unwrapping, else the flag's argument is mistaken for the wrapped
 # command's binary name) (CR-01).
 _ENV_FLAGS_WITH_ARG: set[str] = {"-u", "--unset", "-C", "--chdir", "-a", "--argv0", "-S", "--split-string"}
+
+
+def _normalize_rm_target(arg: str) -> str:
+    """Collapse a literal target consisting entirely of 2+ leading slashes
+    (`//`, `///`, ...) to a single `/` for D-03 matching against
+    `_RM_DANGEROUS_TARGETS` (CR-03). Linux path resolution treats repeated
+    leading slashes as equivalent to `/`, so `rm -rf //` and `rm -rf ///`
+    are filesystem-equivalent to `rm -rf /`.
+
+    The regex is fully anchored (`^...$`) so it only matches a string made
+    up entirely of 2+ slashes — it does not affect `/*`, `~`, `.`, `$HOME`,
+    `myfile.txt`, or paths like `//etc/foo` that contain non-slash
+    characters after the leading slashes."""
+    return re.sub(r"^/{2,}$", "/", arg)
 
 
 def _is_dangerous_device_arg(arg: str) -> bool:
@@ -155,10 +170,12 @@ def _blocklist_match(argv: list[str]) -> str | None:
             if reason is not None:
                 return f"'find' -exec wraps a blocked command: {reason}"
 
-    # (4) rm targeting a dangerous path.
+    # (4) rm targeting a dangerous path. Repeated leading slashes (`//`,
+    # `///`, ...) are normalized to `/` before matching, since they are
+    # filesystem-equivalent on Linux (CR-03).
     if binary == "rm":
         for arg in argv[1:]:
-            if arg in _RM_DANGEROUS_TARGETS:
+            if _normalize_rm_target(arg) in _RM_DANGEROUS_TARGETS:
                 return f"'rm' targeting '{arg}' is a dangerous deletion target"
 
     # (5) dd / mkfs* targeting a raw block device.
@@ -174,15 +191,36 @@ def _blocklist_match(argv: list[str]) -> str | None:
     if _FORK_BOMB_RE.match(joined):
         return "fork-bomb pattern detected"
 
-    # (6b) Fork-bomb pattern passed as the command string to bash/sh/zsh -c.
+    # (6b) bash/sh/zsh -c "<command>": checked both for the fork-bomb pattern
+    # AND, via shlex-split-and-recurse against the full D-03 blocklist, for
+    # any other blocked command (CR-01) — the same wrap-and-recurse shape
+    # already used for env/find -exec (rules 2/3). Both checks are nested
+    # inside a single `len(argv) > c_index + 1` guard so a bare `bash -c`/
+    # `sh -c` with no trailing command (a realistic malformed/truncated
+    # model emission) skips this entire block and falls through to CONFIRM
+    # without raising IndexError.
     if binary in ("bash", "sh", "zsh") and "-c" in argv:
         c_index = argv.index("-c")
-        if len(argv) > c_index + 1 and _FORK_BOMB_RE.search(argv[c_index + 1]):
-            return "fork-bomb pattern detected"
+        if len(argv) > c_index + 1:
+            c_string = argv[c_index + 1]
+            if _FORK_BOMB_RE.search(c_string):
+                return "fork-bomb pattern detected"
+            try:
+                wrapped = shlex.split(c_string)
+            except ValueError:
+                wrapped = []
+            if wrapped:
+                reason = _blocklist_match(wrapped)
+                if reason is not None:
+                    return f"'{binary} -c' wraps a blocked command: {reason}"
 
-    # (7) chmod/chown -R (including combined short flags like -Rf) on /.
+    # (7) chmod/chown -R (including combined short flags like -Rf, and the
+    # long-form --recursive synonym (CR-02)) on /.
     if binary in ("chmod", "chown") and "/" in argv:
-        if any(a.startswith("-") and not a.startswith("--") and "R" in a for a in argv[1:]):
+        if any(
+            (a.startswith("-") and not a.startswith("--") and "R" in a) or a == "--recursive"
+            for a in argv[1:]
+        ):
             return f"'{binary} -R' targeting '/' is destructive"
 
     return None
