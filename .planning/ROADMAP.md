@@ -14,7 +14,7 @@ olla ships as a vertical-slice build that de-risks the core bet first and layers
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Core Loop + Shell Tool + CLI** - Working ReAct loop that parses model tags, runs shell commands, and installs as `olla`; format compliance validated against target models (completed 2026-06-11)
-- [x] **Phase 2: Safety Gate + Loop Control** - Blocklist, confirm-before-execute, dry-run, step cap, and repetition guard gate every dangerous action (gap closure round 2 in progress — 02-04 pending) (completed 2026-06-12)
+- [ ] **Phase 2: Safety Gate + Loop Control** - Blocklist, confirm-before-execute, dry-run, step cap, and repetition guard gate every dangerous action (gap closure round 3 in progress — 02-06 pending)
 - [ ] **Phase 3: File Tools** - Model can read and write files through the safety gate
 - [ ] **Phase 4: Memory Tool** - Model can store and recall cross-turn scratchpad notes
 
@@ -60,7 +60,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. `--dry-run` shows the next planned tool call and stops without executing it or causing any side effect
   4. The loop aborts with a diagnostic when it hits `--max-steps` (default 15) or when the same tool+args is called 2-3 times in a row
 
-**Plans:** 5/5 plans complete
+**Plans:** 6/6 plans complete (02-06 pending execution)
 
 **Wave 1**
 
@@ -74,6 +74,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] 02-03-PLAN.md — Gap closure round 1: env/find ALLOWLIST bypass (CR-01), repetition-guard ordering (WR-01), fork-bomb unspaced-variant detection (WR-02) (SAFE-02, SAFE-04, LOOP-04)
 - [x] 02-04-PLAN.md — Gap closure round 2: narrower env/find unwrap gaps under `--yes` (CR-01 re-opened), fork-bomb data-argument false positive (WR-02 regression), chmod/chown -Rf bypass (WR-03), run_shell double-parse cleanup (IN-01) (SAFE-02, SAFE-04)
+- [x] 02-05-PLAN.md — Gap closure round 3a: bash/sh/zsh -c wrap-and-recurse (CR-01 re-opened), chmod/chown -R on doubled-slash `/` (CR-02), dd/mkfs doubled-slash device path (CR-03) (SAFE-02, SAFE-04)
+- [ ] 02-06-PLAN.md — Gap closure round 3b: equivalent-form bypasses found post-02-05 — combined short-flag `bash -lc`/`sh -ic`/`zsh -xc` (CR-01 round 3), `chmod/chown -R //` doubled-slash target on rule 7 (CR-02 round 3), `dd`/`mkfs of=//dev/sda` doubled-slash device path (CR-03 round 3) (SAFE-02, SAFE-04)
 
 ### Phase 3: File Tools
 
@@ -110,6 +112,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Core Loop + Shell Tool + CLI | 2/2 | Complete   | 2026-06-11 |
-| 2. Safety Gate + Loop Control | 5/5 | Complete   | 2026-06-13 |
+| 2. Safety Gate + Loop Control | 5/6 | Gap closure round 3 in progress | - |
 | 3. File Tools | 0/TBD | Not started | - |
 | 4. Memory Tool | 0/TBD | Not started | - |
