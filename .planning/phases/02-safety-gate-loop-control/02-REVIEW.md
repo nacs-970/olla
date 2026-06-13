@@ -2,7 +2,7 @@
 phase: 02-safety-gate-loop-control
 reviewed: 2026-06-13T00:00:00Z
 depth: standard
-files_reviewed: 8
+files_reviewed: 9
 files_reviewed_list:
   - src/olla/cli.py
   - src/olla/loop.py
@@ -12,6 +12,7 @@ files_reviewed_list:
   - tests/test_loop.py
   - tests/test_safety.py
   - tests/test_tools/test_shell.py
+  - pyproject.toml
 findings:
   critical: 3
   warning: 4
@@ -24,53 +25,61 @@ status: issues_found
 
 **Reviewed:** 2026-06-13T00:00:00Z
 **Depth:** standard
-**Files Reviewed:** 8
+**Files Reviewed:** 9
 **Status:** issues_found
 
 ## Summary
 
-The safety gate (`safety.py`) is well-structured for the cases it explicitly enumerates — `env` and `find -exec` wrapping are correctly recursed, the fork-bomb regex is carefully anchored to avoid false positives on data arguments, and `yes` correctly does not change `BLOCK`/`CONFIRM` classification. The ReAct loop (`loop.py`) correctly threads truncation, repetition detection, and the dry-run preview through the safety gate, and all 96 tests in the listed test files pass (verified locally).
+This is a re-review after the 02-05 gap-closure round, which fixed the three CR-01/02/03 issues from the prior `02-REVIEW.md` (`bash/sh/zsh -c` wrap-and-recurse, `chmod/chown --recursive`, and `rm -rf //`/`///` normalization). All 109 tests pass (`.venv/bin/python -m pytest tests/ -q`), and those three specific bypasses are now correctly classified `BLOCK` — verified empirically against the live code.
 
-However, the blocklist has a critical, exploitable gap: **`bash`/`sh`/`zsh -c "<command>"` is only checked for the fork-bomb pattern, not for any other D-03 rule** (hard-blocked binaries, dangerous `rm` targets, raw-device `dd`/`mkfs`, `chmod -R /`). A model emitting `bash -c "sudo rm -rf /"` (or the equivalent via `find -exec sh -c ... ;`) receives `CONFIRM` instead of `BLOCK`, and with `--yes` it executes unconditionally — completely defeating the "no safe invocation" guarantee documented for `sudo`/`su`/etc. This is the same wrap-and-recurse problem the code already solves correctly for `env` and `find -exec`, just not extended to the shell `-c` family. Two related blocklist coverage gaps (`chmod --recursive /` long-flag, and `rm -rf //`) are also reachable end-to-end under `--yes` and should be fixed alongside it.
+However, each of the three narrow fixes left an **equivalent-form hole** that a model (or an attacker shaping model output) can trivially reach:
 
-A secondary, lower-severity issue: `call_model()` (and `run_smoke_test`, which calls it with `think=True`) will raise an uncaught `KeyError: 'content'` if Ollama returns a message where only `thinking` is populated and `content` is entirely absent from the response payload — a real shape for thinking-capable models. This is not currently reachable from `run_loop` (which always calls with `think=False`, where `content` is reliably populated), but it is reachable from the smoke-test diagnostic path.
+1. **`bash -lc "sudo rm -rf /"` (and `-ic`, `-cx`, etc. — any combined short-flag form containing `c`) is not recognized as `bash -c`** because rule (6b) checks `"-c" in argv` as an exact-token match. `bash -lc "..."` is valid bash syntax (login shell + command string) and falls straight through to `CONFIRM`. Under `--yes`, this executes `sudo rm -rf /` unattended — the exact scenario the CR-01 fix was written to close, defeated by a one-character flag-combination change.
+
+2. **The `//`/`///` normalization added for CR-03 was applied only to the `rm` rule (rule 4)**, not to the `chmod`/`chown -R` rule (rule 7, which still does an exact `"/" in argv` check) or the `dd`/`mkfs*` raw-device rule (rule 5, which does an exact `fnmatch(path, "/dev/*")`). `chmod -R 777 //`, `chown -R user //`, `dd of=//dev/sda`, and `mkfs.ext4 //dev/sda` are all `CONFIRM` and execute unattended under `--yes` — each one is the same destructive action the corresponding rule was written to block for the single-slash spelling.
+
+3. The previously-identified Warnings (`call_model` `KeyError` on `think=True`, dry-run `CONFIRM` verdict ignoring `--yes`, `env -S` wrap-and-recurse gap, repetition guard scope) and Info items remain unaddressed in `loop.py`/`safety.py`, which are otherwise unchanged since the prior review.
 
 ## Critical Issues
 
-### CR-01: `bash`/`sh`/`zsh -c "<command>"` bypasses the entire D-03 blocklist except the fork-bomb check
+### CR-01: `bash`/`sh`/`zsh` with combined short flags (`-lc`, `-ic`, `-cx`, ...) bypass the `-c` wrap-and-recurse check entirely
 
-**File:** `src/olla/safety.py:177-181`
+**File:** `src/olla/safety.py:202-215`
 **Issue:**
-`_blocklist_match` recurses into the wrapped command for `env ...` (step 2) and `find -exec ...` (step 3), but the only handling for `bash`/`sh`/`zsh -c "<command>"` is step (6b), which `.search()`es the `-c` argument **only for the fork-bomb regex**:
 
 ```python
-# (6b) Fork-bomb pattern passed as the command string to bash/sh/zsh -c.
 if binary in ("bash", "sh", "zsh") and "-c" in argv:
     c_index = argv.index("-c")
-    if len(argv) > c_index + 1 and _FORK_BOMB_RE.search(argv[c_index + 1]):
-        return "fork-bomb pattern detected"
+    ...
 ```
 
-Every other D-03 rule (hard-blocked binaries, dangerous `rm` targets, raw-block-device `dd`/`mkfs`, `chmod/chown -R /`) is never evaluated against the contents of the `-c` string. As a result:
+`"-c" in argv` is an exact-token membership check. Bash (and sh/zsh) support combining single-letter flags into one token — `bash -lc "cmd"` (login shell + `-c`), `bash -ic "cmd"` (interactive + `-c`), `bash -xc "cmd"` (trace + `-c`) are all valid and run `cmd` via `-c` exactly like `bash -c "cmd"`. None of these tokens equal the literal string `"-c"`, so the entire rule (6b) block — including the fork-bomb check AND the new CR-01 shlex-split-and-recurse — is skipped.
+
+Verified empirically against the live code:
 
 ```python
-check(["bash", "-c", "sudo rm -rf /"], yes=False)  # -> CONFIRM (should be BLOCK)
-check(["bash", "-c", "sudo rm -rf /"], yes=True)   # -> CONFIRM, executes unconditionally
-check(["sh", "-c", "dd if=/dev/zero of=/dev/sda"], yes=False)  # -> CONFIRM
+>>> check(["bash", "-lc", "sudo rm -rf /"], yes=True)
+{'kind': 'CONFIRM'}
+>>> check(["bash", "-c",  "sudo rm -rf /"], yes=True)
+{'kind': 'BLOCK', 'reason': "'bash -c' wraps a blocked command: 'sudo' is blocked outright (no safe invocation)"}
 ```
 
-Verified end-to-end: with `--yes`, `run_loop` passes `["bash", "-c", "sudo rm -rf /"]` straight to `run_shell`, which calls `subprocess.run(["bash", "-c", "sudo rm -rf /"], shell=False, ...)` — `bash` itself interprets the `-c` string, so `sudo rm -rf /` actually runs. This is exactly the "no safe invocation" case `_HARD_BLOCKED_BINARIES` was designed to prevent, reached via a one-line wrapper. The same gap is reachable via `find . -exec sh -c "sudo rm -rf /" ;`, which recurses into `_blocklist_match(["sh","-c","sudo rm -rf /"])` and hits the same hole.
+This is the same destructive end-to-end path described in the prior CR-01 finding (`run_loop` → `decision["kind"] == "CONFIRM"` and `yes=True` → `run_shell(["bash", "-lc", "sudo rm -rf /"])` → `bash` interprets `-lc` and runs `sudo rm -rf /`). A model that has been corrected once for `bash -c "sudo ..."` (observed `blocked by safety policy`) has an obvious, syntactically-valid one-character escape: prepend any other single-letter flag to `c`.
 
-No test exercises `bash -c "sudo ..."` or `bash -c "rm -rf /"` — only the fork-bomb variant (`test_fork_bomb_via_bash_dash_c_blocks`) is covered, masking this gap.
+No test exercises `bash -lc`/`-ic`/`-xc`/etc. — `test_bash_dash_c_sudo_rm_rf_root_blocks` and friends only cover the bare `-c` token.
 
-**Fix:** Extend the existing wrap-and-recurse pattern (already used for `env`/`find`) to `bash`/`sh`/`zsh -c`: tokenize the `-c` argument with `shlex.split()` and recursively run `_blocklist_match` on the result, in addition to (not instead of) the fork-bomb check.
+**Fix:** Detect any argv token that is a combined short-flag bundle containing `c` (i.e., starts with `-`, doesn't start with `--`, and contains `c`), not just the literal `"-c"`. The wrapped command is still the *next* argv element after that token:
 
 ```python
-# (6b) bash/sh/zsh -c "<command>" wraps a command — recursively gate it,
-# in addition to the fork-bomb check.
-if binary in ("bash", "sh", "zsh") and "-c" in argv:
-    c_index = argv.index("-c")
-    if len(argv) > c_index + 1:
+# (6b) bash/sh/zsh -c "<command>" (including combined short-flag forms like
+# -lc, -ic, -xc): recursively gate the wrapped command, in addition to the
+# fork-bomb check.
+if binary in ("bash", "sh", "zsh"):
+    c_index = next(
+        (i for i, a in enumerate(argv) if a.startswith("-") and not a.startswith("--") and "c" in a),
+        None,
+    )
+    if c_index is not None and len(argv) > c_index + 1:
         c_string = argv[c_index + 1]
         if _FORK_BOMB_RE.search(c_string):
             return "fork-bomb pattern detected"
@@ -84,86 +93,94 @@ if binary in ("bash", "sh", "zsh") and "-c" in argv:
                 return f"'{binary} -c' wraps a blocked command: {reason}"
 ```
 
-(Requires `import shlex` at the top of `safety.py`.) Add regression tests mirroring `test_run_loop_env_unset_sudo_with_yes_still_blocks` for `bash -c "sudo rm -rf /"` and `find . -exec sh -c "sudo rm -rf /" ;`.
+Add regression tests for `check(["bash", "-lc", "sudo rm -rf /"], yes=True)["kind"] == "BLOCK"` and at least one other combined form (`-ic`).
 
 ---
 
-### CR-02: `chmod`/`chown -R /` blocklist rule only matches short combined flags, not `--recursive`
+### CR-02: `chmod`/`chown -R` rule (7) was not updated for `//`/`///` — `chmod -R 777 //` and `chown -R user //` remain `CONFIRM`
 
-**File:** `src/olla/safety.py:183-186`
+**File:** `src/olla/safety.py:219-224`
 **Issue:**
 
 ```python
-# (7) chmod/chown -R (including combined short flags like -Rf) on /.
 if binary in ("chmod", "chown") and "/" in argv:
-    if any(a.startswith("-") and not a.startswith("--") and "R" in a for a in argv[1:]):
-        return f"'{binary} -R' targeting '/' is destructive"
-```
-
-The `not a.startswith("--")` guard intentionally excludes long-form flags, but `--recursive` is a valid GNU `chmod`/`chown` flag and is not matched by anything else in `_blocklist_match`. As a result:
-
-```python
-check(["chmod", "--recursive", "777", "/"], yes=False)  # -> CONFIRM (should be BLOCK)
-```
-
-With `--yes`, `chmod --recursive 777 /` reaches `run_shell` and executes — recursively chmod'ing the entire filesystem to `777`, exactly the outcome rule (7) was written to prevent for the `-R` spelling.
-
-**Fix:** Also match `--recursive` (and do the same for `chown`):
-
-```python
-if binary in ("chmod", "chown") and "/" in argv:
-    has_recursive = any(
+    if any(
         (a.startswith("-") and not a.startswith("--") and "R" in a) or a == "--recursive"
         for a in argv[1:]
-    )
-    if has_recursive:
+    ):
         return f"'{binary} -R' targeting '/' is destructive"
 ```
 
-Add a regression test: `check(["chmod", "--recursive", "777", "/"], yes=False)["kind"] == "BLOCK"`.
+The CR-03 fix from 02-05 introduced `_normalize_rm_target()` to collapse `//`/`///` to `/` for the `rm` rule (rule 4), based on the documented fact that "Linux path resolution treats repeated leading slashes as equivalent to `/`". That same fact applies equally to `chmod -R`/`chown -R` — but rule (7)'s guard is still the exact membership test `"/" in argv`, which does not match `"//"` or `"///"`.
+
+Verified empirically:
+
+```python
+>>> check(["chmod", "-R", "777", "//"], yes=True)
+{'kind': 'CONFIRM'}
+>>> check(["chown", "-R", "user", "//"], yes=True)
+{'kind': 'CONFIRM'}
+>>> check(["chmod", "--recursive", "777", "//"], yes=True)
+{'kind': 'CONFIRM'}
+```
+
+Under `--yes`, `chmod -R 777 //` reaches `run_shell` and executes a full-filesystem recursive chmod to `777` — the exact outcome rule (7) exists to prevent, just spelled with a doubled leading slash.
+
+**Fix:** Reuse `_normalize_rm_target` (consider renaming it to something binary-agnostic, e.g. `_normalize_slash_target`, since it's no longer `rm`-specific) and apply it when checking for `/`:
+
+```python
+if binary in ("chmod", "chown") and any(_normalize_rm_target(a) == "/" for a in argv[1:]):
+    if any(
+        (a.startswith("-") and not a.startswith("--") and "R" in a) or a == "--recursive"
+        for a in argv[1:]
+    ):
+        return f"'{binary} -R' targeting '/' is destructive"
+```
+
+Add regression tests: `check(["chmod", "-R", "777", "//"], yes=True)["kind"] == "BLOCK"` and the `chown` equivalent.
 
 ---
 
-### CR-03: `_RM_DANGEROUS_TARGETS` does not cover `//`, `///`, etc. (kernel-equivalent to `/`)
+### CR-03: `dd`/`mkfs*` raw-device rule (5) does not normalize `//dev/...`, allowing `dd of=//dev/sda` to bypass the device-write block
 
-**File:** `src/olla/safety.py:45-51`
+**File:** `src/olla/safety.py:182-185, 92-101`
 **Issue:**
 
 ```python
-_RM_DANGEROUS_TARGETS: set[str] = {
-    "/",
-    "~",
-    "/*",
-    "$HOME",
-    ".",
-}
+def _is_dangerous_device_arg(arg: str) -> bool:
+    path = arg.split("=")[-1]
+    if not fnmatch.fnmatch(path, _DEVICE_GLOB):  # "/dev/*"
+        return False
+    device_name = path.removeprefix("/dev/")
+    return device_name.startswith(_DEVICE_PREFIXES)
 ```
 
-On Linux, multiple leading slashes in a path are collapsed to a single `/` by the kernel's path-resolution — `rm -rf //` and `rm -rf ///` are functionally identical to `rm -rf /`. Neither is in `_RM_DANGEROUS_TARGETS`, so:
+`_DEVICE_GLOB = "/dev/*"` and `removeprefix("/dev/")` both require an exact single-leading-slash `/dev/` prefix. A doubled-slash path like `//dev/sda` does not match `fnmatch("//dev/sda", "/dev/*")` (the `*` would need to match `/dev/sda` against a pattern that already starts with `/dev/`, but the literal string starts with `//`), so `_is_dangerous_device_arg` returns `False` and the whole `dd`/`mkfs*` rule is skipped.
+
+Verified empirically:
 
 ```python
-check(["rm", "-rf", "//"], yes=False)   # -> CONFIRM (should be BLOCK)
-check(["rm", "-rf", "///"], yes=False)  # -> CONFIRM (should be BLOCK)
+>>> check(["dd", "if=/dev/zero", "of=//dev/sda"], yes=True)
+{'kind': 'CONFIRM'}
+>>> check(["mkfs.ext4", "//dev/sda"], yes=True)
+{'kind': 'CONFIRM'}
 ```
 
-With `--yes`, `rm -rf //` reaches `run_shell` and executes a full-filesystem delete — the exact scenario `_RM_DANGEROUS_TARGETS` exists to stop for the single-slash spelling. A small model paraphrasing "delete the root directory" could plausibly emit `//` (e.g., copy-pasted from a path that already ended in `/`).
+Under `--yes`, `dd if=/dev/zero of=//dev/sda` reaches `run_shell` — and since the kernel treats `//dev/sda` identically to `/dev/sda`, this zeroes the raw block device, exactly the outcome `_is_dangerous_device_arg` exists to prevent.
 
-**Fix:** Either add `//`/`///` as literal entries, or normalize repeated leading slashes before the membership check (without using `os.path` resolution, per the existing "literal token" design note in the file's comments):
+**Fix:** Normalize the path portion (collapse leading `//`, `///`, ... to `/`) before the `fnmatch`/`removeprefix` checks, using the same normalization helper as CR-02:
 
 ```python
-def _normalize_rm_target(arg: str) -> str:
-    """Collapse repeated leading slashes (// , /// , ...) to a single '/'
-    for D-03 matching — Linux path resolution treats them identically."""
-    return re.sub(r"^/{2,}$", "/", arg)
-
-# in _blocklist_match, rule (4):
-if binary == "rm":
-    for arg in argv[1:]:
-        if _normalize_rm_target(arg) in _RM_DANGEROUS_TARGETS:
-            return f"'rm' targeting '{arg}' is a dangerous deletion target"
+def _is_dangerous_device_arg(arg: str) -> bool:
+    path = arg.split("=")[-1]
+    path = re.sub(r"^/{2,}", "/", path)  # normalize //dev/... -> /dev/...
+    if not fnmatch.fnmatch(path, _DEVICE_GLOB):
+        return False
+    device_name = path.removeprefix("/dev/")
+    return device_name.startswith(_DEVICE_PREFIXES)
 ```
 
-Add regression tests for `//` and `///`.
+Note this normalization only needs to collapse a *leading* run of slashes (not anchor the whole string, unlike `_normalize_rm_target`), since `of=//dev/sda` and `//dev/sda` both need `//dev` -> `/dev` regardless of what follows. Add regression tests for `dd ... of=//dev/sda` and `mkfs.ext4 //dev/sda`.
 
 ## Warnings
 
@@ -179,20 +196,11 @@ def call_model(model: str, messages: list[dict], think: bool = False) -> str:
     return response["message"]["content"]
 ```
 
-`ollama`'s `ChatResponse`/`Message` are pydantic models with custom `__getitem__`/`__contains__`: a key is only considered "present" if it was explicitly set during validation OR its declared default is non-`None`. `Message.content` defaults to `None`. If a thinking-capable model (e.g., Qwen3 with `think=True`) returns a response where only `message.thinking` is populated and `content` is omitted from the JSON entirely, `"content" in response["message"]` is `False` and `response["message"]["content"]` raises `KeyError: 'content'` (verified empirically against `ollama==0.6.2`):
+`ollama`'s `Message` pydantic model defaults `content` to `None`, and its `__getitem__`/`__contains__` treat a field as absent if it was never set during validation and its default is `None`. If a thinking-capable model (e.g. Qwen3 with `think=True`) returns a response where only `message.thinking` is populated and `content` is omitted from the JSON entirely, `response["message"]["content"]` raises `KeyError: 'content'` (verified empirically against `ollama==0.6.2`).
 
-```python
->>> resp = ChatResponse.model_validate({
-...     "model": "qwen3", "created_at": "...", "done": True,
-...     "message": {"role": "assistant", "thinking": "Let me think..."}
-... })
->>> resp["message"]["content"]
-KeyError: 'content'
-```
+`run_loop` always calls `call_model(model, messages)` with `think=False`, where `content` is reliably populated, so this is not reachable from the main agent loop. But `run_smoke_test` (`src/olla/smoke.py`) explicitly calls `call_model(model, messages, think=True)` for the second half of its `think_mode in (False, True)` loop — an uncaught `KeyError` here crashes the entire smoke test for any model that omits `content` under `think=True`, instead of classifying the response as `non_compliant`/`reverted_to_native_format` as the smoke test is designed to do.
 
-`run_loop` always calls `call_model(model, messages)` with the default `think=False`, where Ollama reliably populates `content` (even if empty string), so this path is not currently reachable from the main agent loop. However, `run_smoke_test` (`src/olla/smoke.py`) explicitly iterates `think_mode in (False, True)` and calls `call_model(model, messages, think=think_mode)` — an uncaught `KeyError` here crashes the smoke test entirely for any model that omits `content` under `think=True`, rather than reporting it as `non_compliant`/`reverted_to_native_format`.
-
-**Fix:** Use safe access with a default, consistent with the tolerant-parsing philosophy elsewhere in the codebase:
+**Fix:**
 
 ```python
 def call_model(model: str, messages: list[dict], think: bool = False) -> str:
@@ -218,13 +226,7 @@ else:
     verdict = f"BLOCKED: {decision['reason']}"
 ```
 
-In the real (non-dry-run) loop, `decision["kind"] == "CONFIRM" and not yes` is the actual gating condition (`loop.py:116`) — if `yes=True`, a `CONFIRM`-tier command runs without any prompt. But the dry-run preview's `CONFIRM` branch always prints "would prompt for confirmation", regardless of `yes`. Running `olla --dry-run --yes "..."` against a `git status`-style command prints:
-
-```
-Step 1 would run: ['git', 'status'] — would prompt for confirmation
-```
-
-even though the real run with `--yes` would execute it immediately with no prompt. This makes `--dry-run --yes` (a natural combination for previewing what an automated/unattended run will do) misleading.
+In the real (non-dry-run) loop, the actual gating condition is `decision["kind"] == "CONFIRM" and not yes` (`loop.py:116`) — if `yes=True`, a `CONFIRM`-tier command runs without any prompt. The dry-run preview's `CONFIRM` branch always prints "would prompt for confirmation" regardless of `yes`, so `olla --dry-run --yes "..."` against a `git status`-style command prints a verdict that does not match what the real run would do.
 
 **Fix:**
 
@@ -239,13 +241,17 @@ else:
 
 ---
 
-### WR-03: `env -S "<command>"` remains an unprotected wrap-and-recurse instance, same class as CR-01
+### WR-03: `env -S "<command>"` remains an unprotected wrap-and-recurse instance, same class as CR-01/CR-02/CR-03 above
 
-**File:** `src/olla/safety.py:63-66, 96-98`
-**Issue:**
-`_unwrap_env`'s docstring and `test_env_split_string_flag_wrapping_sudo_confirms` both document that `env -S "sudo rm -rf /"` intentionally returns `CONFIRM`, with the rationale "`-S` consumes its argument as a single string for env to re-split itself; `_unwrap_env` does not parse into that string". This is the same class of gap as CR-01 (a command string embedded in a single argv token, to be split by the wrapped interpreter at runtime, is not recursively gated). Once CR-01 is fixed for `bash/sh/zsh -c`, `env -S "..."` is the next most obvious instance of the same pattern — and a model that discovers `bash -c` is now blocked has an easy fallback (`env -S "sudo rm -rf /"`).
+**File:** `src/olla/safety.py:75, 114-126`
+**Issue:** `_ENV_FLAGS_WITH_ARG` includes `-S`/`--split-string`, so `_unwrap_env(["env", "-S", "sudo rm -rf /"])` skips both tokens and returns `[]` (no wrapped command found) — `test_env_split_string_flag_wrapping_sudo_confirms` documents this as intentional, returning `CONFIRM`. But `env -S "<command>"` re-splits its argument into a command at runtime, exactly like `bash -c "<command>"` — the same class of "command embedded as a single string argument" that CR-01 was fixed for. A model that discovers `bash -c "sudo ..."` and its `-lc` variant (CR-01 above) are blocked has `env -S "sudo rm -rf /"` as a further fallback.
 
-**Fix:** After fixing CR-01, extend the same `shlex.split()` + recurse treatment to `env -S`/`--split-string`'s argument:
+```python
+>>> check(["env", "-S", "sudo rm -rf /"], yes=True)
+{'kind': 'CONFIRM'}
+```
+
+**Fix:** After fixing CR-01, extend the same `shlex.split()` + recurse treatment to `-S`/`--split-string`'s argument inside `_unwrap_env` (or as a separate check in `_blocklist_match` for `binary == "env"`):
 
 ```python
 if argv[i] in ("-S", "--split-string"):
@@ -255,21 +261,16 @@ if argv[i] in ("-S", "--split-string"):
         return []
 ```
 
-Update `test_env_split_string_flag_wrapping_sudo_confirms` to assert `BLOCK` instead, since the current test codifies the bypass as expected behavior rather than testing a deliberate design boundary.
+Update `test_env_split_string_flag_wrapping_sudo_confirms` to assert `BLOCK`.
 
 ---
 
 ### WR-04: Repetition guard does not track non-`shell` tool calls or unparseable args, allowing identical-failure loops to run to `max_steps`
 
-**File:** `src/olla/loop.py:83-95`
-**Issue:**
-The repeat-detection signature (`sig = ("shell", tuple(argv))`, lines 97-102) is only computed inside the `parsed["tool"] == "shell"` and successfully-`shlex.split()`-parsed branch. If the model repeatedly emits:
-- `<tool>write_file</tool>...` (unknown tool), or
-- `<tool>shell</tool><args>echo "unterminated</args>` (unparseable args),
+**File:** `src/olla/loop.py:83-102`
+**Issue:** The repeat-detection signature (`sig = ("shell", tuple(argv))`, computed only at lines 97-102) is only reached when `parsed["tool"] == "shell"` AND `shlex.split(parsed["args_raw"])` succeeds. If the model repeatedly emits an unknown tool (`<tool>write_file</tool>...`) or unparseable shell args (`<tool>shell</tool><args>echo "unterminated</args>`), `prev_sig`/`repeat_count` are never updated, so the "same call repeated 3x — model likely stuck" early exit never fires for these cases — the loop instead consumes all `max_steps` iterations making the identical failing call each time.
 
-`prev_sig`/`repeat_count` are never updated, so the "same call repeated 3x — model likely stuck" early-exit never fires for these cases. The loop will instead consume all `max_steps` iterations making the identical failing call each time, only stopping via the `Reached max steps (...)` message. This is a less severe failure than the `shell` case (it does still terminate within `max_steps`, and doesn't execute anything), but it's an inconsistency in the "model likely stuck" detection — the explicit repetition tests (`test_run_loop_repetition_guard_aborts_before_third_call`, etc.) only cover the successfully-parsed `shell` path.
-
-**Fix:** Compute a signature for these cases too, e.g. `sig = ("unknown_tool", parsed["tool"])` or `sig = ("parse_error", parsed["args_raw"])`, and run it through the same `prev_sig`/`repeat_count`/`>= 3` check before appending the observation and `continue`-ing.
+**Fix:** Compute a signature for these cases too (e.g. `("unknown_tool", parsed["tool"])` or `("parse_error", parsed["args_raw"])`) and run it through the same `prev_sig`/`repeat_count`/`>= 3` check before appending the observation and `continue`-ing.
 
 ## Info
 
@@ -283,18 +284,18 @@ history_content = truncate_output(content) if parsed["type"] == "none" else cont
 messages.append({"role": "assistant", "content": history_content})
 ```
 
-Truncation via `MAX_OBSERVATION_CHARS` is only applied when `parsed["type"] == "none"`. For `type == "tool"` (and `type == "final"`, though that returns immediately), the raw, untruncated `content` — including the full `<args>...</args>` payload — is appended to `messages` verbatim. A model that emits a very large `<args>` blob (e.g., embedding a large file's contents in a heredoc-style argument) will have that full blob preserved in context for every subsequent turn, working against the stated per-turn token-overhead goal for small models. This is likely an intentional trade-off (truncating `<args>` could corrupt the command), but worth a comment noting the asymmetry, or an explicit cap on `args_raw` length with a corrective re-prompt similar to the `none`-type path.
+Truncation via `MAX_OBSERVATION_CHARS` is only applied when `parsed["type"] == "none"`. For `type == "tool"`, the raw, untruncated `content` (including the full `<args>...</args>` payload) is appended to `messages` verbatim. A model that emits a very large `<args>` blob has that full blob preserved in context for every subsequent turn, working against the stated per-turn token-overhead goal for small models. Likely an intentional trade-off (truncating `<args>` could corrupt the command), but worth a comment explaining the asymmetry.
 
-**Fix:** Add a comment explaining why `tool`/`final` content is exempted from truncation, or apply a separate (larger) cap to `args_raw` specifically with a "command too long, please simplify" corrective message.
+**Fix:** Add a comment explaining why `tool`-type content is exempted from truncation, or apply a separate (larger) cap to `args_raw` specifically with a corrective re-prompt similar to the `none`-type path.
 
 ---
 
 ### IN-02: `--max-steps` accepts zero/negative values without validation, producing a confusing message
 
-**File:** `src/olla/cli.py:14`, `src/olla/loop.py:73, 146`
-**Issue:** `@click.option("--max-steps", default=15, show_default=True, type=int)` has no minimum constraint. `--max-steps 0` or a negative value causes `range(1, max_steps + 1)` to be empty, so the loop body never executes and `ollama.chat` is never called — `run_loop` immediately prints `Reached max steps (0) without a <final> answer.` (or `(-1)`). Not a crash, but a confusing UX for an obviously-invalid input (the user gets a "max steps reached" message without any step having been attempted).
+**File:** `src/olla/cli.py:14`
+**Issue:** `@click.option("--max-steps", default=15, show_default=True, type=int)` has no minimum constraint. `--max-steps 0` (or negative) makes `range(1, max_steps + 1)` empty in `loop.py:73`, so the loop body never executes and `run_loop` immediately prints `Reached max steps (0) without a <final> answer.` — not a crash, but a confusing message for an obviously-invalid input.
 
-**Fix:** Add `click.IntRange(min=1)` to the `--max-steps` option:
+**Fix:**
 
 ```python
 @click.option("--max-steps", default=15, show_default=True, type=click.IntRange(min=1))
@@ -302,19 +303,19 @@ Truncation via `MAX_OBSERVATION_CHARS` is only applied when `parsed["type"] == "
 
 ---
 
-### IN-03: `_blocklist_match` recursion (`env`, `find -exec`, and the proposed `bash -c` fix) has no depth limit
+### IN-03: `_blocklist_match` recursion (`env`, `find -exec`, `bash/sh/zsh -c`) has no depth limit
 
-**File:** `src/olla/safety.py:142-156`
-**Issue:** `_blocklist_match` recurses into wrapped commands for `env` and `find -exec` via plain recursive calls with no depth limit. Currently this is bounded in practice (the recursion only continues if the wrapped binary is itself `env` or `find`), but if CR-01's fix adds a third recursive case (`bash -c "..."`), combinations like `bash -c "env env env env ... sudo rm -rf /"` increase the plausibility of a deeply nested chain assembled by string concatenation from a hallucinating model. A `RecursionError` during `_blocklist_match` would propagate out of `check()` uncaught, crashing `run_loop`.
+**File:** `src/olla/safety.py:148-226`
+**Issue:** `_blocklist_match` recurses into wrapped commands for `env`, `find -exec`, and (since 02-05) `bash/sh/zsh -c`, with no depth limit. A pathological input chaining many wrappers (e.g. `bash -c "env env env env ... sudo rm -rf /"`, or `env env env ... env sudo ls`) could in principle drive `_blocklist_match` toward Python's recursion limit; a `RecursionError` here would propagate out of `check()` uncaught and crash `run_loop`. Tested 50 levels of `env` nesting without issue, but the lack of an explicit bound means correctness depends on the model never producing a sufficiently long chain — and the CR-01 fix to this review adds a third recursive case, making longer chains via `bash -c "<deeply nested>"` more plausible.
 
-**Fix:** Add a small depth counter/limit (e.g., 10) to `_blocklist_match`, returning a conservative result (e.g., treat as unmatched/CONFIRM, or BLOCK with "too deeply nested to safety-check") once exceeded, rather than letting `RecursionError` propagate:
+**Fix:** Add a small depth counter/limit (e.g. 10) to `_blocklist_match`, returning a conservative result (e.g. `"command nesting too deep to safety-check"`, treated as `BLOCK`) once exceeded rather than letting `RecursionError` propagate:
 
 ```python
 def _blocklist_match(argv: list[str], _depth: int = 0) -> str | None:
     if _depth > 10:
         return "command nesting too deep to safety-check"
     ...
-    # pass _depth + 1 to recursive calls
+    # pass _depth + 1 to each recursive call
 ```
 
 ---
