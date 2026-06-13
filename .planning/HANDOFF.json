@@ -1,25 +1,25 @@
 {
   "version": "1.0",
-  "timestamp": "2026-06-13T20:45:43.276Z",
+  "timestamp": "2026-06-13T22:35:37.326Z",
   "phase": "02",
   "phase_name": "safety-gate-loop-control",
   "phase_dir": ".planning/phases/02-safety-gate-loop-control",
-  "plan": 7,
+  "plan": 8,
   "task": 1,
   "total_tasks": 1,
   "status": "paused",
-  "completed_tasks": [
-    {"id": 1, "name": "Round-4 dot-segment root-target bypass fix (rule 7 widened for /., //., /./)", "status": "done", "commit": "6ff02cc"}
-  ],
+  "completed_tasks": [],
   "remaining_tasks": [
-    {"id": "code_review_gate", "name": "Spawn gsd-code-reviewer (standard depth) for src/olla/safety.py + tests/test_safety.py, write 02-REVIEW.md, commit", "status": "not_started"},
-    {"id": "verify_phase_goal", "name": "Spawn gsd-verifier for phase 02 round 5, create/update 02-VERIFICATION.md", "status": "not_started"},
-    {"id": "status_routing", "name": "Route per verifier status: passed->update_roadmap/phase.complete; gaps_found->/gsd:plan-phase 02 --gaps (round 6); human_needed->HUMAN-UAT", "status": "not_started"}
+    {"id": 1, "name": "Fix CR-01 -- drop NotRequired from safety.py Decision TypedDict, add static 3.11-only-typing-symbol regression test", "status": "not_started"}
   ],
-  "blockers": [],
+  "blockers": [
+    {"description": "No Python 3.10/3.11/3.12/3.13 interpreter available on this dev machine (only 3.14) -- the plan's manual import-verification step cannot be executed here", "type": "external", "workaround": "Documented as a comment in tests/test_safety.py per plan step 5; not gating, informational only"}
+  ],
   "human_actions_pending": [],
-  "decisions": [],
+  "decisions": [
+    {"decision": "CR-01 fix = Option 3 (drop NotRequired, use class Decision(TypedDict, total=False))", "rationale": "Project's minimal-dependency constraint excludes typing_extensions (Option 2); bumping requires-python to >=3.11 (Option 1) would narrow the declared floor. TypedDict performs zero runtime enforcement and check() sets 'kind' on all 4 return paths, so the total=False type-checker weakening is purely theoretical.", "phase": "02"}
+  ],
   "uncommitted_files": [],
-  "next_action": "Do NOT re-invoke /gsd:execute-phase 02 (any form) — all 7 plans now have SUMMARY.md, discover_and_group_plans will report 'No matching incomplete plans' and exit before reaching code_review_gate/verify_phase_goal. Instead: (1) Skill(gsd-code-review, '02') — file scope already computed = [src/olla/safety.py, tests/test_safety.py] (Tier 2, from 02-07-SUMMARY.md), depth=standard (config), fallow disabled; (2) directly Agent(subagent_type='gsd-verifier', model='sonnet') per execute-phase.md verify_phase_goal step for round 5; (3) follow execute-phase.md's post-verify status routing manually (update_roadmap / phase.complete / gap-closure / HUMAN-UAT as appropriate).",
-  "context_notes": "02-07 (round-4 gap closure) executed via worktree (4 commits: be792e9 RED, 6ff02cc GREEN, 4eca971 docs, a45930b self-check). Merged+removed cleanly. Post-merge gates: compileall pass, pytest 125/125 pass (121 prior + 4 new). roadmap.update-plan-progress(02,02-07,complete) -> plan_count==summary_count==7, status=Complete. Tracking committed (5ba168a 'docs(phase-02): update tracking after wave 5'). schema_drift: not detected. codebase_drift: skipped (no STRUCTURE.md), action_required=false. regression_gate: no prior-phase VERIFICATION.md outside phase 02 found -> n/a. security_enforcement=true and no 02-SECURITY.md exists yet -> once verify passes, next-steps routing should surface /gsd:secure-phase 02 reminder. This is the 5th consecutive verification round for phase 02 (rounds 1-4 each found one more equivalent-form blocklist bypass in safety.py's rule 4/7 family: //, --recursive, /., //., /./ etc.) -- round 5 verifier should specifically re-check whether ANY further equivalent-form variants remain (e.g. trailing whitespace, ./ relative forms, symlink-based, env -S, shell -c chaining -- the last two are explicitly-accepted residuals per 02-07's threat model, T-02-07-04/05, do not re-flag as new gaps)."
+  "next_action": "Run /gsd:execute-phase 02 --gaps-only -- ROADMAP.md now lists 8 plans for phase 02 with 02-08 unchecked (plan_count=8 != summary_count=7), so the orchestrator will discover 02-08-PLAN.md as the sole incomplete plan and execute it normally as a new wave. The prior session's 'execute-phase-cannot-resume-mid-gate' blocker no longer applies.",
+  "context_notes": "Round-5 verification (0e4b07a) found ONE gap, CR-01: src/olla/safety.py line 7 imports typing.NotRequired (PEP 655, Python 3.11+), but pyproject.toml declares requires-python>=3.10, so 'import olla.safety' -> ImportError on 3.10, breaking the whole olla CLI import chain (olla.safety -> olla.loop -> olla.cli). This is a DIFFERENT gap family from the 4 prior SAFE-02/SAFE-04 blocklist-bypass rounds (02-04..02-07) -- it's a Python-version-compat bug, not a new bypass variant. Gap-closure plan 02-08-PLAN.md (a434d79, tweaked in 80717a6) is fully written and ready: 2-line fix in safety.py (drop NotRequired from the typing import, change Decision to TypedDict total=False) plus a new static regression test in test_safety.py that greps safety.py's own source for NotRequired/Required[ so the bug can't silently come back even on this dev machine's Python 3.14. Target after Task 1: 126/126 tests green. After execution, run code_review_gate (round 6) and verify_phase_goal (round 6) per execute-phase.md's standard tail -- existing 02-REVIEW.md (007562c) was for round-5's files and will need a fresh round-6 review of the same [src/olla/safety.py, tests/test_safety.py] pair. If round-6 verifier returns 'passed', this closes out phase 02 entirely (plan_count==summary_count==8, all 5 verification rounds resolved) -- remember to remind the user about /gsd:secure-phase 02 in offer_next (security_enforcement=true, no 02-*-SECURITY.md exists yet)."
 }
