@@ -97,6 +97,52 @@ def test_fork_bomb_via_bash_dash_c_blocks():
     assert check(["bash", "-c", ":(){ :|:& };:"], yes=False)["kind"] == "BLOCK"
 
 
+def test_bash_dash_c_sudo_rm_rf_root_blocks():
+    decision = check(["bash", "-c", "sudo rm -rf /"], yes=False)
+    assert decision["kind"] == "BLOCK"
+    assert "sudo" in decision["reason"]
+
+
+def test_bash_dash_c_sudo_rm_rf_root_blocks_even_with_yes():
+    # D-04: yes never changes the gate decision's kind.
+    assert check(["bash", "-c", "sudo rm -rf /"], yes=True)["kind"] == "BLOCK"
+
+
+def test_sh_dash_c_rm_rf_root_blocks():
+    decision = check(["sh", "-c", "rm -rf /"], yes=False)
+    assert decision["kind"] == "BLOCK"
+    assert "rm" in decision["reason"]
+
+
+def test_sh_dash_c_dd_on_raw_device_blocks():
+    decision = check(["sh", "-c", "dd if=/dev/zero of=/dev/sda"], yes=False)
+    assert decision["kind"] == "BLOCK"
+    assert "dd" in decision["reason"]
+
+
+def test_find_exec_sh_dash_c_sudo_blocks():
+    decision = check(["find", ".", "-exec", "sh", "-c", "sudo rm -rf /", ";"], yes=False)
+    assert decision["kind"] == "BLOCK"
+    assert "sudo" in decision["reason"]
+
+
+def test_bash_dash_c_harmless_command_confirms():
+    # `bash -c "echo hi"` -> ["echo", "hi"] has no blocklist match, and
+    # `bash` itself is not allowlisted, so this remains CONFIRM (no
+    # over-blocking from the new shlex-split-and-recurse logic).
+    assert check(["bash", "-c", "echo hi"], yes=False)["kind"] == "CONFIRM"
+
+
+def test_bash_dash_c_no_command_confirms():
+    # Malformed/truncated model emission: no command after -c. Must not
+    # raise IndexError (revision iteration 1, T-02-05-06).
+    assert check(["bash", "-c"], yes=False)["kind"] == "CONFIRM"
+
+
+def test_sh_dash_c_no_command_confirms():
+    assert check(["sh", "-c"], yes=False)["kind"] == "CONFIRM"
+
+
 def test_hard_blocked_binaries_block():
     for binary in ("sudo", "su", "shutdown", "reboot", "poweroff", "halt"):
         decision = check([binary, "ls"], yes=False)
@@ -111,6 +157,17 @@ def test_rm_dangerous_targets_block():
 
 def test_rm_non_dangerous_target_confirms():
     assert check(["rm", "myfile.txt"], yes=False)["kind"] == "CONFIRM"
+
+
+def test_rm_double_slash_target_blocks():
+    decision = check(["rm", "-rf", "//"], yes=False)
+    assert decision["kind"] == "BLOCK"
+    assert "rm" in decision["reason"]
+    assert "//" in decision["reason"]
+
+
+def test_rm_triple_slash_target_blocks():
+    assert check(["rm", "-rf", "///"], yes=False)["kind"] == "BLOCK"
 
 
 def test_dd_on_raw_block_device_blocks():
@@ -150,6 +207,17 @@ def test_chmod_combined_recursive_force_on_root_blocks():
 
 def test_chown_combined_recursive_force_on_root_blocks():
     assert check(["chown", "-Rf", "user", "/"], yes=False)["kind"] == "BLOCK"
+
+
+def test_chmod_recursive_long_flag_on_root_blocks():
+    decision = check(["chmod", "--recursive", "777", "/"], yes=False)
+    assert decision["kind"] == "BLOCK"
+    assert "chmod -R" in decision["reason"]
+    assert "/" in decision["reason"]
+
+
+def test_chown_recursive_long_flag_on_root_blocks():
+    assert check(["chown", "--recursive", "user", "/"], yes=False)["kind"] == "BLOCK"
 
 
 def test_block_takes_precedence_over_allow():
