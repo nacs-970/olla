@@ -363,6 +363,24 @@ def test_run_loop_bash_dash_c_sudo_with_yes_still_blocks(mocker, capsys):
     mock_run_shell.assert_not_called()
 
 
+# CR-01 (round 3): bash -lc "sudo rm -rf /" (combined short flag) must BLOCK
+# even with --yes (02-VERIFICATION.md round 3 gap).
+def test_run_loop_bash_dash_lc_sudo_with_yes_still_blocks(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": '<tool>shell</tool><args>bash -lc "sudo rm -rf /"</args>'}},
+        {"message": {"content": "<final>done</final>"}},
+    ]
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+
+    run_loop(task="delete everything", model="test-model", max_steps=15, system_prompt="sys", yes=True)
+
+    captured = capsys.readouterr()
+    assert "blocked by safety policy:" in captured.out
+    assert "sudo" in captured.out
+    mock_run_shell.assert_not_called()
+
+
 def test_dry_run_final_response_prints_preview_and_stops(mocker, capsys):
     mock_chat = mocker.patch("olla.loop.ollama.chat")
     mock_chat.return_value = {"message": {"content": "<final>42</final>"}}
