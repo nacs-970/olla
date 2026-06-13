@@ -287,6 +287,37 @@ def test_chmod_recursive_long_flag_double_slash_blocks():
     assert "chmod -R" in decision["reason"]
 
 
+def test_chmod_recursive_dot_segment_target_blocks():
+    # Round 4: `/.` is filesystem-equivalent to `/` (os.path.normpath
+    # resolves it to `/`), so `chmod -R 777 /.` must BLOCK even under
+    # yes=True (D-04 invariant).
+    decision = check(["chmod", "-R", "777", "/."], yes=True)
+    assert decision["kind"] == "BLOCK"
+    assert "chmod -R" in decision["reason"]
+
+
+def test_chown_recursive_dot_segment_target_blocks():
+    decision = check(["chown", "-R", "user", "/."], yes=True)
+    assert decision["kind"] == "BLOCK"
+    assert "chown -R" in decision["reason"]
+
+
+def test_chmod_recursive_double_slash_dot_target_blocks():
+    # Round 4: `//.` is filesystem-equivalent to `//` (os.path.normpath
+    # resolves it to `//`, which Linux treats identically to `/`).
+    decision = check(["chmod", "-R", "777", "//."], yes=True)
+    assert decision["kind"] == "BLOCK"
+    assert "chmod -R" in decision["reason"]
+
+
+def test_chmod_recursive_long_flag_dot_slash_target_blocks():
+    # Round 4: `/./` is filesystem-equivalent to `/` (os.path.normpath
+    # resolves it to `/`).
+    decision = check(["chmod", "--recursive", "777", "/./"], yes=True)
+    assert decision["kind"] == "BLOCK"
+    assert "chmod -R" in decision["reason"]
+
+
 def test_block_takes_precedence_over_allow():
     # Sanity: a genuinely allowlisted command with no blocklist match is ALLOW.
     assert check(["echo", "hi"], yes=False)["kind"] == "ALLOW"
