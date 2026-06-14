@@ -1,6 +1,8 @@
 """Tests for olla.safety.check."""
 
-from olla.safety import ALLOWLIST, check
+import inspect
+
+from olla.safety import ALLOWLIST, Decision, check
 
 
 def test_allowlist_members_allow():
@@ -339,3 +341,32 @@ def test_empty_argv_blocks_with_reason():
     decision = check([], yes=False)
     assert decision["kind"] == "BLOCK"
     assert "empty" in decision["reason"]
+
+
+# --- CR-01 regression: safety.py must not depend on Python-3.11-only typing ---
+#
+# `pyproject.toml` declares `requires-python = ">=3.10"`. `typing.NotRequired`
+# and `typing.Required` are PEP 655 symbols added in Python 3.11 — importing
+# either on a real 3.10 interpreter raises ImportError at module load time,
+# breaking the whole `olla.safety` -> `olla.loop` -> `olla.cli` import chain.
+#
+# This test is a portable static check: it reads safety.py's own source text
+# and fails if either symbol reappears, on ANY Python version (including this
+# dev machine's 3.14, where the symbols themselves would import fine and would
+# NOT cause a failure on their own — only the source-text check catches it).
+#
+# Manual verification (not exercised here — no 3.10/3.11/3.12/3.13 interpreter
+# is available on this dev machine): on a system with one available, run
+#     python3.10 -c "import olla.safety"
+# (or python3.11) and confirm it exits 0 with no ImportError.
+def test_safety_module_has_no_python311_only_typing_symbols():
+    source_path = inspect.getsourcefile(check)
+    source = open(source_path).read()
+    assert "NotRequired" not in source
+    assert "Required[" not in source
+
+
+def test_decision_is_importable():
+    # Confirms the Decision TypedDict is still exported after the
+    # `class Decision(TypedDict, total=False):` rename (CR-01).
+    assert Decision is not None

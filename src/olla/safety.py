@@ -4,12 +4,15 @@ import fnmatch
 import os
 import re
 import shlex
-from typing import Literal, NotRequired, TypedDict
+from typing import Literal, TypedDict
 
 
-class Decision(TypedDict):
+class Decision(TypedDict, total=False):
     kind: Literal["ALLOW", "CONFIRM", "BLOCK"]
-    reason: NotRequired[str]  # present only when kind == "BLOCK"
+    reason: str  # present only when kind == "BLOCK"; total=False is a
+    # type-checker-only relaxation (no runtime enforcement either way) chosen
+    # to avoid PEP 655's optional-key type marker (Python >=3.11 only) per
+    # CR-01 -- check() always sets `kind` on every return path.
 
 
 # D-01: whole-binary allowlist — read-only, side-effect-free commands that
