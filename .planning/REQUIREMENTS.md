@@ -10,7 +10,7 @@
 - [x] **LOOP-01**: ReAct loop parses `<tool>`/`<args>`/`<final>` tags from model output, tolerant of markdown fences, whitespace, and minor formatting drift
 - [x] **LOOP-02**: Stop-sequences passed to `ollama.chat()` so the model can't generate past a tool call and hallucinate its own observation/final
 - [x] **LOOP-03**: Explicit `num_ctx` set on every Ollama request; large tool outputs truncated before being appended to history
-- [ ] **LOOP-04**: Repetition guard aborts the loop with a diagnostic if the same tool+args is called 2-3 times in a row
+- [x] **LOOP-04**: Repetition guard aborts the loop with a diagnostic if the same tool+args is called 2-3 times in a row
 - [x] **LOOP-05**: Visible step-by-step progress output ("Step N: running `<cmd>`...") as the loop executes
 
 ### Shell
@@ -28,10 +28,10 @@
 
 ### Safety
 
-- [ ] **SAFE-01**: `--dry-run` flag previews the next planned tool call without executing it or any side effects, then stops
-- [ ] **SAFE-02**: Shell command blocklist (`rm -rf /`, `sudo`, `dd`, etc.) as a speed-bump layer, not the primary safety boundary
-- [ ] **SAFE-03**: `--max-steps` cap (default 15) prevents infinite loops
-- [ ] **SAFE-04**: Confirm prompt (`rich.Confirm.ask`) before shell/write_file execution, overridable with `--yes`
+- [x] **SAFE-01**: `--dry-run` flag previews the next planned tool call without executing it or any side effects, then stops
+- [x] **SAFE-02**: Shell command blocklist (`rm -rf /`, `sudo`, `dd`, etc.) as a speed-bump layer, not the primary safety boundary
+- [x] **SAFE-03**: `--max-steps` cap (default 15) prevents infinite loops
+- [x] **SAFE-04**: Confirm prompt (`rich.Confirm.ask`) before shell/write_file execution, overridable with `--yes`
 
 ### CLI
 
@@ -76,11 +76,11 @@
 | CLI-01 | Phase 1 | Complete |
 | CLI-02 | Phase 1 | Complete |
 | CLI-03 | Phase 1 | Complete |
-| LOOP-04 | Phase 2 | Pending |
-| SAFE-01 | Phase 2 | Pending |
-| SAFE-02 | Phase 2 | Pending |
-| SAFE-03 | Phase 2 | Pending |
-| SAFE-04 | Phase 2 | Pending |
+| LOOP-04 | Phase 2 | Complete |
+| SAFE-01 | Phase 2 | Complete |
+| SAFE-02 | Phase 2 | Complete |
+| SAFE-03 | Phase 2 | Complete |
+| SAFE-04 | Phase 2 | Complete |
 | FILE-01 | Phase 3 | Pending |
 | FILE-02 | Phase 3 | Pending |
 | MEM-01 | Phase 4 | Pending |
