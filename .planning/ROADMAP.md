@@ -81,7 +81,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 ### Phase 3: File Tools
 
-**Goal**: The model can read existing file contents and write new file contents to accomplish tasks, with writes flowing through the Phase 2 safety gate.
+**Goal**: As a user running an agentic task with olla, I want the model to read existing files and write modified files through the confirm-gate, so that it can inspect and update my project's files to complete the task.
 **Mode:** mvp
 **Depends on**: Phase 2
 **Requirements**: FILE-01, FILE-02
@@ -91,7 +91,15 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. The model calls `write_file(path, content)` and the file is written only after the user confirms, with the resolved path shown in the prompt
   3. A task that requires inspecting a file and then writing a modified version completes end-to-end
 
-**Plans**: TBD
+**Plans:** 2 plans
+
+**Wave 1**
+
+- [ ] 03-01-PLAN.md — `read_file` end-to-end: tools/files.py::read_file, ToolResult.content, run_loop dispatch restructure (read_file ALLOW-tier, dry-run preview, repetition guard generalization), SYSTEM_PROMPT update (success criterion 1, FILE-01)
+
+**Wave 2** *(depends on Wave 1 — write_file shares loop.py's dispatch shape with read_file)*
+
+- [ ] 03-02-PLAN.md — `write_file` end-to-end: parser Pitfall-1 fix (preserve fences/trailing newline in write_file content), tools/files.py::write_file, run_loop CONFIRM-gate dispatch (resolved-path prompt, --yes, dry-run preview, repetition guard), SYSTEM_PROMPT write_file doc + `</args>` caveat, SC3 read-then-write integration test (success criteria 2-3, FILE-02)
 
 ### Phase 4: Memory Tool
 
@@ -115,5 +123,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 |-------|----------------|--------|-----------|
 | 1. Core Loop + Shell Tool + CLI | 2/2 | Complete   | 2026-06-11 |
 | 2. Safety Gate + Loop Control | 8/8 | Complete   | 2026-06-14 |
-| 3. File Tools | 0/TBD | Not started | - |
+| 3. File Tools | 0/2 | Not started | - |
 | 4. Memory Tool | 0/TBD | Not started | - |
+</content>
