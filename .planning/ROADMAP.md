@@ -60,7 +60,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. `--dry-run` shows the next planned tool call and stops without executing it or causing any side effect
   4. The loop aborts with a diagnostic when it hits `--max-steps` (default 15) or when the same tool+args is called 2-3 times in a row
 
-**Plans:** 7/7 plans complete
+**Plans:** 8/8 plans complete
 
 **Wave 1**
 
@@ -77,7 +77,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] 02-05-PLAN.md — Gap closure round 3a: bash/sh/zsh -c wrap-and-recurse (CR-01 re-opened), chmod/chown -R on doubled-slash `/` (CR-02), dd/mkfs doubled-slash device path (CR-03) (SAFE-02, SAFE-04)
 - [x] 02-06-PLAN.md — Gap closure round 3b: equivalent-form bypasses found post-02-05 — combined short-flag `bash -lc`/`sh -ic`/`zsh -xc` (CR-01 round 3), `chmod/chown -R //` doubled-slash target on rule 7 (CR-02 round 3), `dd`/`mkfs of=//dev/sda` doubled-slash device path (CR-03 round 3) (SAFE-02, SAFE-04)
 - [x] 02-07-PLAN.md — Gap closure round 4: dot-segment equivalent-form root-target bypass on rule 7 (`chmod/chown -R /.`, `//.`, `/./`) (CR-02 round 4) (SAFE-02, SAFE-04)
-- [ ] 02-08-PLAN.md — Gap closure round 5: Python 3.10 import compatibility — drop `typing.NotRequired` (PEP 655, 3.11+) from `safety.py`'s `Decision` TypedDict, restoring `import olla.safety` on the declared >=3.10 floor (CR-01) (LOOP-04, SAFE-01, SAFE-02, SAFE-03, SAFE-04)
+- [x] 02-08-PLAN.md — Gap closure round 5: Python 3.10 import compatibility — drop `typing.NotRequired` (PEP 655, 3.11+) from `safety.py`'s `Decision` TypedDict, restoring `import olla.safety` on the declared >=3.10 floor (CR-01) (LOOP-04, SAFE-01, SAFE-02, SAFE-03, SAFE-04)
 
 ### Phase 3: File Tools
 
@@ -114,6 +114,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Core Loop + Shell Tool + CLI | 2/2 | Complete   | 2026-06-11 |
-| 2. Safety Gate + Loop Control | 7/7 | Complete   | 2026-06-13 |
+| 2. Safety Gate + Loop Control | 8/8 | Complete   | 2026-06-14 |
 | 3. File Tools | 0/TBD | Not started | - |
 | 4. Memory Tool | 0/TBD | Not started | - |
