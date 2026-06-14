@@ -115,3 +115,12 @@ None - no new network endpoints, auth paths, file access patterns, or schema cha
 ---
 *Phase: 02-safety-gate-loop-control*
 *Completed: 2026-06-14*
+
+## Self-Check: PASSED
+
+- FOUND: src/olla/safety.py
+- FOUND: tests/test_safety.py
+- FOUND: .planning/phases/02-safety-gate-loop-control/02-08-SUMMARY.md
+- FOUND commit: 222363e (test - RED)
+- FOUND commit: cf6d16a (fix - GREEN)
+- FOUND commit: f8355cb (docs - summary)
