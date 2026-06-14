@@ -423,27 +423,31 @@ The exact wording is a planner/discuss-phase concern (token-budget tuning for 0.
 
 **Note:** A1 and A2 are design recommendations with MEDIUM confidence (no external authority validates "best" small-model tool-encoding — this is project-specific). A3 is HIGH confidence (verified against `loop.py` source). Neither A1 nor A2 represents a hallucinated package/API — both concern in-repo design choices the planner/discuss-phase should confirm or adjust based on early testing against the project's target models (mirrors Phase 1's SC6 empirical validation pattern).
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **How should `parse_response` be restructured to fix Pitfall 1 (fence-stripping/`.strip()` corruption of `write_file` content) without regressing Phase 1's fence-tolerance for `shell`/`final` tags?**
    - What we know: the current global `re.sub` and `.strip()` are verified (empirically, 2026-06-14) to corrupt `write_file` content containing fences or relying on trailing whitespace/newlines.
    - What's unclear: whether a single targeted-unwrap regex is sufficient, or whether `parse_response` needs a tool-aware branch (extract `args_raw` differently for `write_file` vs. `shell`/other tools).
    - Recommendation: planner should design this as its own task with explicit before/after test cases (a markdown file with embedded fences, a file requiring a trailing newline), and treat it as the phase's highest-risk *code* task — possibly sequenced first since `read_file`/`write_file` dispatch and the system prompt both depend on the encoding being correct.
+   - **RESOLVED:** 03-02 Task 2 step 1 mandates a tool-aware branch (Option A): `parse_response` determines `tool_match` against the original `content` before any fence-stripping; for `write_file` only, `args_raw` is returned verbatim from `ARGS_RE.search(content)` (no `.strip()`, no fence-stripping on that span). For `shell`, `read_file`, and all other tools, behavior is unchanged from today — `.strip()` and global fence-stripping continue to apply exactly as before, requiring zero changes to 03-01's `read_file(parsed["args_raw"])` call site (03-01-PLAN.md Task 2 step 7). The return dict shape stays `{"type": "tool", "tool": ..., "args_raw": ...}` with no new keys.
 
 2. **What size threshold should trigger `read_file` truncation, and should it match `MAX_OBSERVATION_CHARS` (2000) exactly, or differ for file content vs. shell output?**
    - What we know: `loop.py`'s `truncate_output(text, limit=MAX_OBSERVATION_CHARS)` defaults to 2000 chars, head+tail split.
    - What's unclear: whether 2000 chars is appropriate for file content (often more line-structured/predictable than shell output) — e.g., a head+tail split of a 500-line Python file may produce a confusing "head of file ... tail of file" view that omits the middle entirely, vs. shell output where head+tail of a long log is more naturally useful.
    - Recommendation: reuse `truncate_output` with the existing constant for MVP consistency (Don't Hand-Roll); if the planner wants file-specific truncation (e.g., "first N lines + last N lines" instead of "first N chars + last N chars"), that's a reasonable v2 refinement but adds complexity not required by FILE-01's stated success criterion ("truncated if oversized so it cannot blow the context window" — char-based truncation already satisfies this).
+   - **RESOLVED:** 03-01-PLAN.md Task 2 step 7 reuses `truncate_output` with the existing `MAX_OBSERVATION_CHARS` (2000) constant for `read_file` Observations, exactly as recommended — no file-specific truncation logic added.
 
 3. **Should `write_file` create missing parent directories, or fail with an error observation?**
    - What we know: `Path.write_text()` raises `FileNotFoundError` if the parent directory doesn't exist (verified: this is standard `pathlib`/`open()` behavior, not olla-specific).
    - What's unclear: whether the project wants `write_file` to `mkdir(parents=True)` automatically (convenience, but a write_file call could now create an arbitrary directory tree as a side effect of a single confirm) or surface the error and let the model retry (e.g., emit a `shell` `mkdir -p` call first, which would itself go through the shell CONFIRM gate).
    - Recommendation: fail with an error observation (`{"error": "parent directory does not exist: ..."}`) for MVP — this is the smaller, more auditable side effect, and is consistent with "every action the user sees in the confirm prompt is the action that happens" (auto-creating directories as a side-effect of a file-write confirm could surprise the user). The model can recover by issuing a `shell` `mkdir -p` command, which gets its own confirm prompt.
+   - **RESOLVED:** 03-02-PLAN.md Task 2 step 3 implements `write_file` to fail with `{"path": path, "error": f"parent directory does not exist: {p.parent}"}` when the parent directory is missing, with no `mkdir` call — exactly as recommended. Covered by `test_write_file_missing_parent_dir_errors` (Task 1) and threat T-03-09 (accept disposition).
 
 4. **Is the `</args>`-in-content stop-sequence truncation (Pitfall 5) something the project is willing to accept for v1, or does it need to be surfaced to the user during `/gsd:discuss-phase`?**
    - What we know: `loop.py`'s `call_model` literally passes `</args>` as a stop-sequence (HIGH confidence, verified). Content containing that substring will be truncated at generation time (MEDIUM confidence on the exact mechanism — reasoned from Ollama's documented stop-sequence semantics, not live-traced).
    - What's unclear: whether this needs a live-model trace to confirm before planning proceeds, or whether documenting-and-accepting (option 1) is sufficient to unblock the plan.
    - Recommendation: treat as accept-and-document for v1 (add the caveat to `SYSTEM_PROMPT`/docs as shown in Code Examples). If `/gsd:discuss-phase` surfaces this and the user wants stronger guarantees, that's a scope decision affecting the stop-sequence design (LOOP-02) more broadly, not just Phase 3 — flag for cross-phase awareness rather than blocking Phase 3 planning.
+   - **RESOLVED:** 03-02-PLAN.md Task 2 step 7 adds the `</args>` caveat to `SYSTEM_PROMPT` (accept-and-document, option 1). Threat T-03-08 (disposition: accept) documents the rationale and notes no automated regression test is possible — captured as Manual-Only Verification in 03-VALIDATION.md, not a Wave 0 gap.
 
 ## Environment Availability
 
@@ -542,3 +546,4 @@ Not applicable — this phase has no external dependencies (no new packages, no 
 
 **Research date:** 2026-06-14
 **Valid until:** Effectively indefinite for the stdlib portions (pathlib/open are stable); the parser-fix design (Pitfall 1) and the stop-sequence limitation (Pitfall 5) should be revisited if Phase 1's smoke-test (01-02) is re-run against new target models, since both fence-handling and stop-sequence-truncation behavior are model-dependent
+</content>
