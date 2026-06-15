@@ -17,3 +17,4 @@ class ToolResult(TypedDict, total=False):
     error: str
     path: str
     content: str
+    bytes_written: int

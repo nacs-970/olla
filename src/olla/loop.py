@@ -1,13 +1,14 @@
 """ReAct loop step execution."""
 
 import shlex
+from pathlib import Path
 
 import ollama
 from rich.prompt import Confirm
 
 from olla.parser import parse_response
 from olla.safety import check
-from olla.tools.files import read_file
+from olla.tools.files import read_file, write_file
 from olla.tools.shell import run_shell
 
 MAX_OBSERVATION_CHARS = 2000
@@ -66,6 +67,11 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
             return
         elif parsed["tool"] == "read_file":
             print(f"Step 1 would read: {parsed['args_raw']}")
+            return
+        elif parsed["tool"] == "write_file":
+            path, _, _ = parsed["args_raw"].partition("\n")
+            resolved = Path(path.strip()).resolve()
+            print(f"Step 1 would write to {resolved} — would prompt for confirmation")
             return
         else:
             print(f"Model would call unknown tool '{parsed['tool']}'")
@@ -157,6 +163,41 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                     if not combined:
                         combined = "(no output)"
                 preview = truncate_output(combined)
+                print(preview)
+                messages.append({"role": "user", "content": f"Observation: {preview}"})
+                continue
+            elif parsed["tool"] == "write_file":
+                sig = ("write_file", parsed["args_raw"])
+                if sig == prev_sig:
+                    repeat_count += 1
+                else:
+                    prev_sig = sig
+                    repeat_count = 1
+
+                if repeat_count >= 3:
+                    print(f"olla stopped: same {parsed['tool']} call repeated 3x — model likely stuck")
+                    return
+
+                path, _, file_content = parsed["args_raw"].partition("\n")
+                path = path.strip()
+                resolved = Path(path).resolve()
+
+                if not yes:
+                    try:
+                        approved = Confirm.ask(f"Write to `{resolved}`?", default=False)
+                    except EOFError:
+                        approved = False
+                    if not approved:
+                        messages.append({"role": "user", "content": "Observation: declined by user"})
+                        continue
+
+                print(f"Step {step}: writing to {resolved}...")
+
+                result = write_file(path, file_content)
+                if "error" in result:
+                    preview = result["error"]
+                else:
+                    preview = f"wrote {result.get('bytes_written', 0)} bytes to {resolved}"
                 print(preview)
                 messages.append({"role": "user", "content": f"Observation: {preview}"})
                 continue
