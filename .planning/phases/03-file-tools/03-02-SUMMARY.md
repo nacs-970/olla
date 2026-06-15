@@ -120,4 +120,14 @@ None - no external service configuration required.
 ---
 *Phase: 03-file-tools*
 *Completed: 2026-06-15*
+
+## Self-Check: PASSED
+
+- FOUND: `.planning/phases/03-file-tools/03-02-SUMMARY.md`
+- FOUND: `def write_file` in `src/olla/tools/files.py`
+- FOUND: `partition` in `src/olla/loop.py`
+- FOUND: `write_file` in `src/olla/prompts.py`
+- FOUND: commit `b5680a3` (test RED)
+- FOUND: commit `3fa97eb` (feat GREEN)
+- FOUND: commit `35f7ae7` (docs SUMMARY)
 </content>
