@@ -41,3 +41,25 @@ def test_final_wins_over_tool():
     content = "<tool>shell</tool><args>ls</args><final>done</final>"
     result = parse_response(content)
     assert result["type"] == "final"
+
+
+def test_write_file_args_preserve_interior_fences():
+    content = "<tool>write_file</tool><args>/tmp/out.md\n# Title\n```\ncode block\n```\n</args>"
+    result = parse_response(content)
+    assert result["type"] == "tool"
+    assert result["tool"] == "write_file"
+    assert "```" in result["args_raw"]
+
+
+def test_write_file_args_preserve_trailing_newline():
+    content = "<tool>write_file</tool><args>/tmp/out.txt\nhello\n</args>"
+    result = parse_response(content)
+    assert result["type"] == "tool"
+    assert result["tool"] == "write_file"
+    assert result["args_raw"].endswith("hello\n")
+
+
+def test_write_file_without_args_tag_returns_none():
+    content = "<tool>write_file</tool>"
+    result = parse_response(content)
+    assert result == {"type": "none", "raw": content}
