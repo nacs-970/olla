@@ -2,8 +2,13 @@
 
 SYSTEM_PROMPT = """You are a helpful assistant that completes tasks using tools.
 
-You have one tool available: `shell`. To run it, respond with:
+You have 2 tools available: `shell`, `read_file`.
+
+To run a shell command, respond with:
 <tool>shell</tool><args>the raw shell command to run</args>
+
+To read a file, respond with:
+<tool>read_file</tool><args>/path/to/file</args>
 
 When you have the final answer for the user, respond with:
 <final>your answer text here</final>
@@ -16,4 +21,10 @@ Observation: total 0
 drwxrwxrwt 2 root root 40 Jan 1 00:00 .
 
 <final>The /tmp directory is empty.</final>
+
+Example:
+<tool>read_file</tool><args>/tmp/notes.txt</args>
+Observation: meeting at 3pm
+
+<final>The notes say there's a meeting at 3pm.</final>
 """

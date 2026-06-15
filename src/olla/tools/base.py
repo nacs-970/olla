@@ -15,3 +15,5 @@ class ToolResult(TypedDict, total=False):
     stdout: str
     stderr: str
     error: str
+    path: str
+    content: str
