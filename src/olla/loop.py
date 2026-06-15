@@ -7,6 +7,7 @@ from rich.prompt import Confirm
 
 from olla.parser import parse_response
 from olla.safety import check
+from olla.tools.files import read_file
 from olla.tools.shell import run_shell
 
 MAX_OBSERVATION_CHARS = 2000
@@ -46,26 +47,29 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
             print(f"Model produced no valid <tool>/<final> tag: {content}")
             return
 
-        if parsed["tool"] != "shell":
+        if parsed["tool"] == "shell":
+            try:
+                argv = shlex.split(parsed["args_raw"])
+            except ValueError as e:
+                print(f"error: could not parse command: {e}")
+                return
+
+            decision = check(argv, yes=yes)
+            if decision["kind"] == "ALLOW":
+                verdict = "auto-approved (read-only allowlist)"
+            elif decision["kind"] == "CONFIRM":
+                verdict = "would prompt for confirmation"
+            else:
+                verdict = f"BLOCKED: {decision['reason']}"
+
+            print(f"Step 1 would run: {argv} — {verdict}")
+            return
+        elif parsed["tool"] == "read_file":
+            print(f"Step 1 would read: {parsed['args_raw']}")
+            return
+        else:
             print(f"Model would call unknown tool '{parsed['tool']}'")
             return
-
-        try:
-            argv = shlex.split(parsed["args_raw"])
-        except ValueError as e:
-            print(f"error: could not parse command: {e}")
-            return
-
-        decision = check(argv, yes=yes)
-        if decision["kind"] == "ALLOW":
-            verdict = "auto-approved (read-only allowlist)"
-        elif decision["kind"] == "CONFIRM":
-            verdict = "would prompt for confirmation"
-        else:
-            verdict = f"BLOCKED: {decision['reason']}"
-
-        print(f"Step 1 would run: {argv} — {verdict}")
-        return
 
     prev_sig: tuple | None = None
     repeat_count = 0
@@ -81,60 +85,86 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
             return
 
         if parsed["type"] == "tool":
-            if parsed["tool"] != "shell":
+            if parsed["tool"] == "shell":
+                try:
+                    argv = shlex.split(parsed["args_raw"])
+                except ValueError as e:
+                    preview = f"error: could not parse command: {e}"
+                    print(preview)
+                    messages.append({"role": "user", "content": f"Observation: {preview}"})
+                    continue
+
+                sig = ("shell", tuple(argv))
+                if sig == prev_sig:
+                    repeat_count += 1
+                else:
+                    prev_sig = sig
+                    repeat_count = 1
+
+                if repeat_count >= 3:
+                    print(f"olla stopped: same {parsed['tool']} call repeated 3x — model likely stuck")
+                    return
+
+                decision = check(argv, yes=yes)
+
+                if decision["kind"] == "BLOCK":
+                    preview = f"blocked by safety policy: {decision['reason']}"
+                    print(preview)
+                    messages.append({"role": "user", "content": f"Observation: {preview}"})
+                    continue
+
+                if decision["kind"] == "CONFIRM" and not yes:
+                    try:
+                        approved = Confirm.ask(f"Run `{' '.join(argv)}`?", default=False)
+                    except EOFError:
+                        approved = False
+                    if not approved:
+                        messages.append({"role": "user", "content": "Observation: declined by user"})
+                        continue
+
+                print(f"Step {step}: running {argv}...")
+
+                result = run_shell(argv)
+                if "error" in result:
+                    combined = result["error"]
+                else:
+                    combined = result.get("stdout", "") + result.get("stderr", "")
+                    if not combined:
+                        combined = "(no output)"
+                preview = truncate_output(combined)
+                print(preview)
+                messages.append({"role": "user", "content": f"Observation: {preview}"})
+                continue
+            elif parsed["tool"] == "read_file":
+                sig = ("read_file", parsed["args_raw"])
+                if sig == prev_sig:
+                    repeat_count += 1
+                else:
+                    prev_sig = sig
+                    repeat_count = 1
+
+                if repeat_count >= 3:
+                    print(f"olla stopped: same {parsed['tool']} call repeated 3x — model likely stuck")
+                    return
+
+                print(f"Step {step}: reading {parsed['args_raw']}...")
+
+                result = read_file(parsed["args_raw"])
+                if "error" in result:
+                    combined = result["error"]
+                else:
+                    combined = result.get("content", "")
+                    if not combined:
+                        combined = "(no output)"
+                preview = truncate_output(combined)
+                print(preview)
+                messages.append({"role": "user", "content": f"Observation: {preview}"})
+                continue
+            else:
                 preview = f"unknown tool '{parsed['tool']}'"
                 print(preview)
                 messages.append({"role": "user", "content": f"Observation: {preview}"})
                 continue
-            try:
-                argv = shlex.split(parsed["args_raw"])
-            except ValueError as e:
-                preview = f"error: could not parse command: {e}"
-                print(preview)
-                messages.append({"role": "user", "content": f"Observation: {preview}"})
-                continue
-
-            sig = ("shell", tuple(argv))
-            if sig == prev_sig:
-                repeat_count += 1
-            else:
-                prev_sig = sig
-                repeat_count = 1
-
-            if repeat_count >= 3:
-                print("olla stopped: same shell call repeated 3x — model likely stuck")
-                return
-
-            decision = check(argv, yes=yes)
-
-            if decision["kind"] == "BLOCK":
-                preview = f"blocked by safety policy: {decision['reason']}"
-                print(preview)
-                messages.append({"role": "user", "content": f"Observation: {preview}"})
-                continue
-
-            if decision["kind"] == "CONFIRM" and not yes:
-                try:
-                    approved = Confirm.ask(f"Run `{' '.join(argv)}`?", default=False)
-                except EOFError:
-                    approved = False
-                if not approved:
-                    messages.append({"role": "user", "content": "Observation: declined by user"})
-                    continue
-
-            print(f"Step {step}: running {argv}...")
-
-            result = run_shell(argv)
-            if "error" in result:
-                combined = result["error"]
-            else:
-                combined = result.get("stdout", "") + result.get("stderr", "")
-                if not combined:
-                    combined = "(no output)"
-            preview = truncate_output(combined)
-            print(preview)
-            messages.append({"role": "user", "content": f"Observation: {preview}"})
-            continue
 
         messages.append(
             {
