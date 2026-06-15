@@ -198,6 +198,57 @@ def test_run_loop_allow_tier_no_prompt(mocker, capsys):
     mock_run_shell.assert_called_once()
 
 
+def test_run_loop_read_file_dispatch_no_prompt(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>read_file</tool><args>/some/path</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ]
+    mock_read_file = mocker.patch("olla.loop.read_file")
+    mock_read_file.return_value = {"path": "/some/path", "content": "hello from file\n"}
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop(task="read a file", model="test-model", max_steps=15, system_prompt="sys")
+
+    captured = capsys.readouterr()
+    assert "hello from file" in captured.out
+    mock_confirm.assert_not_called()
+    mock_read_file.assert_called_once()
+
+
+def test_run_loop_read_file_truncates_large_output(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>read_file</tool><args>/big</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ]
+    mock_read_file = mocker.patch("olla.loop.read_file")
+    mock_read_file.return_value = {"path": "/big", "content": "x" * 5000}
+
+    run_loop(task="read a big file", model="test-model", max_steps=15, system_prompt="sys")
+
+    captured = capsys.readouterr()
+    assert "[...truncated" in captured.out
+
+
+def test_run_loop_read_file_error_observation(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>read_file</tool><args>/missing</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ]
+    mock_read_file = mocker.patch("olla.loop.read_file")
+    mock_read_file.return_value = {"path": "/missing", "error": "file not found: /missing"}
+
+    run_loop(task="read a missing file", model="test-model", max_steps=15, system_prompt="sys")
+
+    call_args = mock_chat.call_args_list[1]
+    messages = call_args.kwargs["messages"]
+    obs_messages = [m for m in messages if m["role"] == "user" and m["content"].startswith("Observation:")]
+    assert len(obs_messages) == 1
+    assert "file not found: /missing" in obs_messages[0]["content"]
+
+
 def test_run_loop_block_tier_never_calls_run_shell(mocker, capsys):
     mock_chat = mocker.patch("olla.loop.ollama.chat")
     mock_chat.side_effect = [
@@ -426,6 +477,21 @@ def test_dry_run_unknown_tool_prints_preview_and_stops(mocker, capsys):
     mock_confirm.assert_not_called()
 
 
+def test_dry_run_previews_read_file(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.return_value = {"message": {"content": "<tool>read_file</tool><args>/some/path</args>"}}
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop(task="read a file", model="test-model", max_steps=15, system_prompt="sys", dry_run=True)
+
+    captured = capsys.readouterr()
+    assert "Step 1 would read: /some/path" in captured.out
+    assert mock_chat.call_count == 1
+    mock_run_shell.assert_not_called()
+    mock_confirm.assert_not_called()
+
+
 def test_dry_run_allow_tier_prints_preview_and_stops(mocker, capsys):
     mock_chat = mocker.patch("olla.loop.ollama.chat")
     mock_chat.return_value = {"message": {"content": "<tool>shell</tool><args>ls -la</args>"}}
@@ -502,6 +568,24 @@ def test_run_loop_repetition_guard_aborts_before_third_call(mocker, capsys):
     captured = capsys.readouterr()
     assert "olla stopped: same shell call repeated 3x — model likely stuck" in captured.out
     assert mock_run_shell.call_count == 2
+    assert mock_chat.call_count == 3
+
+
+def test_run_loop_repetition_guard_covers_read_file(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>read_file</tool><args>/same/path</args>"}},
+        {"message": {"content": "<tool>read_file</tool><args>/same/path</args>"}},
+        {"message": {"content": "<tool>read_file</tool><args>/same/path</args>"}},
+    ]
+    mock_read_file = mocker.patch("olla.loop.read_file")
+    mock_read_file.return_value = {"path": "/same/path", "content": "hello\n"}
+
+    run_loop(task="read same file repeatedly", model="test-model", max_steps=15, system_prompt="sys")
+
+    captured = capsys.readouterr()
+    assert "olla stopped: same read_file call repeated 3x — model likely stuck" in captured.out
+    assert mock_read_file.call_count == 2
     assert mock_chat.call_count == 3
 
 
