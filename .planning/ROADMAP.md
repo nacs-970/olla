@@ -91,11 +91,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. The model calls `write_file(path, content)` and the file is written only after the user confirms, with the resolved path shown in the prompt
   3. A task that requires inspecting a file and then writing a modified version completes end-to-end
 
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 **Wave 1**
 
-- [ ] 03-01-PLAN.md — `read_file` end-to-end: tools/files.py::read_file, ToolResult.content, run_loop dispatch restructure (read_file ALLOW-tier, dry-run preview, repetition guard generalization), SYSTEM_PROMPT update (success criterion 1, FILE-01)
+- [x] 03-01-PLAN.md — `read_file` end-to-end: tools/files.py::read_file, ToolResult.content, run_loop dispatch restructure (read_file ALLOW-tier, dry-run preview, repetition guard generalization), SYSTEM_PROMPT update (success criterion 1, FILE-01)
 
 **Wave 2** *(depends on Wave 1 — write_file shares loop.py's dispatch shape with read_file)*
 
@@ -123,6 +123,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 |-------|----------------|--------|-----------|
 | 1. Core Loop + Shell Tool + CLI | 2/2 | Complete   | 2026-06-11 |
 | 2. Safety Gate + Loop Control | 8/8 | Complete   | 2026-06-14 |
-| 3. File Tools | 0/2 | Not started | - |
+| 3. File Tools | 1/2 | In Progress|  |
 | 4. Memory Tool | 0/TBD | Not started | - |
 </content>
