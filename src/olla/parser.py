@@ -12,7 +12,25 @@ def parse_response(content: str) -> dict:
 
     Strips markdown code fences, then prefers <final> if present, else a
     complete <tool>+<args> pair, else returns the original raw content.
+
+    write_file is special-cased: its <args> payload is file content and must
+    be preserved verbatim (no fence-stripping, no whitespace trimming), since
+    legitimate file content may contain code fences or rely on a trailing
+    newline.
     """
+    raw_tool_match = TOOL_RE.search(content)
+    raw_args_match = ARGS_RE.search(content)
+    if (
+        raw_tool_match
+        and raw_args_match
+        and raw_tool_match.group(1).strip() == "write_file"
+    ):
+        return {
+            "type": "tool",
+            "tool": "write_file",
+            "args_raw": raw_args_match.group(1),
+        }
+
     stripped = re.sub(r"```[a-zA-Z]*\n?|```", "", content)
 
     final_match = FINAL_RE.search(stripped)

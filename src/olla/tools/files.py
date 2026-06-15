@@ -1,4 +1,4 @@
-"""File tools: read_file reads a UTF-8 text file via pathlib."""
+"""File tools: read_file/write_file read and write UTF-8 text files via pathlib."""
 
 from pathlib import Path
 
@@ -21,3 +21,20 @@ def read_file(path: str) -> ToolResult:
         return {"path": path, "error": f"is a directory: {path}"}
     except (UnicodeDecodeError, OSError) as e:
         return {"path": path, "error": f"could not read {path}: {e}"}
+
+
+def write_file(path: str, content: str) -> ToolResult:
+    """Write UTF-8 text content to a file.
+
+    Returns a ToolResult dict. On success: path, bytes_written.
+    On error (missing parent directory, not writable): path plus an `error`
+    message. Never raises. Does not create missing parent directories.
+    """
+    p = Path(path)
+    if not p.parent.exists():
+        return {"path": path, "error": f"parent directory does not exist: {p.parent}"}
+    try:
+        p.write_text(content, encoding="utf-8")
+        return {"path": path, "bytes_written": len(content.encode("utf-8"))}
+    except OSError as e:
+        return {"path": path, "error": f"could not write {path}: {e}"}
