@@ -91,7 +91,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. The model calls `write_file(path, content)` and the file is written only after the user confirms, with the resolved path shown in the prompt
   3. A task that requires inspecting a file and then writing a modified version completes end-to-end
 
-**Plans:** 2/2 plans complete
+**Plans:** 3/3 plans complete
 
 **Wave 1**
 
@@ -100,6 +100,10 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Wave 2** *(depends on Wave 1 — write_file shares loop.py's dispatch shape with read_file)*
 
 - [x] 03-02-PLAN.md — `write_file` end-to-end: parser Pitfall-1 fix (preserve fences/trailing newline in write_file content), tools/files.py::write_file, run_loop CONFIRM-gate dispatch (resolved-path prompt, --yes, dry-run preview, repetition guard), SYSTEM_PROMPT write_file doc + `</args>` caveat, SC3 read-then-write integration test (success criteria 2-3, FILE-02)
+
+**Gap Closure**
+
+- [x] 03-03-PLAN.md — Gap closure: CR-01 (read_file/write_file except tuples missing ValueError, "Never raises" contract violation on null-byte paths) and CR-03 (write_file confirm-gate doesn't disclose empty/no-content writes that would silently truncate existing files) (FILE-01, FILE-02)
 
 ### Phase 4: Memory Tool
 
