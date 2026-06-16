@@ -69,9 +69,14 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
             print(f"Step 1 would read: {parsed['args_raw']}")
             return
         elif parsed["tool"] == "write_file":
-            path, _, _ = parsed["args_raw"].partition("\n")
+            path, sep, _ = parsed["args_raw"].partition("\n")
             resolved = Path(path.strip()).resolve()
-            print(f"Step 1 would write to {resolved} — would prompt for confirmation")
+            if sep == "":
+                print(
+                    f"Step 1 would write to {resolved} — refused: no content line provided, nothing would be written"
+                )
+            else:
+                print(f"Step 1 would write to {resolved} — would prompt for confirmation")
             return
         else:
             print(f"Model would call unknown tool '{parsed['tool']}'")
@@ -178,9 +183,20 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                     print(f"olla stopped: same {parsed['tool']} call repeated 3x — model likely stuck")
                     return
 
-                path, _, file_content = parsed["args_raw"].partition("\n")
+                path, sep, file_content = parsed["args_raw"].partition("\n")
                 path = path.strip()
                 resolved = Path(path).resolve()
+
+                if sep == "":
+                    # CR-03: no newline means no content line was provided at all.
+                    # Refuse unconditionally (even under --yes) to prevent silent
+                    # truncation of an existing file to 0 bytes.
+                    preview = (
+                        f"refused: write_file for {resolved} had no content line — nothing written"
+                    )
+                    print(preview)
+                    messages.append({"role": "user", "content": f"Observation: {preview}"})
+                    continue
 
                 if not yes:
                     try:

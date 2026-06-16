@@ -422,6 +422,69 @@ def test_run_loop_write_file_yes_skips_prompt(mocker, capsys):
     mock_write_file.assert_called_once()
 
 
+def test_run_loop_write_file_no_newline_discloses_empty_write(mocker, capsys):
+    # CR-03 regression: model emits write_file with only a path (no newline/content).
+    # The confirm prompt must disclose the emptiness rather than silently asking
+    # "Write to ...?" which would truncate the file to 0 bytes on approval.
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>write_file</tool><args>/some/path.txt</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ]
+    mock_write_file = mocker.patch("olla.loop.write_file")
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask", return_value=False)
+
+    run_loop(task="write a file", model="test-model", max_steps=15, system_prompt="sys")
+
+    # The Confirm prompt must NOT have been called (refusal happens before it)
+    mock_confirm.assert_not_called()
+    # write_file must never be called
+    mock_write_file.assert_not_called()
+    # The observation message must mention the refusal
+    call_args = mock_chat.call_args_list[1]
+    messages = call_args.kwargs["messages"]
+    obs_messages = [m for m in messages if m["role"] == "user" and m["content"].startswith("Observation:")]
+    assert len(obs_messages) == 1
+    assert "refused" in obs_messages[0]["content"] or "no content" in obs_messages[0]["content"]
+
+
+def test_run_loop_write_file_no_newline_with_yes_still_discloses_or_refuses(mocker, capsys):
+    # CR-03 regression: --yes cannot meaningfully approve a no-content write.
+    # The refusal must happen BEFORE the if-not-yes gate so --yes cannot bypass it.
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>write_file</tool><args>/some/path.txt</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ]
+    mock_write_file = mocker.patch("olla.loop.write_file")
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop(task="write a file", model="test-model", max_steps=15, system_prompt="sys", yes=True)
+
+    mock_confirm.assert_not_called()
+    mock_write_file.assert_not_called()
+    call_args = mock_chat.call_args_list[1]
+    messages = call_args.kwargs["messages"]
+    obs_messages = [m for m in messages if m["role"] == "user" and m["content"].startswith("Observation:")]
+    assert len(obs_messages) == 1
+    assert "refused" in obs_messages[0]["content"] or "no content" in obs_messages[0]["content"]
+
+
+def test_dry_run_write_file_no_newline_discloses_empty_write(mocker, capsys):
+    # CR-03 regression: dry-run preview for a no-newline write_file must NOT print
+    # the normal "would prompt for confirmation" text — it must disclose the refusal.
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.return_value = {"message": {"content": "<tool>write_file</tool><args>/some/path.txt</args>"}}
+
+    run_loop(task="write a file", model="test-model", max_steps=15, system_prompt="sys", dry_run=True)
+
+    captured = capsys.readouterr()
+    # Must NOT say normal confirmation text
+    assert "would prompt for confirmation" not in captured.out
+    # Must indicate the write is refused / no content provided
+    assert "refused" in captured.out or "no content" in captured.out
+
+
 def test_run_loop_block_tier_with_yes_still_blocks(mocker, capsys):
     mock_chat = mocker.patch("olla.loop.ollama.chat")
     mock_chat.side_effect = [
