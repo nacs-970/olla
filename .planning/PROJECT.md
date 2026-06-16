@@ -17,6 +17,7 @@ Stay fast and accurate on small local models. Minimal per-turn token overhead so
 - [x] Safety: shell command blocklist (`rm -rf /`, `sudo`, `dd`, etc.) — speed-bump layer, not the primary boundary — Validated in Phase 2: Safety Gate + Loop Control
 - [x] Safety: `--max-steps` cap (default 15) to prevent infinite loops — Validated in Phase 2: Safety Gate + Loop Control
 - [x] Safety: confirm prompt (via `rich.Confirm.ask`) before shell/write_file execution, overridable with `--yes` — Validated in Phase 2: Safety Gate + Loop Control
+- [x] File tools: `read_file(path)`, `write_file(path, content)` — with null-byte safety (CR-01) and empty-write disclosure (CR-03) — Validated in Phase 3: File Tools
 
 ### Active
 
@@ -25,7 +26,6 @@ Stay fast and accurate on small local models. Minimal per-turn token overhead so
 - [ ] Explicit `num_ctx` set on every Ollama request; large tool outputs truncated before being appended to history (prevents silent context-window truncation dropping the system prompt)
 - [ ] Visible step-by-step progress output ("Step N: running `<cmd>`...") as the loop executes
 - [ ] Shell tool: `subprocess.run(shlex.split(cmd), shell=False)` — captures stdout/stderr, returned to model. No pipes/redirects/chaining in v1 (shell=False)
-- [ ] File tools: `read_file(path)`, `write_file(path, content)`
 - [ ] Scratchpad memory tool: `remember(key, value)` for cross-turn notes
 - [ ] `--model` flag: target any local Ollama model, no hardcoded default
 - [ ] One-shot mode: `olla "task description"` runs loop to completion
@@ -81,4 +81,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-14 after Phase 2 completion*
+*Last updated: 2026-06-16 after Phase 3 completion — file tools (read_file, write_file) validated with null-byte safety and empty-write disclosure*
