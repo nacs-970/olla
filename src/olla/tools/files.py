@@ -19,7 +19,7 @@ def read_file(path: str) -> ToolResult:
         return {"path": path, "error": f"file not found: {path}"}
     except IsADirectoryError:
         return {"path": path, "error": f"is a directory: {path}"}
-    except (UnicodeDecodeError, OSError) as e:
+    except (UnicodeDecodeError, OSError, ValueError) as e:
         return {"path": path, "error": f"could not read {path}: {e}"}
 
 
@@ -36,5 +36,5 @@ def write_file(path: str, content: str) -> ToolResult:
     try:
         p.write_text(content, encoding="utf-8")
         return {"path": path, "bytes_written": len(content.encode("utf-8"))}
-    except OSError as e:
+    except (OSError, ValueError) as e:
         return {"path": path, "error": f"could not write {path}: {e}"}

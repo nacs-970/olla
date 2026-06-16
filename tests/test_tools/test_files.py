@@ -43,3 +43,21 @@ def test_write_file_missing_parent_dir_errors(tmp_path):
     assert "error" in result
     assert "parent directory" in result["error"]
     assert not path.parent.exists()
+
+
+def test_read_file_null_byte_path_returns_error():
+    # CR-01 regression: null byte in path raises ValueError inside pathlib —
+    # read_file must catch it and return an error dict, never propagate.
+    result = read_file("some\x00path")
+
+    assert "error" in result
+    assert "content" not in result
+
+
+def test_write_file_null_byte_path_returns_error():
+    # CR-01 regression: null byte in path raises ValueError inside pathlib —
+    # write_file must catch it and return an error dict, never propagate.
+    result = write_file("/tmp/x\x00y", "content")
+
+    assert "error" in result
+    assert "bytes_written" not in result
