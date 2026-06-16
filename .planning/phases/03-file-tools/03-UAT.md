@@ -1,5 +1,5 @@
 ---
-status: partial
+status: diagnosed
 phase: 03-file-tools
 source: 03-01-SUMMARY.md, 03-02-SUMMARY.md, 03-03-SUMMARY.md
 started: 2026-06-16T02:47:00Z
@@ -90,9 +90,25 @@ blocked: 1
   reason: "User reported: User ran command with `--model qwen3.5:0.8b-256k`. It resulted in `error: could not parse command: No closing quotation` and the model falsely claimed it was successful without calling read_file or writing anything."
   severity: major
   test: 1
+  root_cause: "The `shlex.split()` call in `loop.py` raises `ValueError: No closing quotation` when a small model hallucinates a shell command with an unbalanced quote. Small models fail to understand this parser error and falsely output `<final>`."
+  artifacts:
+    - path: "src/olla/loop.py"
+      issue: "shlex.split ValueError exposes cryptic error message to model"
+  missing:
+    - "Catch ValueError from shlex.split and return a clearer, model-friendly error observation"
+  debug_session: ".planning/debug/parser-error-no-closing-quotation.md"
 
 - truth: "The model calls `write_file` to update `test.txt`. You should see a confirm prompt that displays the resolved absolute path of the file."
   status: failed
   reason: "User reported: User created test.txt, but the model (qwen3.5:2b-256k) hallucinated shell commands and bad read_file paths, eventually hitting max steps (15) without ever calling write_file."
   severity: blocker
   test: 3
+  root_cause: "The `SYSTEM_PROMPT` gives `shell` equal prominence to file tools without negative constraints. Small models default to familiar shell commands (cat/sed/echo) which fail silently due to subprocess.run(shell=False). Also, the prompt uses literal absolute paths as examples, causing hallucinated invalid paths."
+  artifacts:
+    - path: "src/olla/prompts.py"
+      issue: "SYSTEM_PROMPT does not forbid shell for file I/O and uses absolute paths in examples"
+  missing:
+    - "Update SYSTEM_PROMPT to explicitly restrict shell for file I/O"
+    - "Demote shell below file tools in examples"
+    - "Update file tool examples to use relative paths"
+  debug_session: ".planning/debug/hallucinated-shell-commands-max-steps.md"
