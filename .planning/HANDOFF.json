@@ -1,25 +1,131 @@
 {
   "version": "1.0",
-  "timestamp": "2026-06-13T22:35:37.326Z",
-  "phase": "02",
-  "phase_name": "safety-gate-loop-control",
-  "phase_dir": ".planning/phases/02-safety-gate-loop-control",
-  "plan": 8,
+  "timestamp": "2026-07-25T08:44:13.541Z",
+  "phase": "04",
+  "phase_name": "memory-tool",
+  "phase_dir": ".planning/phases/04-memory-tool",
+  "plan": 1,
   "task": 1,
-  "total_tasks": 1,
+  "total_tasks": 2,
   "status": "paused",
-  "completed_tasks": [],
+  "completed_tasks": [
+    {
+      "id": 1,
+      "name": "Task 1 RED: prove remember -> recall -> final and invocation isolation",
+      "status": "done",
+      "commit": "8c5330d"
+    },
+    {
+      "id": 1,
+      "name": "Task 1 production implementation",
+      "status": "in_progress",
+      "progress": "A staged implementation adds Scratchpad, remember/recall parsing, parser preservation, and normal loop dispatch. The targeted tracer/isolation selection passes 3 tests, but prompt work, broader verification, and the production commit are still pending."
+    }
+  ],
   "remaining_tasks": [
-    {"id": 1, "name": "Fix CR-01 -- drop NotRequired from safety.py Decision TypedDict, add static 3.11-only-typing-symbol regression test", "status": "not_started"}
+    {
+      "id": 1,
+      "name": "Finish the five-tool prompt integration, run the complete Task 1 verification command, and commit the production slice",
+      "status": "in_progress"
+    },
+    {
+      "id": 2,
+      "name": "Complete bounded replacement, exact-error, limit, and atomicity semantics with tests/test_tools/test_memory.py",
+      "status": "not_started"
+    },
+    {
+      "id": 3,
+      "name": "Create and commit 04-01-SUMMARY.md, then execute dependent plan 04-02",
+      "status": "not_started"
+    },
+    {
+      "id": 4,
+      "name": "Run post-wave gates, code review, regression checks, and phase verification",
+      "status": "not_started"
+    }
   ],
-  "blockers": [
-    {"description": "No Python 3.10/3.11/3.12/3.13 interpreter available on this dev machine (only 3.14) -- the plan's manual import-verification step cannot be executed here", "type": "external", "workaround": "Documented as a comment in tests/test_safety.py per plan step 5; not gating, informational only"}
-  ],
+  "blockers": [],
+  "async_jobs": [],
   "human_actions_pending": [],
   "decisions": [
-    {"decision": "CR-01 fix = Option 3 (drop NotRequired, use class Decision(TypedDict, total=False))", "rationale": "Project's minimal-dependency constraint excludes typing_extensions (Option 2); bumping requires-python to >=3.11 (Option 1) would narrow the declared floor. TypedDict performs zero runtime enforcement and check() sets 'kind' on all 4 return paths, so the total=False type-checker weakening is purely theoretical.", "phase": "02"}
+    {
+      "decision": "Run executor plans sequentially on the main checkout",
+      "rationale": "The configured runtime is codex and workflow.use_worktrees is false.",
+      "phase": "04"
+    },
+    {
+      "decision": "Preserve the dirty worktree and stage Phase 4 hunks selectively",
+      "rationale": "Pre-existing user changes overlap loop.py, prompts.py, and tests/test_loop.py and must not be reverted or swept into unrelated commits.",
+      "phase": "04"
+    },
+    {
+      "decision": "Keep the plan's RED-first TDD sequence",
+      "rationale": "The executor committed the failing tracer and isolation tests before staging production behavior.",
+      "phase": "04"
+    }
   ],
-  "uncommitted_files": [],
-  "next_action": "Run /gsd:execute-phase 02 --gaps-only -- ROADMAP.md now lists 8 plans for phase 02 with 02-08 unchecked (plan_count=8 != summary_count=7), so the orchestrator will discover 02-08-PLAN.md as the sole incomplete plan and execute it normally as a new wave. The prior session's 'execute-phase-cannot-resume-mid-gate' blocker no longer applies.",
-  "context_notes": "Round-5 verification (0e4b07a) found ONE gap, CR-01: src/olla/safety.py line 7 imports typing.NotRequired (PEP 655, Python 3.11+), but pyproject.toml declares requires-python>=3.10, so 'import olla.safety' -> ImportError on 3.10, breaking the whole olla CLI import chain (olla.safety -> olla.loop -> olla.cli). This is a DIFFERENT gap family from the 4 prior SAFE-02/SAFE-04 blocklist-bypass rounds (02-04..02-07) -- it's a Python-version-compat bug, not a new bypass variant. Gap-closure plan 02-08-PLAN.md (a434d79, tweaked in 80717a6) is fully written and ready: 2-line fix in safety.py (drop NotRequired from the typing import, change Decision to TypedDict total=False) plus a new static regression test in test_safety.py that greps safety.py's own source for NotRequired/Required[ so the bug can't silently come back even on this dev machine's Python 3.14. Target after Task 1: 126/126 tests green. After execution, run code_review_gate (round 6) and verify_phase_goal (round 6) per execute-phase.md's standard tail -- existing 02-REVIEW.md (007562c) was for round-5's files and will need a fresh round-6 review of the same [src/olla/safety.py, tests/test_safety.py] pair. If round-6 verifier returns 'passed', this closes out phase 02 entirely (plan_count==summary_count==8, all 5 verification rounds resolved) -- remember to remind the user about /gsd:secure-phase 02 in offer_next (security_enforcement=true, no 02-*-SECURITY.md exists yet)."
+  "uncommitted_files": [
+    {
+      "path": ".planning/ROADMAP.md",
+      "status": "modified",
+      "ownership": "pre-existing/planning"
+    },
+    {
+      "path": ".planning/STATE.md",
+      "status": "modified",
+      "ownership": "pre-existing plus execute-phase begin-state update"
+    },
+    {
+      "path": ".planning/phases/03-file-tools/03-UAT.md",
+      "status": "modified",
+      "ownership": "pre-existing"
+    },
+    {
+      "path": "src/olla/loop.py",
+      "status": "staged and unstaged",
+      "ownership": "Phase 4 staged hunks plus pre-existing unstaged hunks"
+    },
+    {
+      "path": "src/olla/parser.py",
+      "status": "staged",
+      "ownership": "Phase 4 Task 1"
+    },
+    {
+      "path": "src/olla/prompts.py",
+      "status": "modified",
+      "ownership": "pre-existing; Phase 4 prompt work still pending"
+    },
+    {
+      "path": "src/olla/tools/memory.py",
+      "status": "staged new file",
+      "ownership": "Phase 4 Task 1"
+    },
+    {
+      "path": "tests/test_loop.py",
+      "status": "modified after RED commit",
+      "ownership": "RED tests committed in 8c5330d; remaining unstaged hunks pre-existed"
+    },
+    {
+      "path": ".planning/phases/03-file-tools/03-04-PLAN.md",
+      "status": "untracked",
+      "ownership": "pre-existing"
+    },
+    {
+      "path": ".planning/phases/04-memory-tool/",
+      "status": "untracked planning artifacts",
+      "ownership": "Phase 4 planning/handoff"
+    },
+    {
+      "path": ".planning/research/.cache/",
+      "status": "untracked",
+      "ownership": "pre-existing"
+    },
+    {
+      "path": "final_replace.py, read_and_replace.py, read_and_replace.sh, test.txt, test_fix.py, test_replace.py, test_temp.py",
+      "status": "untracked",
+      "ownership": "pre-existing scratch files"
+    }
+  ],
+  "next_action": "Run $gsd-resume-work, then inspect git status and the staged Phase 4 diff before finishing 04-01 Task 1 from the plan. Preserve all unstaged pre-existing hunks.",
+  "context_notes": "Phase 4 execution started with two autonomous plans in waves 1 and 2. Cross-AI is disabled and there are no checkpoints. The 04-01 executor was interrupted on the user's pause request after one RED commit and while production changes were staged. No 04-01-SUMMARY.md exists, so do not mark the plan complete. Diagnostic run at pause: .venv/bin/python -m pytest tests/test_loop.py::test_run_loop_remember_recall_then_final tests/test_loop.py::test_run_loop_scratchpad_isolation_between_invocations -q => 3 passed in 0.64s. No pytest/ruff/olla process remained running."
 }
