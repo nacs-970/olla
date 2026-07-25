@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from olla.loop import MAX_OBSERVATION_CHARS, call_model, run_loop, truncate_output
 from olla.safety import check
 
@@ -864,3 +866,87 @@ def test_run_loop_read_then_write_end_to_end(mocker, capsys):
     mock_read_file.assert_called_once()
     mock_write_file.assert_called_once()
     assert mock_chat.call_count == 3
+
+
+@pytest.mark.parametrize("yes", [False, True])
+def test_run_loop_remember_recall_then_final(mocker, capsys, yes):
+    responses = iter(
+        [
+            {"message": {"content": "<tool>remember</tool><args>meeting_time\n3pm</args>"}},
+            {"message": {"content": "<tool>recall</tool><args>meeting_time</args>"}},
+            {"message": {"content": "<final>The meeting is at 3pm.</final>"}},
+        ]
+    )
+    messages_by_call = []
+
+    def fake_chat(**kwargs):
+        messages_by_call.append([message.copy() for message in kwargs["messages"]])
+        return next(responses)
+
+    mock_chat = mocker.patch("olla.loop.ollama.chat", side_effect=fake_chat)
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop(
+        task="remember and report the meeting time",
+        model="test-model",
+        max_steps=15,
+        system_prompt="sys",
+        yes=yes,
+    )
+
+    captured = capsys.readouterr()
+    assert captured.out.splitlines() == [
+        "Step 1: remembering meeting_time...",
+        "remembered: meeting_time",
+        "Step 2: recalling meeting_time...",
+        "3pm",
+        "The meeting is at 3pm.",
+    ]
+    mock_confirm.assert_not_called()
+    assert mock_chat.call_count == 3
+
+    second_observations = [
+        message["content"]
+        for message in messages_by_call[1]
+        if message["role"] == "user" and message["content"].startswith("Observation:")
+    ]
+    assert second_observations == ["Observation: remembered: meeting_time"]
+
+    third_observations = [
+        message["content"]
+        for message in messages_by_call[2]
+        if message["role"] == "user" and message["content"].startswith("Observation:")
+    ]
+    assert third_observations == [
+        "Observation: remembered: meeting_time",
+        "Observation: 3pm",
+    ]
+
+
+def test_run_loop_scratchpad_isolation_between_invocations(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>remember</tool><args>meeting_time\n3pm</args>"}},
+        {"message": {"content": "<final>first run done</final>"}},
+        {"message": {"content": "<tool>recall</tool><args>meeting_time</args>"}},
+        {"message": {"content": "<final>second run done</final>"}},
+    ]
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop(
+        task="remember the meeting time",
+        model="test-model",
+        max_steps=15,
+        system_prompt="sys",
+    )
+    run_loop(
+        task="recall the meeting time",
+        model="test-model",
+        max_steps=15,
+        system_prompt="sys",
+    )
+
+    captured = capsys.readouterr()
+    assert "remembered: meeting_time" in captured.out
+    assert "memory not found: meeting_time" in captured.out
+    mock_confirm.assert_not_called()
