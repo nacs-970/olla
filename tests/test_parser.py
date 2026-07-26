@@ -95,6 +95,21 @@ def test_recall_args_are_trimmed():
     assert result == {"type": "tool", "tool": "recall", "args_raw": "MixedCase"}
 
 
+@pytest.mark.parametrize("key", ["a```b", "<final>name</final>"])
+def test_memory_keys_round_trip_through_parser(key):
+    remember = parse_response(
+        f"<tool>remember</tool><args>{key}\nvalue</args>"
+    )
+    recall = parse_response(f"<tool>recall</tool><args>{key}</args>")
+
+    assert remember == {
+        "type": "tool",
+        "tool": "remember",
+        "args_raw": f"{key}\nvalue",
+    }
+    assert recall == {"type": "tool", "tool": "recall", "args_raw": key}
+
+
 def test_remember_without_args_returns_none():
     content = "<tool>remember</tool>"
 

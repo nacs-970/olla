@@ -13,8 +13,8 @@ def parse_response(content: str) -> dict:
     Strips markdown code fences, then prefers <final> if present, else a
     complete <tool>+<args> pair, else returns the original raw content.
 
-    write_file and remember are special-cased: their <args> payloads contain
-    verbatim content and must not be fence-stripped or whitespace-trimmed.
+    write_file, remember, and recall are special-cased: their <args> payloads
+    can contain protocol-looking text and must not be fence-stripped.
     """
     raw_tool_match = TOOL_RE.search(content)
     raw_args_match = ARGS_RE.search(content)
@@ -29,17 +29,20 @@ def parse_response(content: str) -> dict:
     ):
         return {"type": "final", "text": raw_final_match.group(1).strip()}
 
-    if (
-        raw_tool_match
-        and raw_args_match
-        and raw_tool_match.group(1).strip() in {"write_file", "remember"}
-    ):
+    if raw_tool_match and raw_args_match:
         tool = raw_tool_match.group(1).strip()
-        return {
-            "type": "tool",
-            "tool": tool,
-            "args_raw": raw_args_match.group(1),
-        }
+        if tool in {"write_file", "remember"}:
+            return {
+                "type": "tool",
+                "tool": tool,
+                "args_raw": raw_args_match.group(1),
+            }
+        if tool == "recall":
+            return {
+                "type": "tool",
+                "tool": tool,
+                "args_raw": raw_args_match.group(1).strip(),
+            }
 
     stripped = re.sub(r"```[a-zA-Z]*\n?|```", "", content)
 
