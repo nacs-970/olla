@@ -33,6 +33,16 @@ def test_unclosed_args_tag_tolerance():
     assert result == {"type": "tool", "tool": "shell", "args_raw": "ls -la /tmp"}
 
 
+def test_unclosed_tool_tag_stops_before_args():
+    content = "<tool>remember<args>key\nTOP_SECRET</args>"
+
+    assert parse_response(content) == {
+        "type": "tool",
+        "tool": "remember",
+        "args_raw": "key\nTOP_SECRET",
+    }
+
+
 def test_no_recognizable_tags():
     content = "I think I should run a command but I'm not sure which one."
     result = parse_response(content)

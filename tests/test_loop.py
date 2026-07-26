@@ -1003,6 +1003,59 @@ def test_run_loop_memory_never_confirms_or_checks(mocker, capsys, yes):
     mock_check.assert_not_called()
 
 
+def test_run_loop_unclosed_memory_tool_does_not_disclose_value(mocker, capsys):
+    messages_by_call = []
+    responses = iter(
+        [
+            {"message": {"content": "<tool>remember<args>key\nTOP_SECRET</args>"}},
+            {"message": {"content": "<final>done</final>"}},
+        ]
+    )
+
+    def fake_chat(**kwargs):
+        messages_by_call.append([message.copy() for message in kwargs["messages"]])
+        return next(responses)
+
+    mocker.patch("olla.loop.ollama.chat", side_effect=fake_chat)
+
+    run_loop(
+        task="remember privately",
+        model="test-model",
+        max_steps=2,
+        system_prompt="sys",
+    )
+
+    assert "TOP_SECRET" not in capsys.readouterr().out
+    observations = [
+        message["content"]
+        for message in messages_by_call[1]
+        if message["role"] == "user"
+        and message["content"].startswith("Observation:")
+    ]
+    assert observations == ["Observation: remembered: key"]
+
+
+def test_dry_run_unclosed_memory_tool_does_not_disclose_value(mocker, capsys):
+    mocker.patch(
+        "olla.loop.ollama.chat",
+        return_value={
+            "message": {"content": "<tool>remember<args>key\nTOP_SECRET</args>"}
+        },
+    )
+
+    run_loop(
+        task="preview private memory",
+        model="test-model",
+        max_steps=1,
+        system_prompt="sys",
+        dry_run=True,
+    )
+
+    captured = capsys.readouterr().out
+    assert captured == "Step 1 would remember: key (10 chars)\n"
+    assert "TOP_SECRET" not in captured
+
+
 @pytest.mark.parametrize(
     ("tool_content", "expected"),
     [

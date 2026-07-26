@@ -3,7 +3,10 @@
 import re
 
 FINAL_RE = re.compile(r"<final>(.*?)(?:</final>|$)", re.DOTALL | re.IGNORECASE)
-TOOL_RE = re.compile(r"<tool>(.*?)(?:</tool>|$)", re.DOTALL | re.IGNORECASE)
+TOOL_RE = re.compile(
+    r"<tool>(.*?)(?:</tool>|(?=<args>)|$)",
+    re.DOTALL | re.IGNORECASE,
+)
 ARGS_RE = re.compile(r"<args>(.*?)(?:</args>|$)", re.DOTALL | re.IGNORECASE)
 
 
