@@ -4,16 +4,16 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 04
 current_phase_name: memory-tool
-status: executing
-stopped_at: Completed 04-01-PLAN.md
-last_updated: "2026-07-26T16:29:21.555Z"
+status: verifying
+stopped_at: Completed 04-02-PLAN.md
+last_updated: "2026-07-26T17:31:45.652Z"
 last_activity: 2026-07-26
 last_activity_desc: Phase 04 execution resumed (wave continue)
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 16
-  completed_plans: 14
+  completed_plans: 15
 ---
 
 # Project State
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-06-10)
 
 Phase: 04 (memory-tool) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-26 — Phase 04 execution resumed (wave continue)
 
-Progress: [█████████░] 88%
+Progress: [█████████░] 94%
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Progress: [█████████░] 88%
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 04 P01 | 13min | 2 tasks | 6 files |
+| Phase 04 P02 | 7min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -75,6 +76,8 @@ Recent decisions affecting current work:
 - [Phase 2 planning]: Restructured from 3 plans to 2 — safety.py (D-01..D-08 decision module) folded into 02-01 as its first task alongside the confirm-gate dispatch, so 02-01 delivers the first user-observable change (shell commands prompt/block) end-to-end; 02-02 covers dry-run preview + repetition guard (depends on 02-01 for the Decision contract)
 - [Phase 04]: Own exactly one Scratchpad inside each run_loop invocation so notes cannot cross runs.
 - [Phase 04]: Validate bounded memory writes against projected replacement state before a single assignment.
+- [Phase 04]: Treat final tags outside opaque args as final while preserving literal tag text inside memory values.
+- [Phase 04]: Keep memory dry-run on pure parsers so preview never accesses Scratchpad state.
 
 ### Pending Todos
 
@@ -104,6 +107,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-26T16:29:21.530Z
-Stopped at: Completed 04-01-PLAN.md
+Last session: 2026-07-26T17:31:45.621Z
+Stopped at: Completed 04-02-PLAN.md
 Resume file: None

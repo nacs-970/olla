@@ -116,7 +116,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. The model calls `remember(key, value)` and a later turn can retrieve that value
   2. A multi-step task that depends on a fact stored early completes correctly using the recalled note
 
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans executed
 
 **Wave 1**
 
@@ -124,7 +124,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 04-02-PLAN.md — Protocol and lifecycle hardening: raw payload fidelity, five-tool prompt contract, dry-run non-access, no-confirm dispatch, repetition guard, recoverable errors, privacy, and cross-run isolation (MEM-01)
+- [x] 04-02-PLAN.md — Protocol and lifecycle hardening: raw payload fidelity, five-tool prompt contract, dry-run non-access, no-confirm dispatch, repetition guard, recoverable errors, privacy, and cross-run isolation (MEM-01)
 
 ## Progress
 
@@ -136,5 +136,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 1. Core Loop + Shell Tool + CLI | 2/2 | Complete   | 2026-06-11 |
 | 2. Safety Gate + Loop Control | 8/8 | Complete   | 2026-06-14 |
 | 3. File Tools | 3/3 | Complete   | 2026-06-16 |
-| 4. Memory Tool | 1/2 | In Progress|  |
+| 4. Memory Tool | 2/2 | In Progress|  |
 </content>
