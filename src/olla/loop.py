@@ -84,6 +84,22 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
             else:
                 print(f"Step 1 would write to {resolved} — would prompt for confirmation")
             return
+        elif parsed["tool"] == "remember":
+            call, error = parse_remember_args(parsed["args_raw"])
+            if error is not None:
+                print(error)
+            else:
+                assert call is not None
+                print(f"Step 1 would remember: {call.key} ({len(call.value)} chars)")
+            return
+        elif parsed["tool"] == "recall":
+            key, error = parse_recall_args(parsed["args_raw"])
+            if error is not None:
+                print(error)
+            else:
+                assert key is not None
+                print(f"Step 1 would recall: {key}")
+            return
         else:
             print(f"Model would call unknown tool '{parsed['tool']}'")
             return
