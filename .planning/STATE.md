@@ -2,16 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_plan
-stopped_at: Phase 03 complete (3/3) — ready to discuss Phase 4
-last_updated: 2026-06-16T02:19:14.220Z
-last_activity: 2026-06-16 -- Phase 03 execution started
+current_phase: 04
+current_phase_name: memory-tool
+status: executing
+stopped_at: Completed 04-01-PLAN.md
+last_updated: "2026-07-26T16:29:21.555Z"
+last_activity: 2026-07-26
+last_activity_desc: Phase 04 execution resumed (wave continue)
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 13
-  completed_plans: 13
-  percent: 50
+  total_plans: 16
+  completed_plans: 14
 ---
 
 # Project State
@@ -21,16 +23,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-10)
 
 **Core value:** Stay fast and accurate on small local models — minimal per-turn token overhead so 2-4B models on constrained hardware stay responsive and don't drift under a bloated context.
-**Current focus:** Phase 4 — memory tool
+**Current focus:** Phase 04 — memory-tool
 
 ## Current Position
 
-Phase: 4
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-06-16
+Phase: 04 (memory-tool) — EXECUTING
+Plan: 2 of 2
+Status: Ready to execute
+Last activity: 2026-07-26 — Phase 04 execution resumed (wave continue)
 
-Progress: [███████░░░] 75%
+Progress: [█████████░] 88%
 
 ## Performance Metrics
 
@@ -54,6 +56,11 @@ Progress: [███████░░░] 75%
 - Trend: —
 
 *Updated after each plan completion*
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 04 P01 | 13min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -66,6 +73,8 @@ Recent decisions affecting current work:
 - [Roadmap]: No hardcoded default model; target via `--model`
 - [Roadmap]: Shell uses `shell=False` + `shlex.split()`, no pipes/redirects in v1 (SHELL-01) — resolves the STACK vs ARCHITECTURE/PITFALLS shell-mode conflict in favor of the safer model
 - [Phase 2 planning]: Restructured from 3 plans to 2 — safety.py (D-01..D-08 decision module) folded into 02-01 as its first task alongside the confirm-gate dispatch, so 02-01 delivers the first user-observable change (shell commands prompt/block) end-to-end; 02-02 covers dry-run preview + repetition guard (depends on 02-01 for the Decision contract)
+- [Phase 04]: Own exactly one Scratchpad inside each run_loop invocation so notes cannot cross runs.
+- [Phase 04]: Validate bounded memory writes against projected replacement state before a single assignment.
 
 ### Pending Todos
 
@@ -95,6 +104,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-16T02:02:00.000Z
-Stopped at: Session resumed, proceeding to plan Phase 04
+Last session: 2026-07-26T16:29:21.530Z
+Stopped at: Completed 04-01-PLAN.md
 Resume file: None

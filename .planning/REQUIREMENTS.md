@@ -24,7 +24,7 @@
 
 ### Memory
 
-- [ ] **MEM-01**: `remember(key, value)` scratchpad tool for cross-turn notes
+- [x] **MEM-01**: `remember(key, value)` scratchpad tool for cross-turn notes
 
 ### Safety
 
@@ -83,7 +83,7 @@
 | SAFE-04 | Phase 2 | Complete |
 | FILE-01 | Phase 3 | Complete |
 | FILE-02 | Phase 3 | Complete |
-| MEM-01 | Phase 4 | Pending |
+| MEM-01 | Phase 4 | Complete |
 
 **Coverage:**
 
