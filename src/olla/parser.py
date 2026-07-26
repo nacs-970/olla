@@ -18,16 +18,12 @@ def parse_response(content: str) -> dict:
     """
     raw_tool_match = TOOL_RE.search(content)
     raw_args_match = ARGS_RE.search(content)
-    raw_final_match = FINAL_RE.search(content)
-    if raw_final_match and (
-        raw_args_match is None
-        or not (
-            raw_args_match.start(1)
-            <= raw_final_match.start()
-            < raw_args_match.end(1)
-        )
-    ):
-        return {"type": "final", "text": raw_final_match.group(1).strip()}
+    raw_args_span = raw_args_match.span(1) if raw_args_match else None
+    for raw_final_match in FINAL_RE.finditer(content):
+        if raw_args_span is None or not (
+            raw_args_span[0] <= raw_final_match.start() < raw_args_span[1]
+        ):
+            return {"type": "final", "text": raw_final_match.group(1).strip()}
 
     if raw_tool_match and raw_args_match:
         tool = raw_tool_match.group(1).strip()

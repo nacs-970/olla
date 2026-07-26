@@ -123,3 +123,12 @@ def test_final_wins_over_remember_tool():
     )
 
     assert parse_response(content) == {"type": "final", "text": "done"}
+
+
+def test_outer_final_wins_after_literal_final_in_remember_value():
+    content = (
+        "<tool>remember</tool><args>key\nliteral <final>data</final></args>"
+        "<final>done</final>"
+    )
+
+    assert parse_response(content) == {"type": "final", "text": "done"}
