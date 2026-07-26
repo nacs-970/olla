@@ -1,5 +1,7 @@
 """Tests for olla.parser.parse_response."""
 
+import pytest
+
 from olla.parser import parse_response
 
 
@@ -63,3 +65,46 @@ def test_write_file_without_args_tag_returns_none():
     content = "<tool>write_file</tool>"
     result = parse_response(content)
     assert result == {"type": "none", "raw": content}
+
+
+@pytest.mark.parametrize(
+    "args_raw",
+    [
+        " key \n  leading and trailing  ",
+        "key\nline one\nline two\n",
+        "key\n",
+        "key\n \t ",
+        "key\n```\ncode block\n```\n",
+    ],
+)
+def test_remember_args_preserved_verbatim(args_raw):
+    content = f"<tool>remember</tool><args>{args_raw}</args>"
+
+    assert parse_response(content) == {
+        "type": "tool",
+        "tool": "remember",
+        "args_raw": args_raw,
+    }
+
+
+def test_recall_args_are_trimmed():
+    result = parse_response(
+        "<tool>recall</tool><args>  MixedCase \n</args>"
+    )
+
+    assert result == {"type": "tool", "tool": "recall", "args_raw": "MixedCase"}
+
+
+def test_remember_without_args_returns_none():
+    content = "<tool>remember</tool>"
+
+    assert parse_response(content) == {"type": "none", "raw": content}
+
+
+def test_final_wins_over_remember_tool():
+    content = (
+        "<tool>remember</tool><args>key\nvalue</args>"
+        "<final>done</final>"
+    )
+
+    assert parse_response(content) == {"type": "final", "text": "done"}
