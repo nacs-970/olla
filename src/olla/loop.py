@@ -1,6 +1,7 @@
 """ReAct loop step execution."""
 
 import shlex
+from dataclasses import dataclass
 from pathlib import Path
 
 import ollama
@@ -10,6 +11,7 @@ from olla.parser import parse_response
 from olla.safety import check
 from olla.tools.files import read_file, write_file
 from olla.tools.memory import (
+    RememberCall,
     Scratchpad,
     parse_recall_args,
     parse_remember_args,
@@ -17,6 +19,94 @@ from olla.tools.memory import (
 from olla.tools.shell import run_shell
 
 MAX_OBSERVATION_CHARS = 2000
+
+
+@dataclass(frozen=True)
+class _MemoryRequest:
+    """One normalized memory request shared by preview and execution paths."""
+
+    tool: str
+    signature: tuple
+    remember_call: RememberCall | None = None
+    recall_key: str | None = None
+    error: str | None = None
+
+
+def _prepare_memory_request(tool: str, args_raw: str) -> _MemoryRequest:
+    """Parse memory arguments once and build the normalized repeat signature."""
+    if tool == "remember":
+        call, error = parse_remember_args(args_raw)
+        signature = (
+            ("remember", args_raw)
+            if call is None
+            else ("remember", call.key, call.value)
+        )
+        return _MemoryRequest(
+            tool=tool,
+            signature=signature,
+            remember_call=call,
+            error=error,
+        )
+
+    key, error = parse_recall_args(args_raw)
+    signature = ("recall", args_raw) if key is None else ("recall", key)
+    return _MemoryRequest(
+        tool=tool,
+        signature=signature,
+        recall_key=key,
+        error=error,
+    )
+
+
+def _handle_memory(
+    request: _MemoryRequest,
+    *,
+    step: int,
+    scratchpad: Scratchpad | None,
+    execute: bool,
+) -> str:
+    """Render a memory preview or execute it without duplicating policy."""
+    if request.error is not None:
+        return request.error
+
+    if request.tool == "remember":
+        call = request.remember_call
+        assert call is not None
+        if not execute:
+            return f"Step {step} would remember: {call.key} ({len(call.value)} chars)"
+        assert scratchpad is not None
+        print(f"Step {step}: remembering {call.key}...")
+        result = scratchpad.remember(call)
+    else:
+        key = request.recall_key
+        assert key is not None
+        if not execute:
+            return f"Step {step} would recall: {key}"
+        assert scratchpad is not None
+        print(f"Step {step}: recalling {key}...")
+        result = scratchpad.recall(key)
+
+    return result.get("error", result.get("content", ""))
+
+
+def _track_repetition(
+    tool: str,
+    signature: tuple,
+    previous: tuple | None,
+    count: int,
+) -> tuple[tuple, int, str | None]:
+    """Update the shared consecutive-call counter and report a stuck model."""
+    next_count = count + 1 if signature == previous else 1
+    stop = None
+    if next_count >= 3:
+        stop = f"olla stopped: same {tool} call repeated 3x — model likely stuck"
+    return signature, next_count, stop
+
+
+def _record_observation(messages: list[dict], preview: str) -> None:
+    """Print and append the exact same tool result as an Observation."""
+    print(preview)
+    messages.append({"role": "user", "content": f"Observation: {preview}"})
 
 
 def truncate_output(text: str, limit: int = MAX_OBSERVATION_CHARS) -> str:
@@ -89,21 +179,16 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
             else:
                 print(f"Step 1 would write to {resolved} — would prompt for confirmation")
             return
-        elif parsed["tool"] == "remember":
-            call, error = parse_remember_args(parsed["args_raw"])
-            if error is not None:
-                print(error)
-            else:
-                assert call is not None
-                print(f"Step 1 would remember: {call.key} ({len(call.value)} chars)")
-            return
-        elif parsed["tool"] == "recall":
-            key, error = parse_recall_args(parsed["args_raw"])
-            if error is not None:
-                print(error)
-            else:
-                assert key is not None
-                print(f"Step 1 would recall: {key}")
+        elif parsed["tool"] in {"remember", "recall"}:
+            request = _prepare_memory_request(parsed["tool"], parsed["args_raw"])
+            print(
+                _handle_memory(
+                    request,
+                    step=1,
+                    scratchpad=None,
+                    execute=False,
+                )
+            )
             return
         else:
             print(f"Model would call unknown tool '{parsed['tool']}'")
@@ -175,14 +260,11 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                 continue
             elif parsed["tool"] == "read_file":
                 sig = ("read_file", parsed["args_raw"])
-                if sig == prev_sig:
-                    repeat_count += 1
-                else:
-                    prev_sig = sig
-                    repeat_count = 1
-
-                if repeat_count >= 3:
-                    print(f"olla stopped: same {parsed['tool']} call repeated 3x — model likely stuck")
+                prev_sig, repeat_count, stop = _track_repetition(
+                    parsed["tool"], sig, prev_sig, repeat_count
+                )
+                if stop is not None:
+                    print(stop)
                     return
 
                 print(f"Step {step}: reading {parsed['args_raw']}...")
@@ -195,19 +277,15 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                     if not combined:
                         combined = "(no output)"
                 preview = truncate_output(combined)
-                print(preview)
-                messages.append({"role": "user", "content": f"Observation: {preview}"})
+                _record_observation(messages, preview)
                 continue
             elif parsed["tool"] == "write_file":
                 sig = ("write_file", parsed["args_raw"])
-                if sig == prev_sig:
-                    repeat_count += 1
-                else:
-                    prev_sig = sig
-                    repeat_count = 1
-
-                if repeat_count >= 3:
-                    print(f"olla stopped: same {parsed['tool']} call repeated 3x — model likely stuck")
+                prev_sig, repeat_count, stop = _track_repetition(
+                    parsed["tool"], sig, prev_sig, repeat_count
+                )
+                if stop is not None:
+                    print(stop)
                     return
 
                 path, sep, file_content = parsed["args_raw"].partition("\n")
@@ -221,8 +299,7 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                     preview = (
                         f"refused: write_file for {resolved} had no content line — nothing written"
                     )
-                    print(preview)
-                    messages.append({"role": "user", "content": f"Observation: {preview}"})
+                    _record_observation(messages, preview)
                     continue
 
                 if not yes:
@@ -241,67 +318,30 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                     preview = result["error"]
                 else:
                     preview = f"wrote {result.get('bytes_written', 0)} bytes to {resolved}"
-                print(preview)
-                messages.append({"role": "user", "content": f"Observation: {preview}"})
+                _record_observation(messages, preview)
                 continue
-            elif parsed["tool"] == "remember":
-                call, error = parse_remember_args(parsed["args_raw"])
-                sig = (
-                    ("remember", parsed["args_raw"])
-                    if call is None
-                    else ("remember", call.key, call.value)
+            elif parsed["tool"] in {"remember", "recall"}:
+                request = _prepare_memory_request(
+                    parsed["tool"], parsed["args_raw"]
                 )
-                if sig == prev_sig:
-                    repeat_count += 1
-                else:
-                    prev_sig = sig
-                    repeat_count = 1
-
-                if repeat_count >= 3:
-                    print(f"olla stopped: same {parsed['tool']} call repeated 3x — model likely stuck")
+                prev_sig, repeat_count, stop = _track_repetition(
+                    parsed["tool"], request.signature, prev_sig, repeat_count
+                )
+                if stop is not None:
+                    print(stop)
                     return
 
-                if error is not None:
-                    preview = error
-                else:
-                    assert call is not None
-                    print(f"Step {step}: remembering {call.key}...")
-                    result = scratchpad.remember(call)
-                    preview = result.get("error", result.get("content", ""))
-                print(preview)
-                messages.append({"role": "user", "content": f"Observation: {preview}"})
-                continue
-            elif parsed["tool"] == "recall":
-                key, error = parse_recall_args(parsed["args_raw"])
-                sig = (
-                    ("recall", parsed["args_raw"])
-                    if key is None
-                    else ("recall", key)
+                preview = _handle_memory(
+                    request,
+                    step=step,
+                    scratchpad=scratchpad,
+                    execute=True,
                 )
-                if sig == prev_sig:
-                    repeat_count += 1
-                else:
-                    prev_sig = sig
-                    repeat_count = 1
-
-                if repeat_count >= 3:
-                    print(f"olla stopped: same {parsed['tool']} call repeated 3x — model likely stuck")
-                    return
-
-                if error is not None:
-                    preview = error
-                else:
-                    assert key is not None
-                    print(f"Step {step}: recalling {key}...")
-                    result = scratchpad.recall(key)
-                    preview = result.get("error", result.get("content", ""))
-                print(preview)
-                messages.append({"role": "user", "content": f"Observation: {preview}"})
+                _record_observation(messages, preview)
                 continue
             else:
                 preview = f"unknown tool '{parsed['tool']}'"
-                print(preview)
-                messages.append({"role": "user", "content": f"Observation: {preview}"})
+                _record_observation(messages, preview)
                 continue
 
         messages.append(
