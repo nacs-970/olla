@@ -28,7 +28,7 @@ When you have the final answer for the user, respond with:
 <final>your answer text here</final>
 
 Only output one tag block per turn. Do not explain your reasoning outside the tags.
-Never include a literal </args> sequence inside file content — it will cut off your output early.
+Never include a literal </args> sequence inside file content or a remembered value — it will cut off your output early.
 
 Example:
 <tool>shell</tool><args>ls -la /tmp</args>

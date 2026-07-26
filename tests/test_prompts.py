@@ -46,7 +46,10 @@ def test_system_prompt_preserves_shell_file_guidance():
     assert "path/to/file</args>" in SYSTEM_PROMPT
     assert "<tool>write_file</tool><args>" in SYSTEM_PROMPT
     assert "file content goes here\non one or more lines</args>" in SYSTEM_PROMPT
-    assert "Never include a literal </args> sequence inside file content" in SYSTEM_PROMPT
+    assert (
+        "Never include a literal </args> sequence inside file content or a "
+        "remembered value"
+    ) in SYSTEM_PROMPT
     assert SYSTEM_PROMPT.count("Example:") == 4
     assert "Observation: meeting at 3pm" in SYSTEM_PROMPT
     assert "Observation: wrote 15 bytes to" in SYSTEM_PROMPT
