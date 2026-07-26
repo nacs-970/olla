@@ -30,6 +30,14 @@ def parse_remember_args(
             None,
             "invalid remember: expected key on first line and value on remaining lines",
         )
+    if len(value) > MAX_VALUE_CHARS:
+        return (
+            None,
+            (
+                f"memory value too large: {len(value)} characters; "
+                f"maximum is {MAX_VALUE_CHARS}"
+            ),
+        )
     return RememberCall(key=key, value=value), None
 
 
@@ -49,6 +57,29 @@ class Scratchpad:
 
     def remember(self, call: RememberCall) -> ToolResult:
         """Store or replace one value and return a non-disclosing acknowledgment."""
+        if len(call.value) > MAX_VALUE_CHARS:
+            return {
+                "error": (
+                    f"memory value too large: {len(call.value)} characters; "
+                    f"maximum is {MAX_VALUE_CHARS}"
+                )
+            }
+
+        is_new = call.key not in self._values
+        old_length = 0 if is_new else len(self._values[call.key])
+        current_total = sum(len(value) for value in self._values.values())
+        projected_total = current_total - old_length + len(call.value)
+
+        if is_new and len(self._values) >= MAX_KEYS:
+            return {"error": f"memory key limit reached: maximum is {MAX_KEYS}"}
+        if projected_total > MAX_TOTAL_CHARS:
+            return {
+                "error": (
+                    "memory capacity exceeded: "
+                    f"write would use {projected_total} of {MAX_TOTAL_CHARS} characters"
+                )
+            }
+
         self._values[call.key] = call.value
         if call.value == "":
             return {"content": f"remembered empty: {call.key}"}
