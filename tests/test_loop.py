@@ -33,9 +33,34 @@ def test_call_model(mocker):
     mock_chat.assert_called_once_with(
         model="test-model",
         messages=messages,
-        options={"stop": ["</args>", "Observation:"], "num_ctx": 8192},
+        options={"stop": ["</args>"], "num_ctx": 8192},
         think=False,
     )
+
+
+def test_run_loop_remember_preserves_observation_substring(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {
+            "message": {
+                "content": (
+                    "<tool>remember</tool><args>note\n"
+                    "before Observation: after</args>"
+                )
+            }
+        },
+        {"message": {"content": "<tool>recall</tool><args>note</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ]
+
+    run_loop(
+        task="remember a value containing protocol-like text",
+        model="test-model",
+        max_steps=3,
+        system_prompt="sys",
+    )
+
+    assert "before Observation: after" in capsys.readouterr().out
 
 
 def test_run_loop_immediate_final(mocker, capsys):
