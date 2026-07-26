@@ -111,10 +111,14 @@ def _record_observation(messages: list[dict], preview: str) -> None:
 
 def truncate_output(text: str, limit: int = MAX_OBSERVATION_CHARS) -> str:
     """Truncate text to a head+tail preview if it exceeds `limit` chars."""
+    if limit < 0:
+        raise ValueError("limit must be non-negative")
     if len(text) <= limit:
         return text
-    head = text[: limit // 2]
-    tail = text[-(limit // 2):]
+    head_len = limit // 2
+    tail_len = limit - head_len
+    head = text[:head_len]
+    tail = text[-tail_len:] if tail_len else ""
     return f"{head}\n[...truncated {len(text) - limit} chars...]\n{tail}"
 
 

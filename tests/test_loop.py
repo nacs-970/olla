@@ -22,6 +22,30 @@ def test_truncate_output_over_limit():
     assert f"[...truncated {n} chars...]" in result
 
 
+@pytest.mark.parametrize(
+    ("limit", "expected_head", "expected_tail"),
+    [
+        (5, "ab", "fgh"),
+        (1, "", "h"),
+        (0, "", ""),
+    ],
+)
+def test_truncate_output_respects_small_and_odd_limits(
+    limit, expected_head, expected_tail
+):
+    text = "abcdefgh"
+
+    assert truncate_output(text, limit=limit) == (
+        f"{expected_head}\n[...truncated {len(text) - limit} chars...]\n"
+        f"{expected_tail}"
+    )
+
+
+def test_truncate_output_rejects_negative_limit():
+    with pytest.raises(ValueError, match="limit must be non-negative"):
+        truncate_output("text", limit=-1)
+
+
 def test_call_model(mocker):
     mock_chat = mocker.patch("olla.loop.ollama.chat")
     mock_chat.return_value = {"message": {"content": "<final>42</final>"}}
