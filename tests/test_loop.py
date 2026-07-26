@@ -950,3 +950,274 @@ def test_run_loop_scratchpad_isolation_between_invocations(mocker, capsys):
     assert "remembered: meeting_time" in captured.out
     assert "memory not found: meeting_time" in captured.out
     mock_confirm.assert_not_called()
+
+
+@pytest.mark.parametrize("yes", [False, True])
+def test_run_loop_memory_never_confirms_or_checks(mocker, capsys, yes):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>remember</tool><args>secret\nTOP_SECRET</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ]
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+    mock_check = mocker.patch("olla.loop.check")
+
+    run_loop(
+        task="remember privately",
+        model="test-model",
+        max_steps=15,
+        system_prompt="sys",
+        yes=yes,
+    )
+
+    captured = capsys.readouterr()
+    assert "Step 1: remembering secret..." in captured.out
+    assert "remembered: secret" in captured.out
+    assert "TOP_SECRET" not in captured.out
+    mock_confirm.assert_not_called()
+    mock_check.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("tool_content", "expected"),
+    [
+        (
+            "<tool>remember</tool><args> note \nTOP_SECRET</args>",
+            "Step 1 would remember: note (10 chars)",
+        ),
+        (
+            "<tool>recall</tool><args> note </args>",
+            "Step 1 would recall: note",
+        ),
+    ],
+)
+def test_dry_run_memory_preview_is_non_accessing(mocker, capsys, tool_content, expected):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.return_value = {"message": {"content": tool_content}}
+    mock_remember = mocker.patch("olla.loop.Scratchpad.remember")
+    mock_recall = mocker.patch("olla.loop.Scratchpad.recall")
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+    mock_check = mocker.patch("olla.loop.check")
+
+    run_loop(
+        task="preview memory",
+        model="test-model",
+        max_steps=15,
+        system_prompt="sys",
+        dry_run=True,
+    )
+
+    captured = capsys.readouterr()
+    assert captured.out == f"{expected}\n"
+    assert "TOP_SECRET" not in captured.out
+    assert mock_chat.call_count == 1
+    mock_remember.assert_not_called()
+    mock_recall.assert_not_called()
+    mock_confirm.assert_not_called()
+    mock_check.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("tool_content", "expected"),
+    [
+        (
+            "<tool>remember</tool><args>\nvalue</args>",
+            "invalid remember: key must not be empty",
+        ),
+        (
+            "<tool>remember</tool><args>key</args>",
+            "invalid remember: expected key on first line and value on remaining lines",
+        ),
+        (
+            f"<tool>remember</tool><args>key\n{'x' * 2001}</args>",
+            "memory value too large: 2001 characters; maximum is 2000",
+        ),
+        (
+            "<tool>recall</tool><args>   </args>",
+            "invalid recall: key must not be empty",
+        ),
+    ],
+)
+def test_dry_run_memory_errors_are_exact_and_non_accessing(
+    mocker, capsys, tool_content, expected
+):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.return_value = {"message": {"content": tool_content}}
+    mock_remember = mocker.patch("olla.loop.Scratchpad.remember")
+    mock_recall = mocker.patch("olla.loop.Scratchpad.recall")
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+    mock_check = mocker.patch("olla.loop.check")
+
+    run_loop(
+        task="preview invalid memory",
+        model="test-model",
+        max_steps=15,
+        system_prompt="sys",
+        dry_run=True,
+    )
+
+    captured = capsys.readouterr()
+    assert captured.out == f"{expected}\n"
+    assert mock_chat.call_count == 1
+    mock_remember.assert_not_called()
+    mock_recall.assert_not_called()
+    mock_confirm.assert_not_called()
+    mock_check.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("tool_content", "remember_result", "recall_result", "expected"),
+    [
+        (
+            "<tool>remember</tool><args>key\nvalue</args>",
+            {"content": "remembered: key"},
+            None,
+            "remembered: key",
+        ),
+        (
+            "<tool>recall</tool><args>missing</args>",
+            None,
+            {"error": "memory not found: missing"},
+            "memory not found: missing",
+        ),
+        (
+            "<tool>recall</tool><args>empty</args>",
+            None,
+            {"content": "memory is empty: empty"},
+            "memory is empty: empty",
+        ),
+        (
+            "<tool>remember</tool><args>key\nvalue</args>",
+            {"error": "memory key limit reached: maximum is 32"},
+            None,
+            "memory key limit reached: maximum is 32",
+        ),
+        (
+            "<tool>remember</tool><args>key\nvalue</args>",
+            {
+                "error": (
+                    "memory capacity exceeded: "
+                    "write would use 16001 of 16000 characters"
+                )
+            },
+            None,
+            "memory capacity exceeded: write would use 16001 of 16000 characters",
+        ),
+        (
+            "<tool>remember</tool><args>key</args>",
+            None,
+            None,
+            "invalid remember: expected key on first line and value on remaining lines",
+        ),
+    ],
+)
+def test_run_loop_memory_results_match_observations(
+    mocker,
+    capsys,
+    tool_content,
+    remember_result,
+    recall_result,
+    expected,
+):
+    responses = iter(
+        [
+            {"message": {"content": tool_content}},
+            {"message": {"content": "<final>done</final>"}},
+        ]
+    )
+    messages_by_call = []
+
+    def fake_chat(**kwargs):
+        messages_by_call.append([message.copy() for message in kwargs["messages"]])
+        return next(responses)
+
+    mocker.patch("olla.loop.ollama.chat", side_effect=fake_chat)
+    mock_remember = mocker.patch("olla.loop.Scratchpad.remember")
+    mock_recall = mocker.patch("olla.loop.Scratchpad.recall")
+    if remember_result is not None:
+        mock_remember.return_value = remember_result
+    if recall_result is not None:
+        mock_recall.return_value = recall_result
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+    mock_check = mocker.patch("olla.loop.check")
+
+    run_loop(task="exercise memory", model="test-model", max_steps=15, system_prompt="sys")
+
+    captured = capsys.readouterr()
+    assert expected in captured.out
+    observations = [
+        message["content"]
+        for message in messages_by_call[1]
+        if message["role"] == "user" and message["content"].startswith("Observation:")
+    ]
+    assert observations == [f"Observation: {expected}"]
+    mock_confirm.assert_not_called()
+    mock_check.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("tool_calls", "method_name", "tool_name"),
+    [
+        (
+            [
+                "<tool>remember</tool><args> key \nvalue</args>",
+                "<tool>remember</tool><args>key\nvalue</args>",
+                "<tool>remember</tool><args> key\nvalue</args>",
+            ],
+            "remember",
+            "remember",
+        ),
+        (
+            [
+                "<tool>recall</tool><args> key </args>",
+                "<tool>recall</tool><args>key</args>",
+                "<tool>recall</tool><args> key</args>",
+            ],
+            "recall",
+            "recall",
+        ),
+    ],
+)
+def test_run_loop_memory_repetition_guard_uses_normalized_calls(
+    mocker, capsys, tool_calls, method_name, tool_name
+):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": tool_call}} for tool_call in tool_calls
+    ]
+    mock_remember = mocker.patch(
+        "olla.loop.Scratchpad.remember", return_value={"content": "remembered: key"}
+    )
+    mock_recall = mocker.patch(
+        "olla.loop.Scratchpad.recall", return_value={"content": "value"}
+    )
+
+    run_loop(task="repeat memory", model="test-model", max_steps=15, system_prompt="sys")
+
+    captured = capsys.readouterr()
+    assert f"olla stopped: same {tool_name} call repeated 3x — model likely stuck" in captured.out
+    selected_method = mock_remember if method_name == "remember" else mock_recall
+    assert selected_method.call_count == 2
+    assert mock_chat.call_count == 3
+
+
+def test_run_loop_different_memory_values_reset_repetition_guard(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>remember</tool><args>key\none</args>"}},
+        {"message": {"content": "<tool>remember</tool><args>key\none</args>"}},
+        {"message": {"content": "<tool>remember</tool><args>key\ntwo</args>"}},
+        {"message": {"content": "<tool>remember</tool><args>key\none</args>"}},
+        {"message": {"content": "<tool>remember</tool><args>key\none</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ]
+    mock_remember = mocker.patch(
+        "olla.loop.Scratchpad.remember", return_value={"content": "remembered: key"}
+    )
+
+    run_loop(task="vary memory", model="test-model", max_steps=15, system_prompt="sys")
+
+    captured = capsys.readouterr()
+    assert "same remember call repeated 3x" not in captured.out
+    assert "done" in captured.out
+    assert mock_remember.call_count == 5
