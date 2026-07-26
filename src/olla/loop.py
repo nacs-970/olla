@@ -9,6 +9,11 @@ from rich.prompt import Confirm
 from olla.parser import parse_response
 from olla.safety import check
 from olla.tools.files import read_file, write_file
+from olla.tools.memory import (
+    Scratchpad,
+    parse_recall_args,
+    parse_remember_args,
+)
 from olla.tools.shell import run_shell
 
 MAX_OBSERVATION_CHARS = 2000
@@ -35,6 +40,7 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": task},
     ]
+    scratchpad = Scratchpad()
 
     if dry_run:
         content = call_model(model, messages)
@@ -214,6 +220,60 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                     preview = result["error"]
                 else:
                     preview = f"wrote {result.get('bytes_written', 0)} bytes to {resolved}"
+                print(preview)
+                messages.append({"role": "user", "content": f"Observation: {preview}"})
+                continue
+            elif parsed["tool"] == "remember":
+                call, error = parse_remember_args(parsed["args_raw"])
+                sig = (
+                    ("remember", parsed["args_raw"])
+                    if call is None
+                    else ("remember", call.key, call.value)
+                )
+                if sig == prev_sig:
+                    repeat_count += 1
+                else:
+                    prev_sig = sig
+                    repeat_count = 1
+
+                if repeat_count >= 3:
+                    print(f"olla stopped: same {parsed['tool']} call repeated 3x — model likely stuck")
+                    return
+
+                if error is not None:
+                    preview = error
+                else:
+                    assert call is not None
+                    print(f"Step {step}: remembering {call.key}...")
+                    result = scratchpad.remember(call)
+                    preview = result.get("error", result.get("content", ""))
+                print(preview)
+                messages.append({"role": "user", "content": f"Observation: {preview}"})
+                continue
+            elif parsed["tool"] == "recall":
+                key, error = parse_recall_args(parsed["args_raw"])
+                sig = (
+                    ("recall", parsed["args_raw"])
+                    if key is None
+                    else ("recall", key)
+                )
+                if sig == prev_sig:
+                    repeat_count += 1
+                else:
+                    prev_sig = sig
+                    repeat_count = 1
+
+                if repeat_count >= 3:
+                    print(f"olla stopped: same {parsed['tool']} call repeated 3x — model likely stuck")
+                    return
+
+                if error is not None:
+                    preview = error
+                else:
+                    assert key is not None
+                    print(f"Step {step}: recalling {key}...")
+                    result = scratchpad.recall(key)
+                    preview = result.get("error", result.get("content", ""))
                 print(preview)
                 messages.append({"role": "user", "content": f"Observation: {preview}"})
                 continue

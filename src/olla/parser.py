@@ -13,21 +13,20 @@ def parse_response(content: str) -> dict:
     Strips markdown code fences, then prefers <final> if present, else a
     complete <tool>+<args> pair, else returns the original raw content.
 
-    write_file is special-cased: its <args> payload is file content and must
-    be preserved verbatim (no fence-stripping, no whitespace trimming), since
-    legitimate file content may contain code fences or rely on a trailing
-    newline.
+    write_file and remember are special-cased: their <args> payloads contain
+    verbatim content and must not be fence-stripped or whitespace-trimmed.
     """
     raw_tool_match = TOOL_RE.search(content)
     raw_args_match = ARGS_RE.search(content)
     if (
         raw_tool_match
         and raw_args_match
-        and raw_tool_match.group(1).strip() == "write_file"
+        and raw_tool_match.group(1).strip() in {"write_file", "remember"}
     ):
+        tool = raw_tool_match.group(1).strip()
         return {
             "type": "tool",
-            "tool": "write_file",
+            "tool": tool,
             "args_raw": raw_args_match.group(1),
         }
 
