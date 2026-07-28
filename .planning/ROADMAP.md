@@ -91,7 +91,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. The model calls `write_file(path, content)` and the file is written only after the user confirms, with the resolved path shown in the prompt
   3. A task that requires inspecting a file and then writing a modified version completes end-to-end
 
-**Plans:** 3/3 plans complete
+**Plans:** 5/5 plans executed
+
+- [x] 03-04-PLAN.md
+- [x] 03-05-PLAN.md
 
 **Wave 1**
 
@@ -135,6 +138,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 |-------|----------------|--------|-----------|
 | 1. Core Loop + Shell Tool + CLI | 2/2 | Complete   | 2026-06-11 |
 | 2. Safety Gate + Loop Control | 8/8 | Complete   | 2026-06-14 |
-| 3. File Tools | 3/3 | Complete   | 2026-06-16 |
+| 3. File Tools | 5/5 | Complete   | 2026-07-29 |
 | 4. Memory Tool | 2/2 | In Progress|  |
 </content>

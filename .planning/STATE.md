@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 04
-current_phase_name: memory-tool
+current_phase: 03
+current_phase_name: file-tools
 status: verifying
-stopped_at: Completed Phase 04 code-review fixes; ready for verification
-last_updated: "2026-07-27T03:09:05+07:00"
-last_activity: 2026-07-27
-last_activity_desc: Completed all Phase 04 code-review fixes and final verification
+stopped_at: Completed 03-05-PLAN.md
+last_updated: "2026-07-28T20:44:53.327Z"
+last_activity: 2026-07-29
+last_activity_desc: Completed Phase 03 Plan 05 guarded existing-file edits
 progress:
   total_phases: 4
   completed_phases: 3
-  total_plans: 16
-  completed_plans: 15
+  total_plans: 17
+  completed_plans: 17
 ---
 
 # Project State
@@ -23,16 +23,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-10)
 
 **Core value:** Stay fast and accurate on small local models — minimal per-turn token overhead so 2-4B models on constrained hardware stay responsive and don't drift under a bloated context.
-**Current focus:** Phase 04 — memory-tool
+**Current focus:** Phase 03 — file-tools
 
 ## Current Position
 
-Phase: 04 (memory-tool) — EXECUTING
-Plan: 2 of 2
+Phase: 03 (file-tools) — EXECUTING
+Plan: 5 of 5
 Status: Phase complete — ready for verification
-Last activity: 2026-07-26 — Phase 04 execution resumed (wave continue)
+Last activity: 2026-07-29 — Completed Plan 03-05 guarded existing-file edits
 
-Progress: [█████████░] 94%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [█████████░] 94%
 |------|----------|-------|-------|
 | Phase 04 P01 | 13min | 2 tasks | 6 files |
 | Phase 04 P02 | 7min | 2 tasks | 5 files |
+| Phase 03 P05 | 10 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -78,6 +79,9 @@ Recent decisions affecting current work:
 - [Phase 04]: Validate bounded memory writes against projected replacement state before a single assignment.
 - [Phase 04]: Treat final tags outside opaque args as final while preserving literal tag text inside memory values.
 - [Phase 04]: Keep memory dry-run on pure parsers so preview never accesses Scratchpad state.
+- [Phase 03]: Require a successful, completely observed same-resolved-path read before overwriting an existing file.
+- [Phase 03]: Make --yes bypass only confirmation; path resolution, previews, and freshness validation always run.
+- [Phase 03]: Keep write_file as full replacement and enforce edit safety in run_loop orchestration and the model prompt.
 
 ### Pending Todos
 
@@ -107,6 +111,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-28T13:29:07+07:00
-Stopped at: Session resumed, proceeding to Phase 04 verification, Phase 03 reconciliation, and change review
+Last session: 2026-07-28T20:44:53.303Z
+Stopped at: Completed 03-05-PLAN.md
 Resume file: None
