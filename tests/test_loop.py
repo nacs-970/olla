@@ -161,7 +161,7 @@ def test_run_loop_malformed_args_recovers(mocker, capsys):
     run_loop(task="say hi", model="test-model", max_steps=15, system_prompt="sys")
 
     captured = capsys.readouterr()
-    assert "could not parse command" in captured.out
+    assert "could not parse shell command" in captured.out
     assert "done" in captured.out
     mock_run_shell.assert_not_called()
 
@@ -169,7 +169,7 @@ def test_run_loop_malformed_args_recovers(mocker, capsys):
     messages = call_args.kwargs["messages"]
     obs_messages = [m for m in messages if m["role"] == "user" and m["content"].startswith("Observation:")]
     assert len(obs_messages) == 1
-    assert "could not parse command" in obs_messages[0]["content"]
+    assert "could not parse shell command" in obs_messages[0]["content"]
 
 
 def test_run_loop_tool_result_real_no_output_success(mocker, capsys):
@@ -754,7 +754,7 @@ def test_dry_run_malformed_args_prints_error_and_stops(mocker, capsys):
     run_loop(task="say hi", model="test-model", max_steps=15, system_prompt="sys", dry_run=True)
 
     captured = capsys.readouterr()
-    assert "could not parse command" in captured.out
+    assert "could not parse shell command" in captured.out
     assert mock_chat.call_count == 1
     mock_run_shell.assert_not_called()
     mock_confirm.assert_not_called()

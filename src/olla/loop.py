@@ -157,7 +157,7 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
             try:
                 argv = shlex.split(parsed["args_raw"])
             except ValueError as e:
-                print(f"error: could not parse command: {e}")
+                print(f"error: could not parse shell command (mismatched quotes: {e}). Please fix the quotes and try again.")
                 return
 
             decision = check(argv, yes=yes)
@@ -216,7 +216,7 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                 try:
                     argv = shlex.split(parsed["args_raw"])
                 except ValueError as e:
-                    preview = f"error: could not parse command: {e}"
+                    preview = f"error: could not parse shell command (mismatched quotes: {e}). Please fix the quotes and try again."
                     print(preview)
                     messages.append({"role": "user", "content": f"Observation: {preview}"})
                     continue
