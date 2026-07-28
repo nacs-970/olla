@@ -10,6 +10,7 @@ from rich.prompt import Confirm
 
 from olla.parser import parse_response
 from olla.safety import check
+from olla.tools.base import FileSnapshot
 from olla.tools.files import read_file, write_file
 from olla.tools.memory import (
     RememberCall,
@@ -35,10 +36,11 @@ class _MemoryRequest:
 
 @dataclass(frozen=True)
 class _FileReadSnapshot:
-    """Exact file content observed during this run and its display eligibility."""
+    """Content and descriptor identity observed during this run."""
 
     content: str
     fully_observed: bool
+    identity: FileSnapshot | None
 
 
 def _resolve_file_path(path: str) -> tuple[Path | None, str | None]:
@@ -378,6 +380,7 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                     read_snapshots[resolved] = _FileReadSnapshot(
                         content=raw_content,
                         fully_observed=truncate_output(raw_content) == raw_content,
+                        identity=result.get("snapshot"),
                     )
                     combined = raw_content
                     if not combined:
@@ -415,9 +418,14 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
 
                 target_existed = resolved.exists()
                 current_content: str | None = None
+                snapshot: _FileReadSnapshot | None = None
                 if target_existed:
                     snapshot = read_snapshots.get(resolved)
-                    if snapshot is None or not snapshot.fully_observed:
+                    if (
+                        snapshot is None
+                        or not snapshot.fully_observed
+                        or snapshot.identity is None
+                    ):
                         preview = (
                             f"refused: existing file {resolved} must be shown completely "
                             "by read_file in this run before overwrite"
@@ -429,6 +437,7 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                     if (
                         "error" in current_result
                         or current_result.get("content", "") != snapshot.content
+                        or current_result.get("snapshot") != snapshot.identity
                     ):
                         read_snapshots.pop(resolved, None)
                         _record_observation(
@@ -479,47 +488,30 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                     )
                     continue
 
-                if target_existed:
-                    if not final_resolved.exists():
-                        read_snapshots.pop(resolved, None)
-                        _record_observation(
-                            messages,
-                            _read_again_observation(resolved),
-                        )
-                        continue
-                    final_result = read_file(str(final_resolved))
-                    if (
-                        "error" in final_result
-                        or final_result.get("content", "") != current_content
-                    ):
-                        read_snapshots.pop(resolved, None)
-                        _record_observation(
-                            messages,
-                            _read_again_observation(resolved),
-                        )
-                        continue
-                elif final_resolved.exists():
-                    _record_observation(
-                        messages,
-                        (
-                            f"refused: new target {final_resolved} appeared before the write; "
-                            "use read_file on it before retrying write_file"
-                        ),
-                    )
-                    continue
-
                 print(f"Step {step}: writing to {final_resolved}...")
 
-                result = write_file(str(final_resolved), file_content)
+                expected_snapshot = (
+                    snapshot.identity
+                    if target_existed and snapshot is not None
+                    else None
+                )
+                result = write_file(
+                    str(final_resolved),
+                    file_content,
+                    expected_snapshot=expected_snapshot,
+                )
                 if "error" in result:
-                    preview = result["error"]
+                    if result.get("stale"):
+                        read_snapshots.pop(resolved, None)
+                        preview = _read_again_observation(resolved)
+                    else:
+                        preview = result["error"]
                 else:
                     preview = (
                         f"wrote {result.get('bytes_written', 0)} bytes to "
                         f"{final_resolved}"
                     )
-                    if target_existed:
-                        read_snapshots.pop(resolved, None)
+                    read_snapshots.pop(resolved, None)
                 _record_observation(messages, preview)
                 continue
             elif parsed["tool"] in {"remember", "recall"}:

@@ -6,6 +6,7 @@ import pytest
 
 from olla.loop import MAX_OBSERVATION_CHARS, call_model, run_loop, truncate_output
 from olla.safety import check
+from olla.tools.files import write_file as safe_write_file
 
 
 def test_truncate_output_under_limit():
@@ -1015,7 +1016,9 @@ def test_run_loop_resolved_alias_read_authorizes_previewed_overwrite(
     assert "Overwrite existing file" in mock_confirm.call_args.args[0]
     assert str(target.resolve()) in mock_confirm.call_args.args[0]
     mock_write.assert_called_once_with(
-        str(target.resolve()), "name: new\nkeep: yes\n"
+        str(target.resolve()),
+        "name: new\nkeep: yes\n",
+        expected_snapshot=mocker.ANY,
     )
 
 
@@ -1119,8 +1122,6 @@ def test_run_loop_post_confirmation_change_is_refused(tmp_path, mocker):
             "<final>done</final>",
         ],
     )
-    mock_write = mocker.patch("olla.loop.write_file")
-
     def change_then_approve(*_args, **_kwargs):
         target.write_text("changed during confirmation\n", encoding="utf-8")
         return True
@@ -1129,7 +1130,6 @@ def test_run_loop_post_confirmation_change_is_refused(tmp_path, mocker):
 
     run_loop("edit the file", "model", 3, "sys")
 
-    mock_write.assert_not_called()
     assert target.read_text(encoding="utf-8") == "changed during confirmation\n"
 
 
@@ -1144,8 +1144,6 @@ def test_run_loop_new_target_appearing_during_confirmation_is_preserved(
             "<final>done</final>",
         ],
     )
-    mock_write = mocker.patch("olla.loop.write_file")
-
     def create_then_approve(*_args, **_kwargs):
         target.write_text("created externally\n", encoding="utf-8")
         return True
@@ -1154,8 +1152,86 @@ def test_run_loop_new_target_appearing_during_confirmation_is_preserved(
 
     run_loop("create the file", "model", 2, "sys")
 
-    mock_write.assert_not_called()
     assert target.read_text(encoding="utf-8") == "created externally\n"
+
+
+def test_run_loop_recreated_identical_file_invalidates_snapshot(tmp_path, mocker):
+    target = tmp_path / "existing.txt"
+    target.write_text("same content\n", encoding="utf-8")
+    responses = iter(
+        [
+            f"<tool>read_file</tool><args>{target}</args>",
+            f"<tool>write_file</tool><args>{target}\nmodel replacement\n</args>",
+            "<final>done</final>",
+        ]
+    )
+    call_count = 0
+
+    def replace_before_write(*_args):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            target.unlink()
+            target.write_text("same content\n", encoding="utf-8")
+        return next(responses)
+
+    mocker.patch("olla.loop.call_model", side_effect=replace_before_write)
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop("edit the file", "model", 3, "sys")
+
+    mock_confirm.assert_not_called()
+    assert target.read_text(encoding="utf-8") == "same content\n"
+
+
+def test_safe_write_rechecks_snapshot_inside_commit_primitive(tmp_path, mocker):
+    target = tmp_path / "existing.txt"
+    target.write_text("original\n", encoding="utf-8")
+    mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            f"<tool>read_file</tool><args>{target}</args>",
+            f"<tool>write_file</tool><args>{target}\nmodel replacement\n</args>",
+            "<final>done</final>",
+        ],
+    )
+
+    def update_at_safe_write(path, content, **kwargs):
+        target.write_text("external update\n", encoding="utf-8")
+        return safe_write_file(path, content, **kwargs)
+
+    mocker.patch("olla.loop.write_file", side_effect=update_at_safe_write)
+
+    run_loop("edit the file", "model", 3, "sys", yes=True)
+
+    assert target.read_text(encoding="utf-8") == "external update\n"
+
+
+def test_run_loop_symlink_swap_during_confirmation_is_preserved(tmp_path, mocker):
+    target = tmp_path / "existing.txt"
+    target.write_text("original\n", encoding="utf-8")
+    replacement = tmp_path / "replacement.txt"
+    replacement.write_text("replacement object\n", encoding="utf-8")
+    mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            f"<tool>read_file</tool><args>{target}</args>",
+            f"<tool>write_file</tool><args>{target}\nmodel content\n</args>",
+            "<final>done</final>",
+        ],
+    )
+
+    def swap_then_approve(*_args, **_kwargs):
+        target.unlink()
+        target.symlink_to(replacement)
+        return True
+
+    mocker.patch("olla.loop.Confirm.ask", side_effect=swap_then_approve)
+
+    run_loop("edit the file", "model", 3, "sys")
+
+    assert target.is_symlink()
+    assert replacement.read_text(encoding="utf-8") == "replacement object\n"
 
 
 def test_run_loop_creates_absent_target_with_bounded_preview(
