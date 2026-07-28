@@ -875,6 +875,116 @@ def test_run_loop_repeated_block_triggers_repetition_guard(mocker, capsys):
     assert mock_chat.call_count == 3
 
 
+@pytest.mark.parametrize(
+    ("response", "tool_name"),
+    [
+        ('<tool>shell</tool><args>echo "unterminated</args>', "shell"),
+        ("<tool>browse</tool><args>https://example.com</args>", "browse"),
+        ("no protocol tags here", "response"),
+    ],
+)
+def test_repetition_guard_covers_every_non_final_response(
+    mocker, capsys, response, tool_name
+):
+    mock_model = mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[response, response, response],
+    )
+    mock_run_shell = mocker.patch("olla.loop.run_shell")
+
+    run_loop("repeat malformed output", "model", 10, "sys")
+
+    assert (
+        f"olla stopped: same {tool_name} call repeated 3x — model likely stuck"
+        in capsys.readouterr().out
+    )
+    assert mock_model.call_count == 3
+    mock_run_shell.assert_not_called()
+
+
+def test_malformed_response_resets_prior_valid_repetition_state(mocker, capsys):
+    mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            "<tool>shell</tool><args>ls</args>",
+            "<tool>shell</tool><args>ls</args>",
+            '<tool>shell</tool><args>echo "unterminated</args>',
+            "<tool>shell</tool><args>ls</args>",
+            "<tool>shell</tool><args>ls</args>",
+            "<final>done</final>",
+        ],
+    )
+    mock_run_shell = mocker.patch(
+        "olla.loop.run_shell",
+        return_value={
+            "argv": ["ls"],
+            "returncode": 0,
+            "stdout": "file\n",
+            "stderr": "",
+        },
+    )
+
+    run_loop("recover between calls", "model", 6, "sys")
+
+    output = capsys.readouterr().out
+    assert "same shell call repeated 3x" not in output
+    assert "done" in output
+    assert mock_run_shell.call_count == 4
+
+
+def test_read_repetition_signature_normalizes_path_aliases(
+    tmp_path, mocker, capsys
+):
+    target = tmp_path / "target.txt"
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    aliases = [target, tmp_path / "." / target.name, nested / ".." / target.name]
+    mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            f"<tool>read_file</tool><args>{alias}</args>" for alias in aliases
+        ],
+    )
+    mock_read = mocker.patch(
+        "olla.loop.read_file",
+        return_value={"path": str(target), "content": "content\n"},
+    )
+
+    run_loop("repeat aliased reads", "model", 3, "sys")
+
+    assert "same read_file call repeated 3x" in capsys.readouterr().out
+    assert mock_read.call_count == 2
+
+
+def test_write_repetition_signature_normalizes_path_and_content(
+    tmp_path, mocker, capsys
+):
+    target = tmp_path / "target.txt"
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    aliases = [
+        str(target),
+        f" {tmp_path / '.' / target.name} ",
+        str(nested / ".." / target.name),
+    ]
+    mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            f"<tool>write_file</tool><args>{alias}\nsame content\n</args>"
+            for alias in aliases
+        ],
+    )
+    mock_write = mocker.patch(
+        "olla.loop.write_file",
+        return_value={"path": str(target), "bytes_written": 13},
+    )
+
+    run_loop("repeat aliased writes", "model", 3, "sys", yes=True)
+
+    assert "same write_file call repeated 3x" in capsys.readouterr().out
+    assert mock_write.call_count == 2
+
+
 def test_run_loop_max_steps_with_varied_shell_calls(mocker, capsys):
     mock_chat = mocker.patch("olla.loop.ollama.chat")
     mock_chat.side_effect = [
