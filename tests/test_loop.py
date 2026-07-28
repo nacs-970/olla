@@ -1,7 +1,5 @@
 """Tests for olla.loop."""
 
-from pathlib import Path
-
 import pytest
 
 from olla.loop import MAX_OBSERVATION_CHARS, call_model, run_loop, truncate_output
@@ -401,14 +399,15 @@ def test_run_loop_confirm_eoferror_declines_safely(mocker, capsys):
     assert obs_messages[0]["content"] == "Observation: declined by user"
 
 
-def test_run_loop_write_file_confirm_approved(mocker, capsys):
+def test_run_loop_write_file_confirm_approved(tmp_path, mocker, capsys):
+    target = tmp_path / "x.txt"
     mock_chat = mocker.patch("olla.loop.ollama.chat")
     mock_chat.side_effect = [
-        {"message": {"content": "<tool>write_file</tool><args>/tmp/x.txt\nnew content\n</args>"}},
+        {"message": {"content": f"<tool>write_file</tool><args>{target}\nnew content\n</args>"}},
         {"message": {"content": "<final>done</final>"}},
     ]
     mock_write_file = mocker.patch("olla.loop.write_file")
-    mock_write_file.return_value = {"path": "/tmp/x.txt", "bytes_written": 12}
+    mock_write_file.return_value = {"path": str(target), "bytes_written": 12}
     mock_confirm = mocker.patch("olla.loop.Confirm.ask", return_value=True)
 
     run_loop(task="write a file", model="test-model", max_steps=15, system_prompt="sys")
@@ -419,28 +418,30 @@ def test_run_loop_write_file_confirm_approved(mocker, capsys):
     mock_write_file.assert_called_once()
 
 
-def test_run_loop_write_file_shows_resolved_path(mocker, capsys):
+def test_run_loop_write_file_shows_resolved_path(tmp_path, mocker, capsys):
+    target = tmp_path / "x.txt"
     mock_chat = mocker.patch("olla.loop.ollama.chat")
     mock_chat.side_effect = [
-        {"message": {"content": "<tool>write_file</tool><args>/tmp/x.txt\nnew content\n</args>"}},
+        {"message": {"content": f"<tool>write_file</tool><args>{target}\nnew content\n</args>"}},
         {"message": {"content": "<final>done</final>"}},
     ]
     mock_write_file = mocker.patch("olla.loop.write_file")
-    mock_write_file.return_value = {"path": "/tmp/x.txt", "bytes_written": 12}
+    mock_write_file.return_value = {"path": str(target), "bytes_written": 12}
     mock_confirm = mocker.patch("olla.loop.Confirm.ask", return_value=True)
 
     run_loop(task="write a file", model="test-model", max_steps=15, system_prompt="sys")
 
-    resolved = str(Path("/tmp/x.txt").resolve())
+    resolved = str(target.resolve())
     prompt_text = mock_confirm.call_args[0][0]
     assert prompt_text == "Proceed?"
     assert resolved in capsys.readouterr().out
 
 
-def test_run_loop_write_file_confirm_declined(mocker, capsys):
+def test_run_loop_write_file_confirm_declined(tmp_path, mocker, capsys):
+    target = tmp_path / "x.txt"
     mock_chat = mocker.patch("olla.loop.ollama.chat")
     mock_chat.side_effect = [
-        {"message": {"content": "<tool>write_file</tool><args>/tmp/x.txt\nnew content\n</args>"}},
+        {"message": {"content": f"<tool>write_file</tool><args>{target}\nnew content\n</args>"}},
         {"message": {"content": "<final>done</final>"}},
     ]
     mock_write_file = mocker.patch("olla.loop.write_file")
@@ -459,14 +460,15 @@ def test_run_loop_write_file_confirm_declined(mocker, capsys):
     assert obs_messages[0]["content"] == "Observation: declined by user"
 
 
-def test_run_loop_write_file_yes_skips_prompt(mocker, capsys):
+def test_run_loop_write_file_yes_skips_prompt(tmp_path, mocker, capsys):
+    target = tmp_path / "x.txt"
     mock_chat = mocker.patch("olla.loop.ollama.chat")
     mock_chat.side_effect = [
-        {"message": {"content": "<tool>write_file</tool><args>/tmp/x.txt\nnew content\n</args>"}},
+        {"message": {"content": f"<tool>write_file</tool><args>{target}\nnew content\n</args>"}},
         {"message": {"content": "<final>done</final>"}},
     ]
     mock_write_file = mocker.patch("olla.loop.write_file")
-    mock_write_file.return_value = {"path": "/tmp/x.txt", "bytes_written": 12}
+    mock_write_file.return_value = {"path": str(target), "bytes_written": 12}
     mock_confirm = mocker.patch("olla.loop.Confirm.ask")
 
     run_loop(task="write a file", model="test-model", max_steps=15, system_prompt="sys", yes=True)
@@ -683,16 +685,21 @@ def test_dry_run_previews_read_file(mocker, capsys):
     mock_confirm.assert_not_called()
 
 
-def test_dry_run_previews_write_file(mocker, capsys):
+def test_dry_run_previews_write_file(tmp_path, mocker, capsys):
+    target = tmp_path / "x.txt"
     mock_chat = mocker.patch("olla.loop.ollama.chat")
-    mock_chat.return_value = {"message": {"content": "<tool>write_file</tool><args>/tmp/x.txt\ncontent\n</args>"}}
+    mock_chat.return_value = {
+        "message": {
+            "content": f"<tool>write_file</tool><args>{target}\ncontent\n</args>"
+        }
+    }
     mock_write_file = mocker.patch("olla.loop.write_file")
     mock_confirm = mocker.patch("olla.loop.Confirm.ask")
 
     run_loop(task="write a file", model="test-model", max_steps=15, system_prompt="sys", dry_run=True)
 
     captured = capsys.readouterr()
-    resolved = str(Path("/tmp/x.txt").resolve())
+    resolved = str(target.resolve())
     assert "would write" in captured.out
     assert resolved in captured.out
     assert "would prompt for confirmation" in captured.out
@@ -798,15 +805,16 @@ def test_run_loop_repetition_guard_covers_read_file(mocker, capsys):
     assert mock_chat.call_count == 3
 
 
-def test_run_loop_repetition_guard_covers_write_file(mocker, capsys):
+def test_run_loop_repetition_guard_covers_write_file(tmp_path, mocker, capsys):
+    target = tmp_path / "x.txt"
     mock_chat = mocker.patch("olla.loop.ollama.chat")
     mock_chat.side_effect = [
-        {"message": {"content": "<tool>write_file</tool><args>/tmp/x.txt\nsame content\n</args>"}},
-        {"message": {"content": "<tool>write_file</tool><args>/tmp/x.txt\nsame content\n</args>"}},
-        {"message": {"content": "<tool>write_file</tool><args>/tmp/x.txt\nsame content\n</args>"}},
+        {"message": {"content": f"<tool>write_file</tool><args>{target}\nsame content\n</args>"}},
+        {"message": {"content": f"<tool>write_file</tool><args>{target}\nsame content\n</args>"}},
+        {"message": {"content": f"<tool>write_file</tool><args>{target}\nsame content\n</args>"}},
     ]
     mock_write_file = mocker.patch("olla.loop.write_file")
-    mock_write_file.return_value = {"path": "/tmp/x.txt", "bytes_written": 13}
+    mock_write_file.return_value = {"path": str(target), "bytes_written": 13}
     mocker.patch("olla.loop.Confirm.ask", return_value=True)
 
     run_loop(task="write same file repeatedly", model="test-model", max_steps=15, system_prompt="sys")
@@ -1007,17 +1015,19 @@ def test_run_loop_max_steps_with_varied_shell_calls(mocker, capsys):
     assert mock_chat.call_count == 3
 
 
-def test_run_loop_read_then_write_end_to_end(mocker, capsys):
+def test_run_loop_read_then_write_end_to_end(tmp_path, mocker, capsys):
+    source = tmp_path / "in.txt"
+    target = tmp_path / "out.txt"
     mock_chat = mocker.patch("olla.loop.ollama.chat")
     mock_chat.side_effect = [
-        {"message": {"content": "<tool>read_file</tool><args>/tmp/in.txt</args>"}},
-        {"message": {"content": "<tool>write_file</tool><args>/tmp/out.txt\nmodified content\n</args>"}},
+        {"message": {"content": f"<tool>read_file</tool><args>{source}</args>"}},
+        {"message": {"content": f"<tool>write_file</tool><args>{target}\nmodified content\n</args>"}},
         {"message": {"content": "<final>done</final>"}},
     ]
     mock_read_file = mocker.patch("olla.loop.read_file")
-    mock_read_file.return_value = {"path": "/tmp/in.txt", "content": "original content\n"}
+    mock_read_file.return_value = {"path": str(source), "content": "original content\n"}
     mock_write_file = mocker.patch("olla.loop.write_file")
-    mock_write_file.return_value = {"path": "/tmp/out.txt", "bytes_written": 17}
+    mock_write_file.return_value = {"path": str(target), "bytes_written": 17}
     mocker.patch("olla.loop.Confirm.ask", return_value=True)
 
     run_loop(task="read a file and write a modified copy", model="test-model", max_steps=15, system_prompt="sys")
