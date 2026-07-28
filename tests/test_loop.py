@@ -918,6 +918,317 @@ def test_run_loop_read_then_write_end_to_end(mocker, capsys):
 
 
 @pytest.mark.parametrize("yes", [False, True])
+def test_run_loop_existing_file_requires_complete_same_run_read(
+    tmp_path, mocker, yes
+):
+    target = tmp_path / "existing.txt"
+    target.write_text("original\n", encoding="utf-8")
+    mock_model = mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            f"<tool>write_file</tool><args>{target}\nunrelated\n</args>",
+            "<final>done</final>",
+        ],
+    )
+    mock_write = mocker.patch("olla.loop.write_file")
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop("edit the file", "model", 2, "sys", yes=yes)
+
+    mock_confirm.assert_not_called()
+    mock_write.assert_not_called()
+    assert target.read_text(encoding="utf-8") == "original\n"
+    messages = mock_model.call_args_list[1].args[1]
+    observations = [
+        message["content"]
+        for message in messages
+        if message["role"] == "user"
+        and message["content"].startswith("Observation:")
+    ]
+    assert any(str(target.resolve()) in message for message in observations)
+    assert any("read_file" in message and "before overwrite" in message for message in observations)
+
+
+def test_run_loop_resolved_alias_read_authorizes_previewed_overwrite(
+    tmp_path, mocker, capsys
+):
+    target = tmp_path / "existing.txt"
+    target.write_text("name: old\nkeep: yes\n", encoding="utf-8")
+    read_alias = target.parent / "." / target.name
+    write_alias = target.parent / "nested" / ".." / target.name
+    mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            f"<tool>read_file</tool><args>{read_alias}</args>",
+            (
+                f"<tool>write_file</tool><args>{write_alias}\n"
+                "name: new\nkeep: yes\n</args>"
+            ),
+            "<final>done</final>",
+        ],
+    )
+    mock_write = mocker.patch(
+        "olla.loop.write_file",
+        return_value={"path": str(target), "bytes_written": 20},
+    )
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask", return_value=True)
+
+    run_loop("edit the name", "model", 3, "sys")
+
+    output = capsys.readouterr().out
+    assert "Overwrite existing file" in output
+    assert str(target.resolve()) in output
+    assert "Current bytes:" in output
+    assert "Proposed bytes:" in output
+    assert "--- current:" in output
+    assert "+++ proposed:" in output
+    assert "-name: old" in output
+    assert "+name: new" in output
+    assert "Overwrite existing file" in mock_confirm.call_args.args[0]
+    assert str(target.resolve()) in mock_confirm.call_args.args[0]
+    mock_write.assert_called_once_with(
+        str(target.resolve()), "name: new\nkeep: yes\n"
+    )
+
+
+def test_run_loop_failed_read_does_not_authorize_existing_overwrite(
+    tmp_path, mocker
+):
+    target = tmp_path / "existing.txt"
+    target.write_text("original\n", encoding="utf-8")
+    mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            f"<tool>read_file</tool><args>{target}</args>",
+            f"<tool>write_file</tool><args>{target}\nreplacement\n</args>",
+            "<final>done</final>",
+        ],
+    )
+    mocker.patch(
+        "olla.loop.read_file",
+        return_value={"path": str(target), "error": "permission denied"},
+    )
+    mock_write = mocker.patch("olla.loop.write_file")
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop("edit the file", "model", 3, "sys")
+
+    mock_confirm.assert_not_called()
+    mock_write.assert_not_called()
+    assert target.read_text(encoding="utf-8") == "original\n"
+
+
+def test_run_loop_truncated_read_does_not_authorize_existing_overwrite(
+    tmp_path, mocker
+):
+    target = tmp_path / "existing.txt"
+    original = "x" * (MAX_OBSERVATION_CHARS + 1)
+    target.write_text(original, encoding="utf-8")
+    mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            f"<tool>read_file</tool><args>{target}</args>",
+            f"<tool>write_file</tool><args>{target}\nreplacement\n</args>",
+            "<final>done</final>",
+        ],
+    )
+    mock_write = mocker.patch("olla.loop.write_file")
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop("edit the file", "model", 3, "sys")
+
+    mock_confirm.assert_not_called()
+    mock_write.assert_not_called()
+    assert target.read_text(encoding="utf-8") == original
+
+
+def test_run_loop_stale_snapshot_is_refused_before_confirmation(
+    tmp_path, mocker
+):
+    target = tmp_path / "existing.txt"
+    target.write_text("original\n", encoding="utf-8")
+    responses = iter(
+        [
+            f"<tool>read_file</tool><args>{target}</args>",
+            f"<tool>write_file</tool><args>{target}\nreplacement\n</args>",
+            "<final>done</final>",
+        ]
+    )
+    call_count = 0
+
+    def fake_model(*_args):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            target.write_text("changed externally\n", encoding="utf-8")
+        return next(responses)
+
+    mock_model = mocker.patch("olla.loop.call_model", side_effect=fake_model)
+    mock_write = mocker.patch("olla.loop.write_file")
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop("edit the file", "model", 3, "sys")
+
+    mock_confirm.assert_not_called()
+    mock_write.assert_not_called()
+    assert target.read_text(encoding="utf-8") == "changed externally\n"
+    messages = mock_model.call_args_list[2].args[1]
+    assert any(
+        "changed" in message["content"] and "read_file" in message["content"]
+        for message in messages
+        if message["role"] == "user"
+    )
+
+
+def test_run_loop_post_confirmation_change_is_refused(tmp_path, mocker):
+    target = tmp_path / "existing.txt"
+    target.write_text("original\n", encoding="utf-8")
+    mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            f"<tool>read_file</tool><args>{target}</args>",
+            f"<tool>write_file</tool><args>{target}\nreplacement\n</args>",
+            "<final>done</final>",
+        ],
+    )
+    mock_write = mocker.patch("olla.loop.write_file")
+
+    def change_then_approve(*_args, **_kwargs):
+        target.write_text("changed during confirmation\n", encoding="utf-8")
+        return True
+
+    mocker.patch("olla.loop.Confirm.ask", side_effect=change_then_approve)
+
+    run_loop("edit the file", "model", 3, "sys")
+
+    mock_write.assert_not_called()
+    assert target.read_text(encoding="utf-8") == "changed during confirmation\n"
+
+
+def test_run_loop_new_target_appearing_during_confirmation_is_preserved(
+    tmp_path, mocker
+):
+    target = tmp_path / "new.txt"
+    mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            f"<tool>write_file</tool><args>{target}\nmodel content\n</args>",
+            "<final>done</final>",
+        ],
+    )
+    mock_write = mocker.patch("olla.loop.write_file")
+
+    def create_then_approve(*_args, **_kwargs):
+        target.write_text("created externally\n", encoding="utf-8")
+        return True
+
+    mocker.patch("olla.loop.Confirm.ask", side_effect=create_then_approve)
+
+    run_loop("create the file", "model", 2, "sys")
+
+    mock_write.assert_not_called()
+    assert target.read_text(encoding="utf-8") == "created externally\n"
+
+
+def test_run_loop_creates_absent_target_with_bounded_preview(
+    tmp_path, mocker, capsys
+):
+    target = tmp_path / "new.txt"
+    content = "start\n" + ("x" * (MAX_OBSERVATION_CHARS + 100)) + "\nend\n"
+    mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            f"<tool>write_file</tool><args>{target}\n{content}</args>",
+            "<final>done</final>",
+        ],
+    )
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop("create the file", "model", 2, "sys", yes=True)
+
+    output = capsys.readouterr().out
+    assert "Create new file" in output
+    assert str(target.resolve()) in output
+    assert f"Proposed bytes: {len(content.encode('utf-8'))}" in output
+    assert "[...truncated" in output
+    assert target.read_text(encoding="utf-8") == content
+    mock_confirm.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "tool_call",
+    [
+        "<tool>read_file</tool><args>bad\x00path</args>",
+        "<tool>write_file</tool><args>bad\x00path\ncontent</args>",
+    ],
+)
+def test_run_loop_malformed_file_path_becomes_observation(mocker, tool_call):
+    mock_model = mocker.patch(
+        "olla.loop.call_model", side_effect=[tool_call, "<final>done</final>"]
+    )
+    mock_read = mocker.patch("olla.loop.read_file")
+    mock_write = mocker.patch("olla.loop.write_file")
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop("use a malformed path", "model", 2, "sys")
+
+    mock_read.assert_not_called()
+    mock_write.assert_not_called()
+    mock_confirm.assert_not_called()
+    messages = mock_model.call_args_list[1].args[1]
+    assert any(
+        "could not resolve file path" in message["content"]
+        for message in messages
+        if message["role"] == "user"
+    )
+
+
+@pytest.mark.parametrize(
+    "tool_call",
+    [
+        "<tool>read_file</tool><args>bad\x00path</args>",
+        "<tool>write_file</tool><args>bad\x00path\ncontent</args>",
+    ],
+)
+def test_dry_run_malformed_file_path_prints_error_without_side_effects(
+    mocker, capsys, tool_call
+):
+    mocker.patch("olla.loop.call_model", return_value=tool_call)
+    mock_read = mocker.patch("olla.loop.read_file")
+    mock_write = mocker.patch("olla.loop.write_file")
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop("preview a malformed path", "model", 1, "sys", dry_run=True)
+
+    assert "could not resolve file path" in capsys.readouterr().out
+    mock_read.assert_not_called()
+    mock_write.assert_not_called()
+    mock_confirm.assert_not_called()
+
+
+def test_run_loop_runtime_path_resolution_failure_is_recoverable(mocker):
+    mock_model = mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            "<tool>read_file</tool><args>loop</args>",
+            "<final>done</final>",
+        ],
+    )
+    mocker.patch("olla.loop.Path.resolve", side_effect=RuntimeError("symlink loop"))
+    mock_read = mocker.patch("olla.loop.read_file")
+
+    run_loop("read a looping path", "model", 2, "sys")
+
+    mock_read.assert_not_called()
+    messages = mock_model.call_args_list[1].args[1]
+    assert any(
+        "could not resolve file path" in message["content"]
+        for message in messages
+        if message["role"] == "user"
+    )
+
+
+@pytest.mark.parametrize("yes", [False, True])
 def test_run_loop_remember_recall_then_final(mocker, capsys, yes):
     responses = iter(
         [

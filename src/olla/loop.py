@@ -1,5 +1,6 @@
 """ReAct loop step execution."""
 
+import difflib
 import shlex
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +31,67 @@ class _MemoryRequest:
     remember_call: RememberCall | None = None
     recall_key: str | None = None
     error: str | None = None
+
+
+@dataclass(frozen=True)
+class _FileReadSnapshot:
+    """Exact file content observed during this run and its display eligibility."""
+
+    content: str
+    fully_observed: bool
+
+
+def _resolve_file_path(path: str) -> tuple[Path | None, str | None]:
+    """Resolve an untrusted model path without letting pathlib errors escape."""
+    try:
+        return Path(path).resolve(), None
+    except (OSError, ValueError, RuntimeError) as error:
+        return None, f"error: could not resolve file path {path!r}: {error}"
+
+
+def _render_write_preview(
+    resolved: Path,
+    proposed: str,
+    *,
+    current: str | None,
+) -> str:
+    """Render a bounded local-only create or overwrite preview."""
+    proposed_bytes = len(proposed.encode("utf-8"))
+    if current is None:
+        body = truncate_output(proposed)
+        return (
+            "Create new file\n"
+            f"Resolved path: {resolved}\n"
+            f"Proposed bytes: {proposed_bytes}\n"
+            "--- proposed content ---\n"
+            f"{body}"
+        )
+
+    diff = "".join(
+        difflib.unified_diff(
+            current.splitlines(keepends=True),
+            proposed.splitlines(keepends=True),
+            fromfile=f"current:{resolved}",
+            tofile=f"proposed:{resolved}",
+        )
+    )
+    if not diff:
+        diff = "(no content changes)"
+    return (
+        "Overwrite existing file\n"
+        f"Resolved path: {resolved}\n"
+        f"Current bytes: {len(current.encode('utf-8'))}\n"
+        f"Proposed bytes: {proposed_bytes}\n"
+        f"{truncate_output(diff)}"
+    )
+
+
+def _read_again_observation(resolved: Path) -> str:
+    """Return the single recovery instruction for every stale-file refusal."""
+    return (
+        f"refused: {resolved} changed, disappeared, or became unreadable; "
+        "use read_file on it again before retrying write_file"
+    )
 
 
 def _prepare_memory_request(tool: str, args_raw: str) -> _MemoryRequest:
@@ -171,17 +233,45 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
             print(f"Step 1 would run: {argv} — {verdict}")
             return
         elif parsed["tool"] == "read_file":
-            print(f"Step 1 would read: {parsed['args_raw']}")
+            resolved, error = _resolve_file_path(parsed["args_raw"])
+            if error is not None:
+                print(error)
+                return
+            assert resolved is not None
+            print(f"Step 1 would read: {resolved}")
             return
         elif parsed["tool"] == "write_file":
-            path, sep, _ = parsed["args_raw"].partition("\n")
-            resolved = Path(path.strip()).resolve()
+            path, sep, file_content = parsed["args_raw"].partition("\n")
+            path = path.strip()
             if sep == "":
                 print(
-                    f"Step 1 would write to {resolved} — refused: no content line provided, nothing would be written"
+                    f"Step 1 write_file for {path!r} — refused: no content line provided, nothing would be written"
                 )
-            else:
-                print(f"Step 1 would write to {resolved} — would prompt for confirmation")
+                return
+
+            resolved, error = _resolve_file_path(path)
+            if error is not None:
+                print(error)
+                return
+            assert resolved is not None
+            if resolved.exists():
+                print(
+                    f"Step 1 would overwrite existing file: {resolved} — refused: "
+                    "read_file must show the complete current file in this run first"
+                )
+                return
+
+            print(
+                _render_write_preview(
+                    resolved,
+                    file_content,
+                    current=None,
+                )
+            )
+            verdict = "auto-approved by --yes" if yes else "would prompt for confirmation"
+            print(
+                f"Step 1 would write by creating new file: {resolved} — {verdict}"
+            )
             return
         elif parsed["tool"] in {"remember", "recall"}:
             request = _prepare_memory_request(parsed["tool"], parsed["args_raw"])
@@ -198,6 +288,7 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
             print(f"Model would call unknown tool '{parsed['tool']}'")
             return
 
+    read_snapshots: dict[Path, _FileReadSnapshot] = {}
     prev_sig: tuple | None = None
     repeat_count = 0
 
@@ -271,13 +362,24 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                     print(stop)
                     return
 
-                print(f"Step {step}: reading {parsed['args_raw']}...")
+                resolved, error = _resolve_file_path(parsed["args_raw"])
+                if error is not None:
+                    _record_observation(messages, error)
+                    continue
+                assert resolved is not None
+                print(f"Step {step}: reading {resolved}...")
 
-                result = read_file(parsed["args_raw"])
+                result = read_file(str(resolved))
                 if "error" in result:
+                    read_snapshots.pop(resolved, None)
                     combined = result["error"]
                 else:
-                    combined = result.get("content", "")
+                    raw_content = result.get("content", "")
+                    read_snapshots[resolved] = _FileReadSnapshot(
+                        content=raw_content,
+                        fully_observed=truncate_output(raw_content) == raw_content,
+                    )
+                    combined = raw_content
                     if not combined:
                         combined = "(no output)"
                 preview = truncate_output(combined)
@@ -294,34 +396,130 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
 
                 path, sep, file_content = parsed["args_raw"].partition("\n")
                 path = path.strip()
-                resolved = Path(path).resolve()
 
                 if sep == "":
                     # CR-03: no newline means no content line was provided at all.
                     # Refuse unconditionally (even under --yes) to prevent silent
                     # truncation of an existing file to 0 bytes.
                     preview = (
-                        f"refused: write_file for {resolved} had no content line — nothing written"
+                        f"refused: write_file for {path!r} had no content line — nothing written"
                     )
                     _record_observation(messages, preview)
                     continue
 
+                resolved, error = _resolve_file_path(path)
+                if error is not None:
+                    _record_observation(messages, error)
+                    continue
+                assert resolved is not None
+
+                target_existed = resolved.exists()
+                current_content: str | None = None
+                if target_existed:
+                    snapshot = read_snapshots.get(resolved)
+                    if snapshot is None or not snapshot.fully_observed:
+                        preview = (
+                            f"refused: existing file {resolved} must be shown completely "
+                            "by read_file in this run before overwrite"
+                        )
+                        _record_observation(messages, preview)
+                        continue
+
+                    current_result = read_file(str(resolved))
+                    if (
+                        "error" in current_result
+                        or current_result.get("content", "") != snapshot.content
+                    ):
+                        read_snapshots.pop(resolved, None)
+                        _record_observation(
+                            messages,
+                            _read_again_observation(resolved),
+                        )
+                        continue
+                    current_content = snapshot.content
+
+                print(
+                    _render_write_preview(
+                        resolved,
+                        file_content,
+                        current=current_content,
+                    )
+                )
+
                 if not yes:
                     try:
-                        approved = Confirm.ask(f"Write to `{resolved}`?", default=False)
+                        operation = (
+                            "Overwrite existing file"
+                            if target_existed
+                            else "Create new file"
+                        )
+                        approved = Confirm.ask(
+                            f"{operation} `{resolved}`?",
+                            default=False,
+                        )
                     except EOFError:
                         approved = False
                     if not approved:
                         messages.append({"role": "user", "content": "Observation: declined by user"})
                         continue
 
-                print(f"Step {step}: writing to {resolved}...")
+                final_resolved, error = _resolve_file_path(path)
+                if error is not None:
+                    _record_observation(messages, error)
+                    continue
+                assert final_resolved is not None
+                if final_resolved != resolved:
+                    read_snapshots.pop(resolved, None)
+                    _record_observation(
+                        messages,
+                        (
+                            f"refused: write target changed from {resolved} to "
+                            f"{final_resolved}; use read_file on the target before retrying"
+                        ),
+                    )
+                    continue
 
-                result = write_file(path, file_content)
+                if target_existed:
+                    if not final_resolved.exists():
+                        read_snapshots.pop(resolved, None)
+                        _record_observation(
+                            messages,
+                            _read_again_observation(resolved),
+                        )
+                        continue
+                    final_result = read_file(str(final_resolved))
+                    if (
+                        "error" in final_result
+                        or final_result.get("content", "") != current_content
+                    ):
+                        read_snapshots.pop(resolved, None)
+                        _record_observation(
+                            messages,
+                            _read_again_observation(resolved),
+                        )
+                        continue
+                elif final_resolved.exists():
+                    _record_observation(
+                        messages,
+                        (
+                            f"refused: new target {final_resolved} appeared before the write; "
+                            "use read_file on it before retrying write_file"
+                        ),
+                    )
+                    continue
+
+                print(f"Step {step}: writing to {final_resolved}...")
+
+                result = write_file(str(final_resolved), file_content)
                 if "error" in result:
                     preview = result["error"]
                 else:
-                    preview = f"wrote {result.get('bytes_written', 0)} bytes to {resolved}"
+                    preview = (
+                        f"wrote {result.get('bytes_written', 0)} bytes to "
+                        f"{final_resolved}"
+                    )
+                    if target_existed:
+                        read_snapshots.pop(resolved, None)
                 _record_observation(messages, preview)
                 continue
             elif parsed["tool"] in {"remember", "recall"}:
