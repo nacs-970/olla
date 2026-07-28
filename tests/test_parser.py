@@ -142,3 +142,29 @@ def test_outer_final_wins_after_literal_final_in_remember_value():
     )
 
     assert parse_response(content) == {"type": "final", "text": "done"}
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "<args>echo WRONG</args><tool>shell</tool><args>echo intended</args>",
+        "<tool>shell</tool><tool>read_file</tool><args>ls</args>",
+        "<tool>shell</tool><args>one</args><args>two</args>",
+        "<tool>shell</tool><args>outer<args>nested</args></args>",
+        "<args>orphaned</args>",
+        "<tool>shell</tool>",
+        "</tool><tool>shell</tool><args>ls</args></tool>",
+    ],
+)
+def test_ambiguous_or_unmatched_tool_structures_are_rejected(content):
+    assert parse_response(content) == {"type": "none", "raw": content}
+
+
+def test_args_are_associated_with_the_only_preceding_tool():
+    content = "<tool>shell</tool><args>echo intended</args>"
+
+    assert parse_response(content) == {
+        "type": "tool",
+        "tool": "shell",
+        "args_raw": "echo intended",
+    }

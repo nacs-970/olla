@@ -1,61 +1,90 @@
-"""Tolerant XML-tag parser for <tool>/<args>/<final> model output."""
+"""Tolerant, ordered parser for <tool>/<args>/<final> model output."""
 
 import re
 
 FINAL_RE = re.compile(r"<final>(.*?)(?:</final>|$)", re.DOTALL | re.IGNORECASE)
-TOOL_RE = re.compile(
-    r"<tool>(.*?)(?:</tool>|(?=<args>)|$)",
-    re.DOTALL | re.IGNORECASE,
-)
-ARGS_RE = re.compile(r"<args>(.*?)(?:</args>|$)", re.DOTALL | re.IGNORECASE)
+TOOL_OPEN_RE = re.compile(r"<tool>", re.IGNORECASE)
+TOOL_CLOSE_RE = re.compile(r"</tool>", re.IGNORECASE)
+ARGS_OPEN_RE = re.compile(r"<args>", re.IGNORECASE)
+ARGS_CLOSE_RE = re.compile(r"</args>", re.IGNORECASE)
+
+
+def _args_payload_spans(content: str) -> list[tuple[int, int]]:
+    """Return spans that may contain literal protocol-looking payload text."""
+    spans = []
+    for opening in ARGS_OPEN_RE.finditer(content):
+        closing = ARGS_CLOSE_RE.search(content, opening.end())
+        end = closing.start() if closing is not None else len(content)
+        spans.append((opening.end(), end))
+    return spans
+
+
+def _outside_spans(position: int, spans: list[tuple[int, int]]) -> bool:
+    return all(not (start <= position < end) for start, end in spans)
 
 
 def parse_response(content: str) -> dict:
     """Tolerantly extract <tool>/<args>/<final> from model output.
 
-    Strips markdown code fences, then prefers <final> if present, else a
-    complete <tool>+<args> pair, else returns the original raw content.
+    Markdown fences and surrounding prose are tolerated. A single outer
+    ``<final>`` wins; otherwise exactly one ordered tool/args pair is required.
 
     write_file, remember, and recall are special-cased: their <args> payloads
     can contain protocol-looking text and must not be fence-stripped.
     """
-    raw_tool_match = TOOL_RE.search(content)
-    raw_args_match = ARGS_RE.search(content)
-    raw_args_span = raw_args_match.span(1) if raw_args_match else None
-    for raw_final_match in FINAL_RE.finditer(content):
-        if raw_args_span is None or not (
-            raw_args_span[0] <= raw_final_match.start() < raw_args_span[1]
-        ):
-            return {"type": "final", "text": raw_final_match.group(1).strip()}
+    args_spans = _args_payload_spans(content)
+    outer_finals = [
+        match
+        for match in FINAL_RE.finditer(content)
+        if _outside_spans(match.start(), args_spans)
+    ]
+    if len(outer_finals) == 1:
+        return {"type": "final", "text": outer_finals[0].group(1).strip()}
+    if len(outer_finals) > 1:
+        return {"type": "none", "raw": content}
 
-    if raw_tool_match and raw_args_match:
-        tool = raw_tool_match.group(1).strip()
-        if tool in {"write_file", "remember"}:
-            return {
-                "type": "tool",
-                "tool": tool,
-                "args_raw": raw_args_match.group(1),
-            }
-        if tool == "recall":
-            return {
-                "type": "tool",
-                "tool": tool,
-                "args_raw": raw_args_match.group(1).strip(),
-            }
+    tool_openings = list(TOOL_OPEN_RE.finditer(content))
+    args_openings = list(ARGS_OPEN_RE.finditer(content))
+    tool_closings = list(TOOL_CLOSE_RE.finditer(content))
+    args_closings = list(ARGS_CLOSE_RE.finditer(content))
 
-    stripped = re.sub(r"```[a-zA-Z]*\n?|```", "", content)
+    # Independent searches can accidentally pair unrelated blocks. Requiring
+    # one ordered structure also rejects duplicated and nested calls.
+    if len(tool_openings) != 1 or len(args_openings) != 1:
+        return {"type": "none", "raw": content}
+    tool_open = tool_openings[0]
+    args_open = args_openings[0]
+    if args_open.start() < tool_open.end():
+        return {"type": "none", "raw": content}
 
-    final_match = FINAL_RE.search(stripped)
-    if final_match:
-        return {"type": "final", "text": final_match.group(1).strip()}
+    if len(tool_closings) > 1 or len(args_closings) > 1:
+        return {"type": "none", "raw": content}
+    if tool_closings:
+        tool_close = tool_closings[0]
+        if not (tool_open.end() <= tool_close.start() <= args_open.start()):
+            return {"type": "none", "raw": content}
+        tool_end = tool_close.start()
+    else:
+        tool_end = args_open.start()
 
-    tool_match = TOOL_RE.search(stripped)
-    args_match = ARGS_RE.search(stripped)
-    if tool_match and args_match:
-        return {
-            "type": "tool",
-            "tool": tool_match.group(1).strip(),
-            "args_raw": args_match.group(1).strip(),
-        }
+    if args_closings:
+        args_close = args_closings[0]
+        if args_close.start() < args_open.end():
+            return {"type": "none", "raw": content}
+        args_end = args_close.start()
+    else:
+        args_end = len(content)
 
-    return {"type": "none", "raw": content}
+    tool = content[tool_open.end() : tool_end].strip()
+    if not tool:
+        return {"type": "none", "raw": content}
+    args_raw = content[args_open.end() : args_end]
+    if tool in {"write_file", "remember"}:
+        return {"type": "tool", "tool": tool, "args_raw": args_raw}
+    if tool == "recall":
+        return {"type": "tool", "tool": tool, "args_raw": args_raw.strip()}
+    return {
+        "type": "tool",
+        "tool": tool,
+        "args_raw": args_raw.strip(),
+    }
