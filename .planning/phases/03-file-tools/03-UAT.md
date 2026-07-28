@@ -1,27 +1,20 @@
 ---
-status: diagnosed
+status: complete
 phase: 03-file-tools
 source: 03-01-SUMMARY.md, 03-02-SUMMARY.md, 03-03-SUMMARY.md
 started: 2026-06-16T02:47:00Z
-updated: 2026-06-16T02:47:00Z
+updated: 2026-07-28T14:14:03+07:00
 ---
 
 ## Current Test
-<!-- OVERWRITE each test - shows where we are -->
 
-number: 12
-name: "[testing complete]"
-expected: |
-  [testing complete]
-awaiting: user response
+[testing complete]
 
 ## Tests
 
 ### 1. User-Flow Step 1 - Run olla with a read/write task
 expected: Start olla with a prompt like `olla "read test.txt, replace 'foo' with 'bar', and write it back"`. The loop starts.
-result: issue
-reported: "User ran command with `--model qwen3.5:0.8b-256k`. It resulted in `error: could not parse command: No closing quotation` and the model falsely claimed it was successful without calling read_file or writing anything."
-severity: major
+result: pass
 
 ### 2. User-Flow Step 2 - Observe read_file tool call
 expected: The model calls `read_file` on `test.txt`. You should see the tool execution output in the console.
@@ -29,15 +22,16 @@ result: pass
 
 ### 3. User-Flow Step 3 - Observe write_file confirm prompt
 expected: The model calls `write_file` to update `test.txt`. You should see a confirm prompt that displays the resolved absolute path of the file.
-result: issue
-reported: "User created test.txt, but the model (qwen3.5:2b-256k) hallucinated shell commands and bad read_file paths, eventually hitting max steps (15) without ever calling write_file."
-severity: blocker
+result: pass
 
 ### 4. User-Flow Step 4 - Confirm the write and assert outcome
 expected: Type 'y' to confirm. The loop finishes. Open `test.txt` and verify the content is updated successfully.
-result: blocked
-blocked_by: prior-phase
-reason: "what do you want me to do? again?"
+result: issue
+reported: "it read and write but it do it wrong, since i not sure is the model is too small or something else"
+severity: major
+evidence: |
+  qwen3.5:2b-256k sometimes returned a final answer without using a tool, confused file contents with scratchpad memory, and hallucinated file contents.
+  On the edit attempt it called write_file before read_file, overwrote trash.md with 148 unrelated bytes after confirmation, then called recall for a key that had never been remembered.
 
 ### 5. read_file missing file error
 expected: Ask olla to read a non-existent file. The loop should not crash; it should receive a "not found" observation and continue.
@@ -77,11 +71,11 @@ reason: User-flow failed
 ## Summary
 
 total: 11
-passed: 1
-issues: 2
+passed: 3
+issues: 1
 pending: 0
 skipped: 7
-blocked: 1
+blocked: 0
 
 ## Gaps
 
@@ -112,3 +106,12 @@ blocked: 1
     - "Demote shell below file tools in examples"
     - "Update file tool examples to use relative paths"
   debug_session: ".planning/debug/hallucinated-shell-commands-max-steps.md"
+
+- gap_id: G-03-4
+  truth: "After confirmation, the requested edit is applied to the existing file without replacing it with unrelated model-generated content."
+  status: failed
+  reason: "User reported: it read and write but it do it wrong, since i not sure is the model is too small or something else"
+  severity: major
+  test: 4
+  artifacts: []
+  missing: []
