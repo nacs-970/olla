@@ -40,6 +40,39 @@ Observation: 3pm
     assert SYSTEM_PROMPT.count(transcript) == 1
 
 
+def test_system_prompt_teaches_one_same_file_edit_transcript():
+    transcript = """<tool>read_file</tool><args>settings.ini</args>
+Observation: name=olla
+mode=slow
+keep=this line
+
+<tool>write_file</tool><args>settings.ini
+name=olla
+mode=fast
+keep=this line
+</args>"""
+
+    assert SYSTEM_PROMPT.count(transcript) == 1
+    assert SYSTEM_PROMPT.index("<tool>read_file</tool><args>settings.ini</args>") < (
+        SYSTEM_PROMPT.index("<tool>write_file</tool><args>settings.ini")
+    )
+
+
+def test_system_prompt_distinguishes_file_edits_from_creation_and_memory():
+    lowered = SYSTEM_PROMPT.lower()
+
+    assert "create a new file" in lowered
+    assert "editing an existing file" in lowered
+    assert "exact same path" in lowered
+    assert "latest observation" in lowered
+    assert "preserve" in lowered
+    assert "did not ask" in lowered
+    assert "scratchpad only" in lowered
+    assert "never a source of file contents" in lowered
+    assert "stale" in lowered
+    assert "read_file" in lowered[lowered.index("stale") :]
+
+
 def test_system_prompt_preserves_shell_file_guidance():
     assert "<tool>shell</tool><args>the raw shell command to run</args>" in SYSTEM_PROMPT
     assert "<tool>read_file</tool><args>" in SYSTEM_PROMPT
@@ -51,7 +84,10 @@ def test_system_prompt_preserves_shell_file_guidance():
         "remembered value"
     ) in SYSTEM_PROMPT
     assert SYSTEM_PROMPT.count("Example:") == 4
-    assert "Observation: meeting at 3pm" in SYSTEM_PROMPT
+    assert SYSTEM_PROMPT.index("<tool>read_file</tool><args>") < SYSTEM_PROMPT.index(
+        "<tool>shell</tool><args>"
+    )
+    assert "Observation: name=olla" in SYSTEM_PROMPT
     assert "Observation: wrote 15 bytes to" in SYSTEM_PROMPT
     assert "Observation: total 0" in SYSTEM_PROMPT
 

@@ -917,6 +917,34 @@ def test_run_loop_read_then_write_end_to_end(mocker, capsys):
     assert mock_chat.call_count == 3
 
 
+def test_run_loop_same_target_edit_preserves_unrequested_bytes(
+    tmp_path, mocker, capsys
+):
+    target = tmp_path / "settings.ini"
+    original = "# prefix\nname=olla\nmode=slow\n\nkeep=this suffix\n"
+    expected = "# prefix\nname=olla\nmode=fast\n\nkeep=this suffix\n"
+    target.write_text(original, encoding="utf-8")
+    mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            f"<tool>read_file</tool><args>{target}</args>",
+            f"<tool>write_file</tool><args>{target}\n{expected}</args>",
+            "<final>done</final>",
+        ],
+    )
+    mocker.patch("olla.loop.Confirm.ask", return_value=True)
+
+    run_loop("change mode to fast", "model", 3, "sys")
+
+    output = capsys.readouterr().out
+    assert target.read_bytes() == expected.encode("utf-8")
+    assert "Overwrite existing file" in output
+    assert "--- current:" in output
+    assert "+++ proposed:" in output
+    assert "-mode=slow" in output
+    assert "+mode=fast" in output
+
+
 @pytest.mark.parametrize("yes", [False, True])
 def test_run_loop_existing_file_requires_complete_same_run_read(
     tmp_path, mocker, yes

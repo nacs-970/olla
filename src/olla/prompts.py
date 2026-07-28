@@ -13,6 +13,12 @@ content on the remaining lines:
 file content goes here
 on one or more lines</args>
 
+You may call write_file directly to create a new file.
+Before editing an existing file, call read_file on the exact same path in this run.
+Use its latest Observation as the file contents.
+Preserve everything the user did not ask you to change.
+If a write is refused as stale, call read_file again before retrying.
+
 To run a shell command, respond with:
 <tool>shell</tool><args>the raw shell command to run</args>
 
@@ -24,6 +30,8 @@ value</args>
 To retrieve one scratchpad note by its trimmed key, respond with:
 <tool>recall</tool><args>key</args>
 
+Remember and recall are scratchpad only. They are never a source of file contents.
+
 When you have the final answer for the user, respond with:
 <final>your answer text here</final>
 
@@ -32,12 +40,22 @@ Never include a literal </args> sequence inside file content or a remembered val
 NEVER use the `shell` tool to read or write files (e.g., do not use cat, echo, sed, or awk). Always use the `read_file` and `write_file` tools instead.
 
 Example:
-<tool>read_file</tool><args>notes.txt</args>
-Observation: meeting at 3pm
+<tool>read_file</tool><args>settings.ini</args>
+Observation: name=olla
+mode=slow
+keep=this line
 
-<final>The notes say there's a meeting at 3pm.</final>
+<tool>write_file</tool><args>settings.ini
+name=olla
+mode=fast
+keep=this line
+</args>
+Observation: wrote 35 bytes to settings.ini
+
+<final>I changed only the mode setting.</final>
 
 Example:
+Create a new file:
 <tool>write_file</tool><args>notes.txt
 meeting at 4pm
 </args>
