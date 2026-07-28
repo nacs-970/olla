@@ -23,6 +23,34 @@ from olla.tools.shell import run_shell
 MAX_OBSERVATION_CHARS = 2000
 
 
+def _terminal_safe(text: object) -> str:
+    """Escape terminal controls and invalid Unicode while preserving newlines."""
+    rendered = []
+    for character in str(text):
+        codepoint = ord(character)
+        if character == "\n":
+            rendered.append(character)
+        elif codepoint < 0x20 or 0x7F <= codepoint <= 0x9F:
+            rendered.append(f"\\x{codepoint:02x}")
+        elif 0xD800 <= codepoint <= 0xDFFF:
+            rendered.append(f"\\u{codepoint:04x}")
+        else:
+            rendered.append(character)
+    return "".join(rendered)
+
+
+def _display(text: object) -> None:
+    """Print untrusted display text only after making it terminal-safe."""
+    print(_terminal_safe(text))
+
+
+def _utf8_size(text: str) -> str:
+    try:
+        return str(len(text.encode("utf-8")))
+    except UnicodeEncodeError:
+        return "not encodable as UTF-8"
+
+
 @dataclass(frozen=True)
 class _MemoryRequest:
     """One normalized memory request shared by preview and execution paths."""
@@ -58,7 +86,7 @@ def _render_write_preview(
     current: str | None,
 ) -> str:
     """Render a bounded local-only create or overwrite preview."""
-    proposed_bytes = len(proposed.encode("utf-8"))
+    proposed_bytes = _utf8_size(proposed)
     if current is None:
         body = truncate_output(proposed)
         return (
@@ -82,7 +110,7 @@ def _render_write_preview(
     return (
         "Overwrite existing file\n"
         f"Resolved path: {resolved}\n"
-        f"Current bytes: {len(current.encode('utf-8'))}\n"
+        f"Current bytes: {_utf8_size(current)}\n"
         f"Proposed bytes: {proposed_bytes}\n"
         f"{truncate_output(diff)}"
     )
@@ -139,7 +167,7 @@ def _handle_memory(
         if not execute:
             return f"Step {step} would remember: {call.key} ({len(call.value)} chars)"
         assert scratchpad is not None
-        print(f"Step {step}: remembering {call.key}...")
+        _display(f"Step {step}: remembering {call.key}...")
         result = scratchpad.remember(call)
     else:
         key = request.recall_key
@@ -147,7 +175,7 @@ def _handle_memory(
         if not execute:
             return f"Step {step} would recall: {key}"
         assert scratchpad is not None
-        print(f"Step {step}: recalling {key}...")
+        _display(f"Step {step}: recalling {key}...")
         result = scratchpad.recall(key)
 
     return result.get("error", result.get("content", ""))
@@ -169,7 +197,7 @@ def _track_repetition(
 
 def _record_observation(messages: list[dict], preview: str) -> None:
     """Print and append the exact same tool result as an Observation."""
-    print(preview)
+    _display(preview)
     messages.append({"role": "user", "content": f"Observation: {preview}"})
 
 
@@ -210,18 +238,21 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
         parsed = parse_response(content)
 
         if parsed["type"] == "final":
-            print(f"Model would answer directly: {parsed['text']}")
+            _display(f"Model would answer directly: {parsed['text']}")
             return
 
         if parsed["type"] == "none":
-            print(f"Model produced no valid <tool>/<final> tag: {content}")
+            _display(f"Model produced no valid <tool>/<final> tag: {content}")
             return
 
         if parsed["tool"] == "shell":
             try:
                 argv = shlex.split(parsed["args_raw"])
             except ValueError as e:
-                print(f"error: could not parse shell command (mismatched quotes: {e}). Please fix the quotes and try again.")
+                _display(
+                    "error: could not parse shell command "
+                    f"(mismatched quotes: {e}). Please fix the quotes and try again."
+                )
                 return
 
             decision = check(argv, yes=yes)
@@ -232,38 +263,38 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
             else:
                 verdict = f"BLOCKED: {decision['reason']}"
 
-            print(f"Step 1 would run: {argv} — {verdict}")
+            _display(f"Step 1 would run: {argv} — {verdict}")
             return
         elif parsed["tool"] == "read_file":
             resolved, error = _resolve_file_path(parsed["args_raw"])
             if error is not None:
-                print(error)
+                _display(error)
                 return
             assert resolved is not None
-            print(f"Step 1 would read: {resolved}")
+            _display(f"Step 1 would read: {resolved}")
             return
         elif parsed["tool"] == "write_file":
             path, sep, file_content = parsed["args_raw"].partition("\n")
             path = path.strip()
             if sep == "":
-                print(
+                _display(
                     f"Step 1 write_file for {path!r} — refused: no content line provided, nothing would be written"
                 )
                 return
 
             resolved, error = _resolve_file_path(path)
             if error is not None:
-                print(error)
+                _display(error)
                 return
             assert resolved is not None
             if resolved.exists():
-                print(
+                _display(
                     f"Step 1 would overwrite existing file: {resolved} — refused: "
                     "read_file must show the complete current file in this run first"
                 )
                 return
 
-            print(
+            _display(
                 _render_write_preview(
                     resolved,
                     file_content,
@@ -271,13 +302,13 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                 )
             )
             verdict = "auto-approved by --yes" if yes else "would prompt for confirmation"
-            print(
+            _display(
                 f"Step 1 would write by creating new file: {resolved} — {verdict}"
             )
             return
         elif parsed["tool"] in {"remember", "recall"}:
             request = _prepare_memory_request(parsed["tool"], parsed["args_raw"])
-            print(
+            _display(
                 _handle_memory(
                     request,
                     step=1,
@@ -287,7 +318,7 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
             )
             return
         else:
-            print(f"Model would call unknown tool '{parsed['tool']}'")
+            _display(f"Model would call unknown tool '{parsed['tool']}'")
             return
 
     read_snapshots: dict[Path, _FileReadSnapshot] = {}
@@ -301,7 +332,7 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
         messages.append({"role": "assistant", "content": history_content})
 
         if parsed["type"] == "final":
-            print(parsed["text"])
+            _display(parsed["text"])
             return
 
         if parsed["type"] == "tool":
@@ -310,7 +341,7 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                     argv = shlex.split(parsed["args_raw"])
                 except ValueError as e:
                     preview = f"error: could not parse shell command (mismatched quotes: {e}). Please fix the quotes and try again."
-                    print(preview)
+                    _display(preview)
                     messages.append({"role": "user", "content": f"Observation: {preview}"})
                     continue
 
@@ -322,27 +353,31 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                     repeat_count = 1
 
                 if repeat_count >= 3:
-                    print(f"olla stopped: same {parsed['tool']} call repeated 3x — model likely stuck")
+                    _display(
+                        f"olla stopped: same {parsed['tool']} call repeated 3x — "
+                        "model likely stuck"
+                    )
                     return
 
                 decision = check(argv, yes=yes)
 
                 if decision["kind"] == "BLOCK":
                     preview = f"blocked by safety policy: {decision['reason']}"
-                    print(preview)
+                    _display(preview)
                     messages.append({"role": "user", "content": f"Observation: {preview}"})
                     continue
 
                 if decision["kind"] == "CONFIRM" and not yes:
                     try:
-                        approved = Confirm.ask(f"Run `{' '.join(argv)}`?", default=False)
+                        _display(f"Run command: {argv!r}")
+                        approved = Confirm.ask("Proceed?", default=False)
                     except EOFError:
                         approved = False
                     if not approved:
                         messages.append({"role": "user", "content": "Observation: declined by user"})
                         continue
 
-                print(f"Step {step}: running {argv}...")
+                _display(f"Step {step}: running {argv}...")
 
                 result = run_shell(argv)
                 if "error" in result:
@@ -352,7 +387,7 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                     if not combined:
                         combined = "(no output)"
                 preview = truncate_output(combined)
-                print(preview)
+                _display(preview)
                 messages.append({"role": "user", "content": f"Observation: {preview}"})
                 continue
             elif parsed["tool"] == "read_file":
@@ -361,7 +396,7 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                     parsed["tool"], sig, prev_sig, repeat_count
                 )
                 if stop is not None:
-                    print(stop)
+                    _display(stop)
                     return
 
                 resolved, error = _resolve_file_path(parsed["args_raw"])
@@ -369,7 +404,7 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                     _record_observation(messages, error)
                     continue
                 assert resolved is not None
-                print(f"Step {step}: reading {resolved}...")
+                _display(f"Step {step}: reading {resolved}...")
 
                 result = read_file(str(resolved))
                 if "error" in result:
@@ -394,7 +429,7 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                     parsed["tool"], sig, prev_sig, repeat_count
                 )
                 if stop is not None:
-                    print(stop)
+                    _display(stop)
                     return
 
                 path, sep, file_content = parsed["args_raw"].partition("\n")
@@ -447,7 +482,7 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                         continue
                     current_content = snapshot.content
 
-                print(
+                _display(
                     _render_write_preview(
                         resolved,
                         file_content,
@@ -457,15 +492,7 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
 
                 if not yes:
                     try:
-                        operation = (
-                            "Overwrite existing file"
-                            if target_existed
-                            else "Create new file"
-                        )
-                        approved = Confirm.ask(
-                            f"{operation} `{resolved}`?",
-                            default=False,
-                        )
+                        approved = Confirm.ask("Proceed?", default=False)
                     except EOFError:
                         approved = False
                     if not approved:
@@ -488,7 +515,7 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                     )
                     continue
 
-                print(f"Step {step}: writing to {final_resolved}...")
+                _display(f"Step {step}: writing to {final_resolved}...")
 
                 expected_snapshot = (
                     snapshot.identity
@@ -522,7 +549,7 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
                     parsed["tool"], request.signature, prev_sig, repeat_count
                 )
                 if stop is not None:
-                    print(stop)
+                    _display(stop)
                     return
 
                 preview = _handle_memory(
@@ -545,4 +572,4 @@ def run_loop(task: str, model: str, max_steps: int, system_prompt: str, yes: boo
             }
         )
 
-    print(f"Reached max steps ({max_steps}) without a <final> answer.")
+    _display(f"Reached max steps ({max_steps}) without a <final> answer.")

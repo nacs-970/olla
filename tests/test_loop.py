@@ -433,7 +433,8 @@ def test_run_loop_write_file_shows_resolved_path(mocker, capsys):
 
     resolved = str(Path("/tmp/x.txt").resolve())
     prompt_text = mock_confirm.call_args[0][0]
-    assert resolved in prompt_text
+    assert prompt_text == "Proceed?"
+    assert resolved in capsys.readouterr().out
 
 
 def test_run_loop_write_file_confirm_declined(mocker, capsys):
@@ -1013,8 +1014,7 @@ def test_run_loop_resolved_alias_read_authorizes_previewed_overwrite(
     assert "+++ proposed:" in output
     assert "-name: old" in output
     assert "+name: new" in output
-    assert "Overwrite existing file" in mock_confirm.call_args.args[0]
-    assert str(target.resolve()) in mock_confirm.call_args.args[0]
+    assert mock_confirm.call_args.args[0] == "Proceed?"
     mock_write.assert_called_once_with(
         str(target.resolve()),
         "name: new\nkeep: yes\n",
@@ -1232,6 +1232,95 @@ def test_run_loop_symlink_swap_during_confirmation_is_preserved(tmp_path, mocker
 
     assert target.is_symlink()
     assert replacement.read_text(encoding="utf-8") == "replacement object\n"
+
+
+def test_final_output_escapes_terminal_controls_and_surrogates(mocker, capsys):
+    unsafe = "before\x1b]52;c;payload\x07\x1b[2J\ud800after"
+    mocker.patch("olla.loop.call_model", return_value=f"<final>{unsafe}</final>")
+
+    run_loop("answer", "model", 1, "sys")
+
+    output = capsys.readouterr().out
+    assert "\x1b" not in output
+    assert "\ud800" not in output
+    assert "\\x1b]52;c;payload\\x07\\x1b[2J\\ud800" in output
+
+
+def test_shell_output_is_sanitized_without_changing_observation(mocker, capsys):
+    unsafe = "line one\n\x1b[2Jforged\x9b31m"
+    mock_model = mocker.patch(
+        "olla.loop.call_model",
+        side_effect=["<tool>shell</tool><args>ls</args>", "<final>done</final>"],
+    )
+    mocker.patch(
+        "olla.loop.run_shell",
+        return_value={
+            "argv": ["ls"],
+            "returncode": 0,
+            "stdout": unsafe,
+            "stderr": "",
+        },
+    )
+
+    run_loop("list", "model", 2, "sys")
+
+    output = capsys.readouterr().out
+    assert "\x1b" not in output
+    assert "\x9b" not in output
+    assert "line one\n\\x1b[2Jforged\\x9b31m" in output
+    messages = mock_model.call_args_list[1].args[1]
+    assert any(
+        message["content"] == f"Observation: {unsafe}"
+        for message in messages
+        if message["role"] == "user"
+    )
+
+
+def test_write_preview_handles_surrogate_and_uses_fixed_prompt(
+    tmp_path, mocker, capsys
+):
+    target = tmp_path / "new.txt"
+    unsafe = "content\x1b[2J\ud800"
+    mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            f"<tool>write_file</tool><args>{target}\n{unsafe}</args>",
+            "<final>done</final>",
+        ],
+    )
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask", return_value=False)
+
+    run_loop("create", "model", 2, "sys")
+
+    output = capsys.readouterr().out
+    assert "not encodable as UTF-8" in output
+    assert "\x1b" not in output
+    assert "\ud800" not in output
+    assert "\\x1b[2J\\ud800" in output
+    mock_confirm.assert_called_once_with("Proceed?", default=False)
+    assert not target.exists()
+
+
+def test_shell_confirmation_displays_safe_command_then_fixed_prompt(
+    mocker, capsys
+):
+    unsafe_arg = "branch\x1b[2J"
+    mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            f"<tool>shell</tool><args>git {unsafe_arg}</args>",
+            "<final>done</final>",
+        ],
+    )
+    mocker.patch("olla.loop.check", return_value={"kind": "CONFIRM"})
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask", return_value=False)
+
+    run_loop("inspect git", "model", 2, "sys")
+
+    output = capsys.readouterr().out
+    assert "\x1b" not in output
+    assert "branch\\x1b[2J" in output
+    mock_confirm.assert_called_once_with("Proceed?", default=False)
 
 
 def test_run_loop_creates_absent_target_with_bounded_preview(
