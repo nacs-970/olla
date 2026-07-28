@@ -1,9 +1,9 @@
 ---
-status: complete
+status: diagnosed
 phase: 03-file-tools
 source: 03-01-SUMMARY.md, 03-02-SUMMARY.md, 03-03-SUMMARY.md
 started: 2026-06-16T02:47:00Z
-updated: 2026-07-28T14:14:03+07:00
+updated: 2026-07-28T14:28:59+07:00
 ---
 
 ## Current Test
@@ -79,8 +79,11 @@ blocked: 0
 
 ## Gaps
 
-- truth: "Start olla with a prompt like `olla \"read test.txt, replace 'foo' with 'bar', and write it back\"`. The loop starts."
-  status: failed
+- gap_id: G-03-1
+  truth: "Start olla with a prompt like `olla \"read test.txt, replace 'foo' with 'bar', and write it back\"`. The loop starts."
+  status: resolved
+  resolved_by: "03-04-PLAN.md and passing UAT retest"
+  resolved_at: 2026-07-28
   reason: "User reported: User ran command with `--model qwen3.5:0.8b-256k`. It resulted in `error: could not parse command: No closing quotation` and the model falsely claimed it was successful without calling read_file or writing anything."
   severity: major
   test: 1
@@ -92,8 +95,11 @@ blocked: 0
     - "Catch ValueError from shlex.split and return a clearer, model-friendly error observation"
   debug_session: ".planning/debug/parser-error-no-closing-quotation.md"
 
-- truth: "The model calls `write_file` to update `test.txt`. You should see a confirm prompt that displays the resolved absolute path of the file."
-  status: failed
+- gap_id: G-03-3
+  truth: "The model calls `write_file` to update `test.txt`. You should see a confirm prompt that displays the resolved absolute path of the file."
+  status: resolved
+  resolved_by: "03-04-PLAN.md and passing UAT retest"
+  resolved_at: 2026-07-28
   reason: "User reported: User created test.txt, but the model (qwen3.5:2b-256k) hallucinated shell commands and bad read_file paths, eventually hitting max steps (15) without ever calling write_file."
   severity: blocker
   test: 3
@@ -113,5 +119,19 @@ blocked: 0
   reason: "User reported: it read and write but it do it wrong, since i not sure is the model is too small or something else"
   severity: major
   test: 4
-  artifacts: []
-  missing: []
+  root_cause: "AND-gated failure: qwen3.5:2b-256k selected a semantically invalid write-before-read plan, while olla accepted the full-file replacement after confirming only the path. The prompt lacks an explicit same-file read-before-edit workflow and does not distinguish scratchpad recall from file contents; the runtime tracks no successful same-target read, snapshot freshness, content provenance, or proposed-content preview. Model size increases the failure rate, but the actionable data-loss cause is the missing prompt/runtime edit contract."
+  artifacts:
+    - path: "src/olla/prompts.py"
+      issue: "No existing-file read-before-write or file-versus-scratchpad rule; the standalone write example teaches direct overwrite."
+    - path: "src/olla/loop.py"
+      issue: "Any syntactically valid write_file payload can replace an existing file after a path-only confirmation."
+    - path: "src/olla/tools/files.py"
+      issue: "write_file correctly performs a complete replacement, making missing upstream edit guards destructive."
+    - path: "tests/test_loop.py"
+      issue: "No regression requires a successful same-target read or preservation of unrelated content before overwrite."
+  missing:
+    - "Teach a compact same-file read -> Observation -> write edit transcript and prohibit memory as a substitute for file contents."
+    - "Require a successful same-target read before overwriting an existing file and reject stale snapshots."
+    - "Show create-versus-overwrite plus a locally computed diff or content preview at confirmation."
+    - "Add model-independent regressions for premature writes, stale reads, and preservation of unrequested content."
+  debug_session: ".planning/debug/file-edit-wrong-content.md"
