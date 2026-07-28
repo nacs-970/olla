@@ -107,7 +107,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 ### Phase 4: Memory Tool
 
-**Goal**: The model can persist and recall short notes across turns within a single run so it can carry intermediate facts forward without re-deriving them.
+**Goal**: As a user running a multi-step task, I want to use the model to persist and recall short notes within a single run, so that I can carry intermediate facts forward without re-deriving them.
 **Mode:** mvp
 **Depends on**: Phase 3
 **Requirements**: MEM-01
