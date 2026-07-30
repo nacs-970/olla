@@ -21,6 +21,27 @@ def test_markdown_fence_tolerance():
     assert result == {"type": "tool", "tool": "shell", "args_raw": "echo hi"}
 
 
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        (
+            "```\n<tool>remember</tool><args>key\nvalue\n```",
+            {"type": "tool", "tool": "remember", "args_raw": "key\nvalue"},
+        ),
+        (
+            "```text\n<tool>recall</tool><args> key \n```",
+            {"type": "tool", "tool": "recall", "args_raw": "key"},
+        ),
+        (
+            "~~~\n<tool>shell</tool><args>echo hi\n~~~",
+            {"type": "tool", "tool": "shell", "args_raw": "echo hi"},
+        ),
+    ],
+)
+def test_outer_markdown_fence_is_removed_from_unclosed_args(content, expected):
+    assert parse_response(content) == expected
+
+
 def test_surrounding_prose_tolerance():
     content = "Sure, I'll check that.\n<tool>shell</tool><args>pwd</args>\nLet me run this."
     result = parse_response(content)

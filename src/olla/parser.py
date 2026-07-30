@@ -8,6 +8,22 @@ TOOL_OPEN_RE = re.compile(r"<tool>", re.IGNORECASE)
 TOOL_CLOSE_RE = re.compile(r"</tool>", re.IGNORECASE)
 ARGS_OPEN_RE = re.compile(r"<args>", re.IGNORECASE)
 ARGS_CLOSE_RE = re.compile(r"</args>", re.IGNORECASE)
+OUTER_FENCE_OPEN_RE = re.compile(r"\A[ \t]*(`{3,}|~{3,})[^\r\n]*\r?\n")
+
+
+def _unwrap_outer_markdown_fence(content: str) -> str:
+    """Remove one matching outer code fence without touching payload fences."""
+    opening = OUTER_FENCE_OPEN_RE.match(content)
+    if opening is None:
+        return content
+    delimiter = opening.group(1)
+    closing = re.search(
+        rf"\r?\n[ \t]*{re.escape(delimiter)}[ \t]*(?:\r?\n)?\Z",
+        content,
+    )
+    if closing is None:
+        return content
+    return content[opening.end() : closing.start()]
 
 
 def _args_payload_spans(content: str) -> list[tuple[int, int]]:
@@ -33,6 +49,8 @@ def parse_response(content: str) -> dict:
     write_file, remember, and recall are special-cased: their <args> payloads
     can contain protocol-looking text and must not be fence-stripped.
     """
+    raw_content = content
+    content = _unwrap_outer_markdown_fence(content)
     args_spans = _args_payload_spans(content)
     outer_final_openings = [
         opening
@@ -52,7 +70,7 @@ def parse_response(content: str) -> dict:
         end = closing.start() if closing is not None else len(content)
         return {"type": "final", "text": content[opening.end() : end].strip()}
     if len(outer_final_openings) > 1:
-        return {"type": "none", "raw": content}
+        return {"type": "none", "raw": raw_content}
 
     # Identify special tools from the envelope before their payload. Once the
     # outer <args> opens, file and memory content is opaque and may contain
@@ -94,7 +112,7 @@ def parse_response(content: str) -> dict:
                             ARGS_CLOSE_RE,
                         )
                     ):
-                        return {"type": "none", "raw": content}
+                        return {"type": "none", "raw": raw_content}
 
                 args_raw = content[first_args_open.end() : args_end]
                 if tool == "recall":
@@ -109,18 +127,18 @@ def parse_response(content: str) -> dict:
     # Independent searches can accidentally pair unrelated blocks. Requiring
     # one ordered structure also rejects duplicated and nested calls.
     if len(tool_openings) != 1 or len(args_openings) != 1:
-        return {"type": "none", "raw": content}
+        return {"type": "none", "raw": raw_content}
     tool_open = tool_openings[0]
     args_open = args_openings[0]
     if args_open.start() < tool_open.end():
-        return {"type": "none", "raw": content}
+        return {"type": "none", "raw": raw_content}
 
     if len(tool_closings) > 1 or len(args_closings) > 1:
-        return {"type": "none", "raw": content}
+        return {"type": "none", "raw": raw_content}
     if tool_closings:
         tool_close = tool_closings[0]
         if not (tool_open.end() <= tool_close.start() <= args_open.start()):
-            return {"type": "none", "raw": content}
+            return {"type": "none", "raw": raw_content}
         tool_end = tool_close.start()
     else:
         tool_end = args_open.start()
@@ -128,14 +146,14 @@ def parse_response(content: str) -> dict:
     if args_closings:
         args_close = args_closings[0]
         if args_close.start() < args_open.end():
-            return {"type": "none", "raw": content}
+            return {"type": "none", "raw": raw_content}
         args_end = args_close.start()
     else:
         args_end = len(content)
 
     tool = content[tool_open.end() : tool_end].strip()
     if not tool:
-        return {"type": "none", "raw": content}
+        return {"type": "none", "raw": raw_content}
     args_raw = content[args_open.end() : args_end]
     return {
         "type": "tool",
