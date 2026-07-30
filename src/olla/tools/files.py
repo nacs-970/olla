@@ -85,6 +85,45 @@ def _nofollow_flags() -> int:
     return os.O_NOFOLLOW | os.O_CLOEXEC
 
 
+def _open_directory_components(path: Path) -> int:
+    """Open an absolute directory path without following any component."""
+    absolute = path if path.is_absolute() else Path.cwd() / path
+    flags = os.O_RDONLY | os.O_DIRECTORY | _nofollow_flags()
+    descriptor = os.open("/", flags)
+    try:
+        for component in absolute.parts[1:]:
+            next_descriptor = os.open(
+                component,
+                flags,
+                dir_fd=descriptor,
+            )
+            os.close(descriptor)
+            descriptor = next_descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+    return descriptor
+
+
+def open_parent_directory(path: str) -> tuple[int, FileSnapshot]:
+    """Retain the target parent and its full snapshot for an approved write."""
+    descriptor = _open_directory_components(Path(path).parent)
+    return descriptor, _snapshot(os.fstat(descriptor))
+
+
+def parent_directory_matches_path(path: str, expected: FileSnapshot) -> bool:
+    """Check that the no-follow pathname still names the retained directory."""
+    descriptor: int | None = None
+    try:
+        descriptor = _open_directory_components(Path(path).parent)
+        return _same_file(os.fstat(descriptor), expected)
+    except (OSError, ValueError):
+        return False
+    finally:
+        if descriptor is not None:
+            _close_descriptor(descriptor, "parent directory verification")
+
+
 def _stale_result(path: str) -> ToolResult:
     return {
         "path": path,
@@ -216,6 +255,8 @@ def write_file(
     content: str,
     *,
     expected_snapshot: FileSnapshot | None = None,
+    parent_directory_fd: int | None = None,
+    expected_parent_snapshot: FileSnapshot | None = None,
 ) -> ToolResult:
     """Atomically create a file or update the exact previously read object.
 
@@ -272,8 +313,15 @@ def write_file(
 
     def perform_write() -> ToolResult:
         nonlocal directory_fd, displaced_protected, published, target_fd, temp_name
-        directory_flags = os.O_RDONLY | os.O_DIRECTORY
-        directory_fd = os.open(p.parent, directory_flags | _nofollow_flags())
+        directory_fd = (
+            _open_directory_components(p.parent)
+            if parent_directory_fd is None
+            else os.dup(parent_directory_fd)
+        )
+        if expected_parent_snapshot is not None and not _same_file(
+            os.fstat(directory_fd), expected_parent_snapshot
+        ):
+            return _stale_result(path)
 
         if expected_snapshot is not None:
             try:

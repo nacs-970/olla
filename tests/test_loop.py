@@ -1198,6 +1198,8 @@ def test_run_loop_resolved_alias_read_authorizes_previewed_overwrite(
         str(target.resolve()),
         "name: new\nkeep: yes\n",
         expected_snapshot=mocker.ANY,
+        parent_directory_fd=mocker.ANY,
+        expected_parent_snapshot=mocker.ANY,
     )
 
 
@@ -1526,6 +1528,38 @@ def test_run_loop_symlink_swap_during_confirmation_is_preserved(tmp_path, mocker
 
     assert target.is_symlink()
     assert replacement.read_text(encoding="utf-8") == "replacement object\n"
+
+
+def test_run_loop_ancestor_swap_cannot_redirect_confirmed_write(
+    tmp_path, mocker
+):
+    base = tmp_path / "base"
+    original_parent = base / "safe"
+    original_parent.mkdir(parents=True)
+    moved = tmp_path / "moved"
+    victim_parent = tmp_path / "victim" / "safe"
+    victim_parent.mkdir(parents=True)
+    target = original_parent / "created.txt"
+    mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            f"<tool>write_file</tool><args>{target}\nMODEL</args>",
+            "<final>done</final>",
+        ],
+    )
+
+    def swap_ancestor_then_write(path, content, **kwargs):
+        base.rename(moved)
+        base.symlink_to(tmp_path / "victim", target_is_directory=True)
+        return safe_write_file(path, content, **kwargs)
+
+    mocker.patch("olla.loop.write_file", side_effect=swap_ancestor_then_write)
+    mocker.patch("olla.loop.Confirm.ask", return_value=True)
+
+    run_loop("create the file", "model", 2, "sys")
+
+    assert not (victim_parent / "created.txt").exists()
+    assert (moved / "safe" / "created.txt").read_bytes() == b"MODEL"
 
 
 def test_final_output_escapes_terminal_controls_and_surrogates(mocker, capsys):

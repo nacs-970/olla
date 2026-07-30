@@ -1,6 +1,7 @@
 """ReAct loop step execution."""
 
 import difflib
+import os
 import shlex
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,7 +12,12 @@ from rich.prompt import Confirm
 from olla.parser import parse_response
 from olla.safety import check
 from olla.tools.base import FileSnapshot
-from olla.tools.files import read_file, write_file
+from olla.tools.files import (
+    open_parent_directory,
+    parent_directory_matches_path,
+    read_file,
+    write_file,
+)
 from olla.tools.memory import (
     RememberCall,
     Scratchpad,
@@ -551,65 +557,83 @@ def _execute_write_file(
         )
         return
 
-    _display(
-        _render_write_preview(
-            resolved,
-            file_content,
-            current=current_content,
+    try:
+        parent_fd, parent_snapshot = open_parent_directory(str(resolved))
+    except (OSError, ValueError) as error:
+        _record_observation(
+            messages,
+            f"could not open parent directory for {_metadata_safe(resolved)}: {error}",
         )
-    )
-    if not yes or untrusted_observation_seen:
-        try:
-            if yes and untrusted_observation_seen:
-                _display(
-                    "Confirmation required: this action follows untrusted file content."
+        return
+
+    try:
+        _display(
+            _render_write_preview(
+                resolved,
+                file_content,
+                current=current_content,
+            )
+        )
+        if not yes or untrusted_observation_seen:
+            try:
+                if yes and untrusted_observation_seen:
+                    _display(
+                        "Confirmation required: this action follows untrusted file content."
+                    )
+                approved = Confirm.ask("Proceed?", default=False)
+            except EOFError:
+                approved = False
+            if not approved:
+                messages.append(
+                    {"role": "user", "content": "Observation: declined by user"}
                 )
-            approved = Confirm.ask("Proceed?", default=False)
-        except EOFError:
-            approved = False
-        if not approved:
-            messages.append(
-                {"role": "user", "content": "Observation: declined by user"}
+                return
+
+        final_resolved, error = _resolve_file_path(path)
+        if error is not None:
+            _record_observation(messages, error)
+            return
+        assert final_resolved is not None
+        if final_resolved != resolved or not parent_directory_matches_path(
+            str(resolved), parent_snapshot
+        ):
+            read_snapshots.pop(resolved, None)
+            _record_observation(
+                messages,
+                "refused: write target or parent directory changed after approval; "
+                "use read_file on the target before retrying",
             )
             return
 
-    final_resolved, error = _resolve_file_path(path)
-    if error is not None:
-        _record_observation(messages, error)
-        return
-    assert final_resolved is not None
-    if final_resolved != resolved:
-        read_snapshots.pop(resolved, None)
-        _record_observation(
-            messages,
-            "refused: write target changed from "
-            f"{_metadata_safe(resolved)} to {_metadata_safe(final_resolved)}; "
-            "use read_file on the target before retrying",
+        _display(f"Step {step}: writing to {_metadata_safe(final_resolved)}...")
+        expected_snapshot = snapshot.identity if snapshot is not None else None
+        result = write_file(
+            str(final_resolved),
+            file_content,
+            expected_snapshot=expected_snapshot,
+            parent_directory_fd=parent_fd,
+            expected_parent_snapshot=parent_snapshot,
         )
-        return
-
-    _display(f"Step {step}: writing to {_metadata_safe(final_resolved)}...")
-    expected_snapshot = snapshot.identity if snapshot is not None else None
-    result = write_file(
-        str(final_resolved),
-        file_content,
-        expected_snapshot=expected_snapshot,
-    )
-    if "error" in result:
-        if result.get("stale"):
-            read_snapshots.pop(resolved, None)
-            preview = _read_again_observation(resolved)
+        if "error" in result:
+            if result.get("stale"):
+                read_snapshots.pop(resolved, None)
+                preview = _read_again_observation(resolved)
+            else:
+                preview = result["error"]
         else:
-            preview = result["error"]
-    else:
-        preview = (
-            f"wrote {result.get('bytes_written', 0)} bytes to "
-            f"{_metadata_safe(final_resolved)}"
-        )
-        if "warning" in result:
-            preview = f"{preview}; warning: {result['warning']}"
-        read_snapshots.pop(resolved, None)
-    _record_observation(messages, preview)
+            preview = (
+                f"wrote {result.get('bytes_written', 0)} bytes to "
+                f"{_metadata_safe(final_resolved)}"
+            )
+            if "warning" in result:
+                preview = f"{preview}; warning: {result['warning']}"
+            read_snapshots.pop(resolved, None)
+        _record_observation(messages, preview)
+    finally:
+        try:
+            os.close(parent_fd)
+        except OSError:
+            pass
 
 
 def _execute_memory(
