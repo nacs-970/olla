@@ -406,6 +406,18 @@ def call_model(model: str, messages: list[dict], think: bool = False) -> str:
     return response["message"]["content"]
 
 
+def _call_model_for_loop(model: str, messages: list[dict]) -> str | None:
+    """Call the model and turn expected Ollama client failures into diagnostics."""
+    try:
+        return call_model(model, messages)
+    except (ollama.RequestError, ollama.ResponseError) as error:
+        _display(
+            f"Ollama request failed for model {_metadata_safe(model)}: {error}. "
+            "Check that Ollama is running and the model is installed."
+        )
+        return None
+
+
 def _preview_action(action: _Action, *, yes: bool) -> None:
     """Run the shared validation path and display a dry-run preview."""
     if action.kind == "final":
@@ -728,7 +740,10 @@ def run_loop(
         {"role": "user", "content": task},
     ]
     if dry_run:
-        _preview_action(_prepare_action(call_model(model, messages)), yes=yes)
+        content = _call_model_for_loop(model, messages)
+        if content is None:
+            return
+        _preview_action(_prepare_action(content), yes=yes)
         return
 
     scratchpad = Scratchpad()
@@ -738,7 +753,9 @@ def run_loop(
     untrusted_observation_seen = False
 
     for step in range(1, max_steps + 1):
-        content = call_model(model, messages)
+        content = _call_model_for_loop(model, messages)
+        if content is None:
+            return
         action = _prepare_action(content)
         history_content = truncate_output(content) if action.kind == "none" else content
         messages.append({"role": "assistant", "content": history_content})

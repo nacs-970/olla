@@ -1,5 +1,6 @@
 """Tests for olla.loop."""
 
+import ollama
 import pytest
 
 from olla.loop import (
@@ -67,6 +68,34 @@ def test_call_model(mocker):
         options={"stop": ["</args>"], "num_ctx": 8192},
         think=False,
     )
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ollama.RequestError("daemon failed\x1b[31m"),
+        ollama.ResponseError("daemon failed\x1b[31m", 500),
+    ],
+    ids=["request-error", "response-error"],
+)
+@pytest.mark.parametrize("dry_run", [False, True], ids=["normal", "dry-run"])
+def test_run_loop_handles_ollama_client_errors(mocker, capsys, error, dry_run):
+    mock_model = mocker.patch("olla.loop.call_model", side_effect=error)
+
+    run_loop(
+        task="answer",
+        model="test-model",
+        max_steps=3,
+        system_prompt="sys",
+        dry_run=dry_run,
+    )
+
+    output = capsys.readouterr().out
+    assert "Ollama request failed for model 'test-model': daemon failed" in output
+    assert "Check that Ollama is running and the model is installed." in output
+    assert "\\x1b[31m" in output
+    assert "\x1b" not in output
+    mock_model.assert_called_once()
 
 
 def test_run_loop_remember_preserves_observation_substring(mocker, capsys):
