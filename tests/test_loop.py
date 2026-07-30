@@ -5,6 +5,7 @@ import pytest
 from olla.loop import (
     MAX_OBSERVATION_CHARS,
     _prepare_action,
+    _render_write_preview,
     _terminal_safe,
     call_model,
     run_loop,
@@ -1530,6 +1531,18 @@ def test_write_preview_handles_surrogate_and_uses_fixed_prompt(
     assert "\\x1b[2J\\ud800" in output
     mock_confirm.assert_called_once_with("Proceed?", default=False)
     assert not target.exists()
+
+
+@pytest.mark.parametrize("current", [None, "old content\n"])
+def test_write_preview_escapes_newline_and_tab_in_path(tmp_path, current):
+    target = tmp_path / "innocent\nResolved path: /tmp/forged\tname.txt"
+
+    preview = _render_write_preview(target, "new content\n", current=current)
+
+    assert str(target) not in preview
+    assert "\\nResolved path: /tmp/forged\\tname.txt" in preview
+    assert preview.count("\nResolved path: ") == 1
+    assert "Resolved path: '" in preview
 
 
 def test_shell_confirmation_displays_safe_command_then_fixed_prompt(

@@ -47,6 +47,11 @@ def _display(text: object) -> None:
     print(_terminal_safe(text))
 
 
+def _metadata_safe(value: object) -> str:
+    """Quote untrusted single-line metadata with all controls escaped."""
+    return ascii(str(value))
+
+
 def _utf8_size(text: str) -> str:
     try:
         return str(len(text.encode("utf-8")))
@@ -107,11 +112,12 @@ def _render_write_preview(
 ) -> str:
     """Render a bounded local-only create or overwrite preview."""
     proposed_bytes = _utf8_size(proposed)
+    resolved_label = _metadata_safe(resolved)
     if current is None:
         body = truncate_output(proposed)
         return (
             "Create new file\n"
-            f"Resolved path: {resolved}\n"
+            f"Resolved path: {resolved_label}\n"
             f"Proposed bytes: {proposed_bytes}\n"
             "--- proposed content ---\n"
             f"{body}"
@@ -121,15 +127,15 @@ def _render_write_preview(
         difflib.unified_diff(
             current.splitlines(keepends=True),
             proposed.splitlines(keepends=True),
-            fromfile=f"current:{resolved}",
-            tofile=f"proposed:{resolved}",
+            fromfile=f"current:{resolved_label}",
+            tofile=f"proposed:{resolved_label}",
         )
     )
     if not diff:
         diff = "(no content changes)"
     return (
         "Overwrite existing file\n"
-        f"Resolved path: {resolved}\n"
+        f"Resolved path: {resolved_label}\n"
         f"Current bytes: {_utf8_size(current)}\n"
         f"Proposed bytes: {proposed_bytes}\n"
         f"{truncate_output(diff)}"
@@ -139,7 +145,7 @@ def _render_write_preview(
 def _read_again_observation(resolved: Path) -> str:
     """Return the single recovery instruction for every stale-file refusal."""
     return (
-        f"refused: {resolved} changed, disappeared, or became unreadable; "
+        f"refused: {_metadata_safe(resolved)} changed, disappeared, or became unreadable; "
         "use read_file on it again before retrying write_file"
     )
 
@@ -361,7 +367,7 @@ def _preview_action(action: _Action, *, yes: bool) -> None:
             _display(action.error)
             return
         assert action.resolved is not None
-        _display(f"Step 1 would read: {action.resolved}")
+        _display(f"Step 1 would read: {_metadata_safe(action.resolved)}")
     elif action.kind == "write_file":
         if action.error is not None:
             _display(action.error)
@@ -370,7 +376,8 @@ def _preview_action(action: _Action, *, yes: bool) -> None:
         assert action.file_content is not None
         if action.resolved.exists():
             _display(
-                f"Step 1 would overwrite existing file: {action.resolved} — refused: "
+                "Step 1 would overwrite existing file: "
+                f"{_metadata_safe(action.resolved)} — refused: "
                 "read_file must show the complete current file in this run first"
             )
             return
@@ -383,7 +390,8 @@ def _preview_action(action: _Action, *, yes: bool) -> None:
         )
         verdict = "auto-approved by --yes" if yes else "would prompt for confirmation"
         _display(
-            f"Step 1 would write by creating new file: {action.resolved} — {verdict}"
+            "Step 1 would write by creating new file: "
+            f"{_metadata_safe(action.resolved)} — {verdict}"
         )
     elif action.kind == "memory":
         assert action.memory_request is not None
@@ -453,7 +461,7 @@ def _execute_read_file(
         return
     assert action.resolved is not None
     resolved = action.resolved
-    _display(f"Step {step}: reading {resolved}...")
+    _display(f"Step {step}: reading {_metadata_safe(resolved)}...")
     result = read_file(str(resolved))
     if "error" in result:
         read_snapshots.pop(resolved, None)
@@ -497,7 +505,7 @@ def _execute_write_file(
         ):
             _record_observation(
                 messages,
-                f"refused: existing file {resolved} must be shown completely "
+                f"refused: existing file {_metadata_safe(resolved)} must be shown completely "
                 "by read_file in this run before overwrite",
             )
             return
@@ -514,7 +522,7 @@ def _execute_write_file(
     elif target_existed:
         _record_observation(
             messages,
-            f"refused: existing file {resolved} must be shown completely "
+            f"refused: existing file {_metadata_safe(resolved)} must be shown completely "
             "by read_file in this run before overwrite",
         )
         return
@@ -546,12 +554,13 @@ def _execute_write_file(
         read_snapshots.pop(resolved, None)
         _record_observation(
             messages,
-            f"refused: write target changed from {resolved} to {final_resolved}; "
+            "refused: write target changed from "
+            f"{_metadata_safe(resolved)} to {_metadata_safe(final_resolved)}; "
             "use read_file on the target before retrying",
         )
         return
 
-    _display(f"Step {step}: writing to {final_resolved}...")
+    _display(f"Step {step}: writing to {_metadata_safe(final_resolved)}...")
     expected_snapshot = snapshot.identity if snapshot is not None else None
     result = write_file(
         str(final_resolved),
@@ -566,7 +575,8 @@ def _execute_write_file(
             preview = result["error"]
     else:
         preview = (
-            f"wrote {result.get('bytes_written', 0)} bytes to {final_resolved}"
+            f"wrote {result.get('bytes_written', 0)} bytes to "
+            f"{_metadata_safe(final_resolved)}"
         )
         if "warning" in result:
             preview = f"{preview}; warning: {result['warning']}"
