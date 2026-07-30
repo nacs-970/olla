@@ -102,13 +102,21 @@ def test_encoding_failure_preserves_existing_file(tmp_path):
     assert path.read_bytes() == b"ORIGINAL"
 
 
-def test_failed_atomic_replace_preserves_original_and_cleans_temp(
-    tmp_path, mocker
-):
+def test_failed_descriptor_write_restores_original(tmp_path, mocker):
     path = tmp_path / "existing.txt"
     path.write_bytes(b"ORIGINAL")
     snapshot = read_file(str(path))["snapshot"]
-    mocker.patch("olla.tools.files.os.replace", side_effect=OSError("disk full"))
+    real_write = os.write
+    failed = False
+
+    def fail_first_write(descriptor, data):
+        nonlocal failed
+        if not failed:
+            failed = True
+            raise OSError("disk full")
+        return real_write(descriptor, data)
+
+    mocker.patch("olla.tools.files.os.write", side_effect=fail_first_write)
 
     result = write_file(
         str(path),
@@ -119,6 +127,39 @@ def test_failed_atomic_replace_preserves_original_and_cleans_temp(
     assert "disk full" in result["error"]
     assert path.read_bytes() == b"ORIGINAL"
     assert list(tmp_path.iterdir()) == [path]
+
+
+def test_overwrite_does_not_clobber_target_swapped_after_last_check(
+    tmp_path, mocker
+):
+    path = tmp_path / "existing.txt"
+    path.write_bytes(b"ORIGINAL")
+    snapshot = read_file(str(path))["snapshot"]
+    real_ftruncate = os.ftruncate
+    swapped = False
+
+    def swap_then_truncate(descriptor, length):
+        nonlocal swapped
+        if not swapped:
+            swapped = True
+            replacement = tmp_path / "external.txt"
+            replacement.write_bytes(b"EXTERNAL")
+            os.replace(replacement, path)
+        return real_ftruncate(descriptor, length)
+
+    mocker.patch(
+        "olla.tools.files.os.ftruncate",
+        side_effect=swap_then_truncate,
+    )
+
+    result = write_file(
+        str(path),
+        "MODEL",
+        expected_snapshot=snapshot,
+    )
+
+    assert result["stale"] is True
+    assert path.read_bytes() == b"EXTERNAL"
 
 
 def test_atomic_overwrite_preserves_existing_mode(tmp_path):

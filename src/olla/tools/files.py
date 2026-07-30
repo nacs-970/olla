@@ -24,6 +24,13 @@ def _same_file(file_stat: os.stat_result, expected: FileSnapshot) -> bool:
     return _snapshot(file_stat) == expected
 
 
+def _same_object(file_stat: os.stat_result, expected: FileSnapshot) -> bool:
+    return (
+        file_stat.st_dev == expected["device"]
+        and file_stat.st_ino == expected["inode"]
+    )
+
+
 def _nofollow_flags() -> int:
     return getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
 
@@ -45,6 +52,26 @@ def _create_temp_file(directory_fd: int, name: str, mode: int) -> tuple[int, str
         except FileExistsError:
             continue
     raise FileExistsError(f"could not allocate a temporary file for {name}")
+
+
+def _read_descriptor(descriptor: int) -> bytes:
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    chunks = []
+    while chunk := os.read(descriptor, 1024 * 1024):
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _write_descriptor(descriptor: int, data: bytes) -> None:
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    os.ftruncate(descriptor, 0)
+    remaining = memoryview(data)
+    while remaining:
+        written = os.write(descriptor, remaining)
+        if written == 0:
+            raise OSError("write returned zero bytes")
+        remaining = remaining[written:]
+    os.fsync(descriptor)
 
 
 def read_file(path: str) -> ToolResult:
@@ -89,14 +116,15 @@ def write_file(
     *,
     expected_snapshot: FileSnapshot | None = None,
 ) -> ToolResult:
-    """Atomically create a file or replace the exact previously read version.
+    """Atomically create a file or update the exact previously read object.
 
     Returns a ToolResult dict. On success: path, bytes_written.
     Existing destinations require ``expected_snapshot`` from ``read_file``.
     A missing expected destination, a newly appeared destination, symlinks,
     and identity/version changes return a stale result without overwriting it.
-    The payload is encoded before any destination is touched, written and
-    fsynced in the same directory, then published atomically. Never raises.
+    The payload is encoded before any destination is touched. New files are
+    staged and published atomically; existing files are updated through the
+    verified descriptor with rollback on failure. Never raises.
     """
     p = Path(path)
     try:
@@ -115,7 +143,7 @@ def write_file(
             try:
                 target_fd = os.open(
                     p.name,
-                    os.O_RDONLY | _nofollow_flags(),
+                    os.O_RDWR | _nofollow_flags(),
                     dir_fd=directory_fd,
                 )
             except (FileNotFoundError, IsADirectoryError, OSError):
@@ -125,20 +153,12 @@ def write_file(
             if not _same_file(os.fstat(target_fd), expected_snapshot):
                 return _stale_result(path)
 
-        mode = (
-            stat.S_IMODE(expected_snapshot["mode"])
-            if expected_snapshot is not None
-            else 0o666
-        )
-        temp_fd, temp_name = _create_temp_file(directory_fd, p.name, mode)
-        with os.fdopen(temp_fd, "wb") as stream:
-            if expected_snapshot is not None:
-                os.fchmod(stream.fileno(), mode)
-            stream.write(encoded)
-            stream.flush()
-            os.fsync(stream.fileno())
-
         if expected_snapshot is None:
+            temp_fd, temp_name = _create_temp_file(directory_fd, p.name, 0o666)
+            with os.fdopen(temp_fd, "wb") as stream:
+                stream.write(encoded)
+                stream.flush()
+                os.fsync(stream.fileno())
             try:
                 os.link(
                     temp_name,
@@ -165,13 +185,33 @@ def write_file(
                 path_stat, expected_snapshot
             ):
                 return _stale_result(path)
-            os.replace(
-                temp_name,
-                p.name,
-                src_dir_fd=directory_fd,
-                dst_dir_fd=directory_fd,
-            )
-            temp_name = None
+
+            original = _read_descriptor(target_fd)
+            try:
+                _write_descriptor(target_fd, encoded)
+            except (OSError, ValueError) as error:
+                try:
+                    _write_descriptor(target_fd, original)
+                except (OSError, ValueError) as rollback_error:
+                    return {
+                        "path": path,
+                        "error": (
+                            f"could not write {path}: {error}; "
+                            f"rollback also failed: {rollback_error}"
+                        ),
+                    }
+                return {"path": path, "error": f"could not write {path}: {error}"}
+
+            try:
+                path_stat = os.stat(
+                    p.name,
+                    dir_fd=directory_fd,
+                    follow_symlinks=False,
+                )
+            except (FileNotFoundError, OSError):
+                return _stale_result(path)
+            if not _same_object(path_stat, expected_snapshot):
+                return _stale_result(path)
 
         return {"path": path, "bytes_written": len(encoded)}
     except FileNotFoundError:
