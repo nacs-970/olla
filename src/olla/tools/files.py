@@ -549,7 +549,7 @@ def write_file(
                 and _snapshot(displaced_stat)
                 == _snapshot(displaced_descriptor_stat)
             )
-            if staging_identity_changed or not displaced_name_matches:
+            if staging_identity_changed:
                 recovery_path = str(p.parent / temp_name)
                 uncertain = {
                     "path": path,
@@ -564,7 +564,8 @@ def write_file(
                 temp_name = None
                 return uncertain
             if (
-                staging_payload_changed
+                not displaced_name_matches
+                or staging_payload_changed
                 or not _descriptor_matches_snapshot(
                     target_fd, expected_after_exchange
                 )
@@ -586,8 +587,6 @@ def write_file(
                     }
                 published = False
                 displaced_protected = False
-                if staging_identity_changed:
-                    temp_name = None
                 return _stale_result(path)
 
             os.unlink(temp_name, dir_fd=directory_fd)
