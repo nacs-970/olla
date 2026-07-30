@@ -42,3 +42,5 @@ class ToolResult(TypedDict, total=False):
     stale: bool
     bytes_written: int
     status: Literal["success", "stale", "uncertain", "error"]
+    commit_uncertain: bool
+    recovery_path: str
