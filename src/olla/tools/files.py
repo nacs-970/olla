@@ -256,11 +256,19 @@ def write_file(
         os.fchmod(staging_fd, 0o600)
         _write_descriptor(staging_fd, encoded)
         os.fchmod(staging_fd, publish_mode)
-        descriptor = staging_fd
-        staging_fd = None
-        close_error = _close_descriptor(descriptor, "staging file")
-        if close_error is not None:
-            raise OSError(close_error)
+
+    def staging_name_matches(name: str) -> bool:
+        assert directory_fd is not None
+        assert staging_fd is not None
+        try:
+            named_stat = os.stat(
+                name,
+                dir_fd=directory_fd,
+                follow_symlinks=False,
+            )
+        except (FileNotFoundError, OSError):
+            return False
+        return _snapshot(named_stat) == _snapshot(os.fstat(staging_fd))
 
     def perform_write() -> ToolResult:
         nonlocal directory_fd, displaced_protected, published, target_fd, temp_name
@@ -284,6 +292,9 @@ def write_file(
         if expected_snapshot is None:
             stage_payload(0o600, derive_creation_mode=True)
             assert temp_name is not None
+            if not staging_name_matches(temp_name):
+                temp_name = None
+                return _stale_result(path)
             try:
                 os.link(
                     temp_name,
@@ -295,6 +306,21 @@ def write_file(
             except FileExistsError:
                 return _stale_result(path)
             published = True
+            if not staging_name_matches(p.name):
+                temp_name = None
+                try:
+                    os.unlink(p.name, dir_fd=directory_fd)
+                except OSError as cleanup_error:
+                    return {
+                        "path": path,
+                        "commit_uncertain": True,
+                        "warning": (
+                            "staging identity changed during commit and the "
+                            f"published name could not be removed: {cleanup_error}"
+                        ),
+                    }
+                published = False
+                return _stale_result(path)
             try:
                 os.unlink(temp_name, dir_fd=directory_fd)
                 temp_name = None
@@ -317,10 +343,19 @@ def write_file(
                 path_stat, expected_snapshot
             ):
                 return _stale_result(path)
+            if not staging_name_matches(temp_name):
+                temp_name = None
+                return _stale_result(path)
 
             _exchange_files(directory_fd, temp_name, p.name)
             published = True
             displaced_protected = True
+            staging_replaced = not staging_name_matches(p.name)
+            published_stat = os.stat(
+                p.name,
+                dir_fd=directory_fd,
+                follow_symlinks=False,
+            )
             try:
                 displaced_stat = os.stat(
                     temp_name,
@@ -329,9 +364,15 @@ def write_file(
                 )
             except (FileNotFoundError, OSError):
                 displaced_stat = None
-            if displaced_stat is None or not _same_file(
-                displaced_stat,
-                expected_snapshot,
+            expected_after_exchange = dict(expected_snapshot)
+            # renameat2/renameatx update both exchanged inodes' ctime. Normalize
+            # only that commit-caused field; all data, mode, and identity fields
+            # must still match the complete pre-commit snapshot.
+            expected_after_exchange["ctime_ns"] = published_stat.st_ctime_ns
+            if (
+                staging_replaced
+                or displaced_stat is None
+                or not _same_file(displaced_stat, expected_after_exchange)
             ):
                 try:
                     _exchange_files(directory_fd, temp_name, p.name)
@@ -350,6 +391,8 @@ def write_file(
                     }
                 published = False
                 displaced_protected = False
+                if staging_replaced:
+                    temp_name = None
                 return _stale_result(path)
 
             displaced_protected = False

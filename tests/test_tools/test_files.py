@@ -387,6 +387,65 @@ def test_new_file_publish_does_not_follow_destination_symlink(tmp_path):
     assert referent.read_bytes() == b"REFERENT"
 
 
+def test_create_rejects_substituted_staging_name(tmp_path, mocker):
+    path = tmp_path / "new.txt"
+    real_link = os.link
+
+    def substitute_then_link(source, destination, **kwargs):
+        source_fd = kwargs["src_dir_fd"]
+        os.unlink(source, dir_fd=source_fd)
+        attacker_fd = os.open(
+            source,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+            dir_fd=source_fd,
+        )
+        os.write(attacker_fd, b"ATTACKER")
+        os.close(attacker_fd)
+        return real_link(source, destination, **kwargs)
+
+    mocker.patch("olla.tools.files.os.link", side_effect=substitute_then_link)
+
+    result = write_file(str(path), "MODEL")
+
+    assert result["stale"] is True
+    assert not path.exists()
+
+
+def test_overwrite_rolls_back_substituted_staging_name(tmp_path, mocker):
+    path = tmp_path / "existing.txt"
+    path.write_bytes(b"ORIGINAL")
+    snapshot = read_file(str(path))["snapshot"]
+    real_exchange = file_tools._exchange_files
+    substituted = False
+
+    def substitute_then_exchange(directory_fd, source, destination):
+        nonlocal substituted
+        if not substituted:
+            substituted = True
+            os.unlink(source, dir_fd=directory_fd)
+            attacker_fd = os.open(
+                source,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                0o600,
+                dir_fd=directory_fd,
+            )
+            os.write(attacker_fd, b"ATTACKER")
+            os.close(attacker_fd)
+        return real_exchange(directory_fd, source, destination)
+
+    mocker.patch(
+        "olla.tools.files._exchange_files",
+        side_effect=substitute_then_exchange,
+    )
+
+    result = write_file(str(path), "MODEL", expected_snapshot=snapshot)
+
+    assert result["stale"] is True
+    assert path.read_bytes() == b"ORIGINAL"
+    assert not any(entry.read_bytes() == b"MODEL" for entry in tmp_path.iterdir())
+
+
 def test_create_retries_one_shot_temp_cleanup_failure(tmp_path, mocker):
     path = tmp_path / "new.txt"
     real_unlink = os.unlink
@@ -427,7 +486,9 @@ def test_create_reports_persistent_temp_cleanup_failure_as_warning(
     assert len(leftovers) == 1
 
 
-def test_create_close_failure_before_publication_returns_error(tmp_path, mocker):
+def test_create_staging_close_failure_after_publication_returns_warning(
+    tmp_path, mocker
+):
     path = tmp_path / "new.txt"
     mocker.patch(
         "olla.tools.files.os.close",
@@ -436,8 +497,9 @@ def test_create_close_failure_before_publication_returns_error(tmp_path, mocker)
 
     result = write_file(str(path), "MODEL")
 
-    assert "close failed" in result["error"]
-    assert not path.exists()
+    assert "error" not in result
+    assert "close failed" in result["warning"]
+    assert path.read_bytes() == b"MODEL"
 
 
 def test_create_close_failure_after_publication_returns_warning(tmp_path, mocker):
