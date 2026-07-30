@@ -486,12 +486,10 @@ def _execute_write_file(
 
     target_existed = resolved.exists()
     current_content: str | None = None
-    snapshot: _FileReadSnapshot | None = None
-    if target_existed:
-        snapshot = read_snapshots.get(resolved)
+    snapshot = read_snapshots.get(resolved)
+    if snapshot is not None:
         if (
-            snapshot is None
-            or not snapshot.fully_observed
+            not snapshot.fully_observed
             or snapshot.identity is None
         ):
             _record_observation(
@@ -510,6 +508,13 @@ def _execute_write_file(
             _record_observation(messages, _read_again_observation(resolved))
             return
         current_content = snapshot.content
+    elif target_existed:
+        _record_observation(
+            messages,
+            f"refused: existing file {resolved} must be shown completely "
+            "by read_file in this run before overwrite",
+        )
+        return
 
     _display(
         _render_write_preview(
@@ -544,9 +549,7 @@ def _execute_write_file(
         return
 
     _display(f"Step {step}: writing to {final_resolved}...")
-    expected_snapshot = (
-        snapshot.identity if target_existed and snapshot is not None else None
-    )
+    expected_snapshot = snapshot.identity if snapshot is not None else None
     result = write_file(
         str(final_resolved),
         file_content,

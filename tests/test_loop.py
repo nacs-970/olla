@@ -1231,6 +1231,45 @@ def test_run_loop_stale_snapshot_is_refused_before_confirmation(
     )
 
 
+def test_run_loop_deleted_snapshot_is_not_recreated(tmp_path, mocker):
+    target = tmp_path / "existing.txt"
+    target.write_text("original\n", encoding="utf-8")
+    responses = iter(
+        [
+            f"<tool>read_file</tool><args>{target}</args>",
+            f"<tool>write_file</tool><args>{target}\nreplacement\n</args>",
+            "<final>done</final>",
+        ]
+    )
+    call_count = 0
+
+    def delete_before_write(*_args):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            target.unlink()
+        return next(responses)
+
+    mock_model = mocker.patch(
+        "olla.loop.call_model",
+        side_effect=delete_before_write,
+    )
+    mock_write = mocker.patch("olla.loop.write_file")
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop("edit the file", "model", 3, "sys")
+
+    mock_confirm.assert_not_called()
+    mock_write.assert_not_called()
+    assert not target.exists()
+    messages = mock_model.call_args_list[2].args[1]
+    assert any(
+        "disappeared" in message["content"] and "read_file" in message["content"]
+        for message in messages
+        if message["role"] == "user"
+    )
+
+
 def test_run_loop_post_confirmation_change_is_refused(tmp_path, mocker):
     target = tmp_path / "existing.txt"
     target.write_text("original\n", encoding="utf-8")
