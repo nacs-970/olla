@@ -4,6 +4,7 @@ import pytest
 
 from olla.loop import (
     MAX_OBSERVATION_CHARS,
+    _prepare_action,
     _terminal_safe,
     call_model,
     run_loop,
@@ -1022,6 +1023,32 @@ def test_write_repetition_signature_normalizes_path_and_content(
 
     assert "same write_file call repeated 3x" in capsys.readouterr().out
     assert mock_write.call_count == 2
+
+
+def test_write_repetition_signature_distinguishes_malformed_and_valid(
+    tmp_path,
+):
+    target = tmp_path / "target.txt"
+    malformed = _prepare_action(
+        f"<tool>write_file</tool><args>{target}</args>"
+    )
+    valid = _prepare_action(
+        f"<tool>write_file</tool><args>{target}\nmissing-content-line</args>"
+    )
+
+    assert malformed.signature == (
+        "write_file",
+        "invalid",
+        str(target),
+        "missing-content-line",
+    )
+    assert valid.signature == (
+        "write_file",
+        "valid",
+        str(target.resolve()),
+        "missing-content-line",
+    )
+    assert malformed.signature != valid.signature
 
 
 def test_run_loop_max_steps_with_varied_shell_calls(mocker, capsys):

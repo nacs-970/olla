@@ -226,7 +226,7 @@ def _prepare_action(content: str) -> _Action:
             return _Action(
                 "write_file",
                 tool,
-                ("write_file", path, "missing-content-line"),
+                ("write_file", "invalid", path, "missing-content-line"),
                 args_raw=args_raw,
                 path=path,
                 error=error,
@@ -236,7 +236,7 @@ def _prepare_action(content: str) -> _Action:
         return _Action(
             "write_file",
             tool,
-            ("write_file", normalized, file_content),
+            ("write_file", "valid", normalized, file_content),
             args_raw=args_raw,
             path=path,
             file_content=file_content,
