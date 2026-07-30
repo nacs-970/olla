@@ -2,10 +2,11 @@
 
 import os
 import stat
+from types import SimpleNamespace
 
 import pytest
 
-from olla.tools.files import read_file, write_file
+from olla.tools.files import _validate_backend_support, read_file, write_file
 
 
 def test_read_file_success(tmp_path):
@@ -27,6 +28,15 @@ def test_read_file_not_found(tmp_path):
     assert "error" in result
     assert str(path) in result["error"]
     assert "content" not in result
+
+
+def test_backend_validation_rejects_non_posix_with_actionable_error():
+    unsupported_os = SimpleNamespace(name="nt")
+
+    with pytest.raises(RuntimeError, match="POSIX runtime") as raised:
+        _validate_backend_support(unsupported_os, None)
+
+    assert "Linux, macOS, or WSL" in str(raised.value)
 
 
 def test_write_file_success(tmp_path):

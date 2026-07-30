@@ -1,12 +1,66 @@
 """Race-aware UTF-8 file tools with byte-preserving reads and atomic writes."""
 
-import fcntl
 import os
 import secrets
 import stat
 from pathlib import Path
 
 from olla.tools.base import FileSnapshot, ToolResult
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - exercised on non-POSIX runtimes
+    fcntl = None
+
+
+def _validate_backend_support(
+    os_module: object = os,
+    fcntl_module: object | None = fcntl,
+) -> None:
+    """Fail at startup when secure POSIX file primitives are unavailable."""
+    message = (
+        "olla file tools require a POSIX runtime with fcntl.flock, "
+        "O_NOFOLLOW/O_DIRECTORY, and dir_fd support; use Linux, macOS, or WSL"
+    )
+    if (
+        getattr(os_module, "name", None) != "posix"
+        or fcntl_module is None
+        or not hasattr(fcntl_module, "flock")
+    ):
+        raise RuntimeError(message)
+
+    required_flags = ("O_CLOEXEC", "O_DIRECTORY", "O_NOFOLLOW")
+    if any(not hasattr(os_module, name) for name in required_flags):
+        raise RuntimeError(message)
+
+    supports_dir_fd = getattr(os_module, "supports_dir_fd", set())
+    dir_fd_functions = tuple(
+        getattr(os_module, name, None)
+        for name in ("link", "open", "stat", "unlink")
+    )
+    if any(
+        function is None or function not in supports_dir_fd
+        for function in dir_fd_functions
+    ):
+        raise RuntimeError(message)
+
+    supports_follow_symlinks = getattr(
+        os_module,
+        "supports_follow_symlinks",
+        set(),
+    )
+    follow_functions = (
+        getattr(os_module, "link", None),
+        getattr(os_module, "stat", None),
+    )
+    if any(
+        function is None or function not in supports_follow_symlinks
+        for function in follow_functions
+    ):
+        raise RuntimeError(message)
+
+
+_validate_backend_support()
 
 
 def _snapshot(file_stat: os.stat_result) -> FileSnapshot:
@@ -32,7 +86,7 @@ def _same_object(file_stat: os.stat_result, expected: FileSnapshot) -> bool:
 
 
 def _nofollow_flags() -> int:
-    return getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+    return os.O_NOFOLLOW | os.O_CLOEXEC
 
 
 def _stale_result(path: str) -> ToolResult:
@@ -103,7 +157,7 @@ def read_file(path: str) -> ToolResult:
         return {"path": path, "error": f"file not found: {path}"}
     except IsADirectoryError:
         return {"path": path, "error": f"is a directory: {path}"}
-    except (UnicodeDecodeError, OSError, ValueError) as e:
+    except (UnicodeDecodeError, OSError, ValueError, NotImplementedError) as e:
         return {"path": path, "error": f"could not read {path}: {e}"}
     finally:
         if descriptor is not None:
@@ -138,7 +192,7 @@ def write_file(
     published = False
     cleanup_warning: str | None = None
     try:
-        directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        directory_flags = os.O_RDONLY | os.O_DIRECTORY
         directory_fd = os.open(p.parent, directory_flags | _nofollow_flags())
 
         if expected_snapshot is not None:
@@ -235,7 +289,7 @@ def write_file(
             "path": path,
             "error": f"parent directory does not exist: {p.parent}",
         }
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, NotImplementedError) as error:
         if published:
             return {
                 "path": path,
@@ -247,7 +301,7 @@ def write_file(
         if temp_name is not None and directory_fd is not None:
             try:
                 os.unlink(temp_name, dir_fd=directory_fd)
-            except OSError:
+            except (OSError, NotImplementedError):
                 pass
         if target_fd is not None:
             os.close(target_fd)
