@@ -34,6 +34,9 @@ def _terminal_safe(text: object) -> str:
             rendered.append(f"\\x{codepoint:02x}")
         elif 0xD800 <= codepoint <= 0xDFFF:
             rendered.append(f"\\u{codepoint:04x}")
+        elif not character.isprintable():
+            width = 4 if codepoint <= 0xFFFF else 8
+            rendered.append(f"\\u{codepoint:0{width}x}")
         else:
             rendered.append(character)
     return "".join(rendered)

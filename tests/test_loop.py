@@ -2,7 +2,13 @@
 
 import pytest
 
-from olla.loop import MAX_OBSERVATION_CHARS, call_model, run_loop, truncate_output
+from olla.loop import (
+    MAX_OBSERVATION_CHARS,
+    _terminal_safe,
+    call_model,
+    run_loop,
+    truncate_output,
+)
 from olla.safety import check
 from olla.tools.files import write_file as safe_write_file
 
@@ -1428,6 +1434,20 @@ def test_final_output_escapes_terminal_controls_and_surrogates(mocker, capsys):
     assert "\x1b" not in output
     assert "\ud800" not in output
     assert "\\x1b]52;c;payload\\x07\\x1b[2J\\ud800" in output
+
+
+def test_terminal_safe_escapes_bidi_controls_and_unicode_separators():
+    unsafe = "safe\u202egnp.exe\u2066isolated\u2028line\u2029paragraph"
+
+    rendered = _terminal_safe(unsafe)
+
+    assert "\u202e" not in rendered
+    assert "\u2066" not in rendered
+    assert "\u2028" not in rendered
+    assert "\u2029" not in rendered
+    assert rendered == (
+        "safe\\u202egnp.exe\\u2066isolated\\u2028line\\u2029paragraph"
+    )
 
 
 def test_shell_output_is_sanitized_without_changing_observation(mocker, capsys):
