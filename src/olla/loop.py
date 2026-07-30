@@ -496,8 +496,7 @@ def _execute_read_file(
         fully_observed=truncate_output(raw_content) == raw_content,
         identity=result.get("snapshot"),
     )
-    combined = raw_content or "(no output)"
-    _record_file_observation(messages, truncate_output(combined))
+    _record_file_observation(messages, truncate_output(raw_content))
     return True
 
 

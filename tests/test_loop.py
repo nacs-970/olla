@@ -1472,6 +1472,35 @@ def test_untrusted_file_instruction_cannot_use_yes_for_shell_or_write(
     )
 
 
+def test_empty_file_observation_does_not_invent_no_output_sentinel(
+    tmp_path, mocker
+):
+    source = tmp_path / "empty.txt"
+    source.touch()
+    mock_model = mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            f"<tool>read_file</tool><args>{source}</args>",
+            "<final>done</final>",
+        ],
+    )
+
+    run_loop("inspect the empty file", "model", 2, "sys")
+
+    messages = mock_model.call_args_list[1].args[1]
+    assert not any("(no output)" in message["content"] for message in messages)
+    assert any(
+        message == {
+            "role": "tool",
+            "content": (
+                "Observation: <untrusted_file_content>\n\n"
+                "</untrusted_file_content>"
+            ),
+        }
+        for message in messages
+    )
+
+
 def test_run_loop_symlink_swap_during_confirmation_is_preserved(tmp_path, mocker):
     target = tmp_path / "existing.txt"
     target.write_text("original\n", encoding="utf-8")
