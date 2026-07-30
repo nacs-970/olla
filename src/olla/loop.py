@@ -319,6 +319,21 @@ def _record_observation(messages: list[dict], preview: str) -> None:
     messages.append({"role": "user", "content": f"Observation: {preview}"})
 
 
+def _record_file_observation(messages: list[dict], preview: str) -> None:
+    """Record file bytes as provenance-preserving, explicitly untrusted data."""
+    _display(preview)
+    messages.append(
+        {
+            "role": "tool",
+            "content": (
+                "Observation: <untrusted_file_content>\n"
+                f"{preview}\n"
+                "</untrusted_file_content>"
+            ),
+        }
+    )
+
+
 def truncate_output(text: str, limit: int = MAX_OBSERVATION_CHARS) -> str:
     """Truncate text to a head+tail preview if it exceeds `limit` chars."""
     if limit < 0:
@@ -413,6 +428,7 @@ def _execute_shell(
     step: int,
     messages: list[dict],
     yes: bool,
+    untrusted_observation_seen: bool,
 ) -> None:
     if action.error is not None:
         _record_observation(messages, action.error)
@@ -426,8 +442,14 @@ def _execute_shell(
             f"blocked by safety policy: {decision['reason']}",
         )
         return
-    if decision["kind"] == "CONFIRM" and not yes:
+    if decision["kind"] == "CONFIRM" and (
+        not yes or untrusted_observation_seen
+    ):
         try:
+            if yes and untrusted_observation_seen:
+                _display(
+                    "Confirmation required: this action follows untrusted file content."
+                )
             _display(f"Run command: {argv!r}")
             approved = Confirm.ask("Proceed?", default=False)
         except EOFError:
@@ -455,26 +477,28 @@ def _execute_read_file(
     step: int,
     messages: list[dict],
     read_snapshots: dict[Path, _FileReadSnapshot],
-) -> None:
+) -> bool:
     if action.error is not None:
         _record_observation(messages, action.error)
-        return
+        return False
     assert action.resolved is not None
     resolved = action.resolved
     _display(f"Step {step}: reading {_metadata_safe(resolved)}...")
     result = read_file(str(resolved))
     if "error" in result:
         read_snapshots.pop(resolved, None)
-        combined = result["error"]
-    else:
-        raw_content = result.get("content", "")
-        read_snapshots[resolved] = _FileReadSnapshot(
-            content=raw_content,
-            fully_observed=truncate_output(raw_content) == raw_content,
-            identity=result.get("snapshot"),
-        )
-        combined = raw_content or "(no output)"
-    _record_observation(messages, truncate_output(combined))
+        _record_observation(messages, truncate_output(result["error"]))
+        return False
+
+    raw_content = result.get("content", "")
+    read_snapshots[resolved] = _FileReadSnapshot(
+        content=raw_content,
+        fully_observed=truncate_output(raw_content) == raw_content,
+        identity=result.get("snapshot"),
+    )
+    combined = raw_content or "(no output)"
+    _record_file_observation(messages, truncate_output(combined))
+    return True
 
 
 def _execute_write_file(
@@ -484,6 +508,7 @@ def _execute_write_file(
     messages: list[dict],
     read_snapshots: dict[Path, _FileReadSnapshot],
     yes: bool,
+    untrusted_observation_seen: bool,
 ) -> None:
     if action.error is not None:
         _record_observation(messages, action.error)
@@ -534,8 +559,12 @@ def _execute_write_file(
             current=current_content,
         )
     )
-    if not yes:
+    if not yes or untrusted_observation_seen:
         try:
+            if yes and untrusted_observation_seen:
+                _display(
+                    "Confirmation required: this action follows untrusted file content."
+                )
             approved = Confirm.ask("Proceed?", default=False)
         except EOFError:
             approved = False
@@ -622,6 +651,7 @@ def run_loop(
     read_snapshots: dict[Path, _FileReadSnapshot] = {}
     previous_signature: tuple | None = None
     repeat_count = 0
+    untrusted_observation_seen = False
 
     for step in range(1, max_steps + 1):
         content = call_model(model, messages)
@@ -645,13 +675,22 @@ def run_loop(
             return
 
         if action.kind == "shell":
-            _execute_shell(action, step=step, messages=messages, yes=yes)
-        elif action.kind == "read_file":
-            _execute_read_file(
+            _execute_shell(
                 action,
                 step=step,
                 messages=messages,
-                read_snapshots=read_snapshots,
+                yes=yes,
+                untrusted_observation_seen=untrusted_observation_seen,
+            )
+        elif action.kind == "read_file":
+            untrusted_observation_seen = (
+                _execute_read_file(
+                    action,
+                    step=step,
+                    messages=messages,
+                    read_snapshots=read_snapshots,
+                )
+                or untrusted_observation_seen
             )
         elif action.kind == "write_file":
             _execute_write_file(
@@ -660,6 +699,7 @@ def run_loop(
                 messages=messages,
                 read_snapshots=read_snapshots,
                 yes=yes,
+                untrusted_observation_seen=untrusted_observation_seen,
             )
         elif action.kind == "memory":
             _execute_memory(
