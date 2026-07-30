@@ -1,8 +1,11 @@
 """Race-aware UTF-8 file tools with byte-preserving reads and atomic writes."""
 
+import ctypes
+import errno
 import os
 import secrets
 import stat
+import sys
 from pathlib import Path
 
 from olla.tools.base import FileSnapshot, ToolResult
@@ -108,14 +111,6 @@ def _create_temp_file(directory_fd: int, name: str, mode: int) -> tuple[int, str
     raise FileExistsError(f"could not allocate a temporary file for {name}")
 
 
-def _read_descriptor(descriptor: int) -> bytes:
-    os.lseek(descriptor, 0, os.SEEK_SET)
-    chunks = []
-    while chunk := os.read(descriptor, 1024 * 1024):
-        chunks.append(chunk)
-    return b"".join(chunks)
-
-
 def _write_descriptor(descriptor: int, data: bytes) -> None:
     os.lseek(descriptor, 0, os.SEEK_SET)
     os.ftruncate(descriptor, 0)
@@ -126,6 +121,45 @@ def _write_descriptor(descriptor: int, data: bytes) -> None:
             raise OSError("write returned zero bytes")
         remaining = remaining[written:]
     os.fsync(descriptor)
+
+
+def _exchange_files(directory_fd: int, source: str, destination: str) -> None:
+    """Atomically exchange two names without an overwrite race."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    source_bytes = os.fsencode(source)
+    destination_bytes = os.fsencode(destination)
+
+    if sys.platform.startswith("linux"):
+        exchange = getattr(libc, "renameat2", None)
+    elif sys.platform == "darwin":
+        exchange = getattr(libc, "renameatx_np", None)
+    else:  # pragma: no cover - startup validation limits supported platforms
+        exchange = None
+
+    if exchange is None:
+        raise NotImplementedError("atomic file exchange is unavailable")
+
+    exchange.argtypes = (
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_uint,
+    )
+    exchange.restype = ctypes.c_int
+    if exchange(
+        directory_fd,
+        source_bytes,
+        directory_fd,
+        destination_bytes,
+        2,  # RENAME_EXCHANGE on Linux and RENAME_SWAP on macOS.
+    ) == 0:
+        return
+
+    error_number = ctypes.get_errno()
+    if error_number in {errno.ENOSYS, errno.EINVAL, errno.EOPNOTSUPP}:
+        raise NotImplementedError("atomic file exchange is unavailable")
+    raise OSError(error_number, os.strerror(error_number))
 
 
 def read_file(path: str) -> ToolResult:
@@ -176,9 +210,8 @@ def write_file(
     Existing destinations require ``expected_snapshot`` from ``read_file``.
     A missing expected destination, a newly appeared destination, symlinks,
     and identity/version changes return a stale result without overwriting it.
-    The payload is encoded before any destination is touched. New files are
-    staged and published atomically; existing files are updated through the
-    verified descriptor with rollback on failure. Never raises.
+    The payload is encoded before any destination is touched. New and existing
+    files are staged separately and published atomically. Never raises.
     """
     p = Path(path)
     try:
@@ -211,10 +244,10 @@ def write_file(
 
         if expected_snapshot is None:
             temp_fd, temp_name = _create_temp_file(directory_fd, p.name, 0o666)
-            with os.fdopen(temp_fd, "wb") as stream:
-                stream.write(encoded)
-                stream.flush()
-                os.fsync(stream.fileno())
+            try:
+                _write_descriptor(temp_fd, encoded)
+            finally:
+                os.close(temp_fd)
             try:
                 os.link(
                     temp_name,
@@ -240,6 +273,17 @@ def write_file(
                     )
         else:
             assert target_fd is not None
+            temp_fd, temp_name = _create_temp_file(
+                directory_fd,
+                p.name,
+                stat.S_IMODE(expected_snapshot["mode"]),
+            )
+            os.fchmod(temp_fd, stat.S_IMODE(expected_snapshot["mode"]))
+            try:
+                _write_descriptor(temp_fd, encoded)
+            finally:
+                os.close(temp_fd)
+
             try:
                 path_stat = os.stat(
                     p.name,
@@ -253,32 +297,41 @@ def write_file(
             ):
                 return _stale_result(path)
 
-            original = _read_descriptor(target_fd)
+            _exchange_files(directory_fd, temp_name, p.name)
             try:
-                _write_descriptor(target_fd, encoded)
-            except (OSError, ValueError) as error:
-                try:
-                    _write_descriptor(target_fd, original)
-                except (OSError, ValueError) as rollback_error:
-                    return {
-                        "path": path,
-                        "error": (
-                            f"could not write {path}: {error}; "
-                            f"rollback also failed: {rollback_error}"
-                        ),
-                    }
-                return {"path": path, "error": f"could not write {path}: {error}"}
-
-            try:
-                path_stat = os.stat(
-                    p.name,
+                displaced_stat = os.stat(
+                    temp_name,
                     dir_fd=directory_fd,
                     follow_symlinks=False,
                 )
             except (FileNotFoundError, OSError):
+                displaced_stat = None
+            if displaced_stat is None or not _same_object(
+                displaced_stat,
+                expected_snapshot,
+            ):
+                try:
+                    _exchange_files(directory_fd, temp_name, p.name)
+                except (OSError, NotImplementedError) as rollback_error:
+                    return {
+                        "path": path,
+                        "error": (
+                            f"could not write {path}: destination changed during "
+                            f"commit and restoration failed: {rollback_error}"
+                        ),
+                    }
                 return _stale_result(path)
-            if not _same_object(path_stat, expected_snapshot):
-                return _stale_result(path)
+
+            published = True
+            os.fsync(directory_fd)
+            try:
+                os.unlink(temp_name, dir_fd=directory_fd)
+                temp_name = None
+            except OSError as cleanup_error:
+                cleanup_warning = (
+                    f"write succeeded, but could not clean up replaced file "
+                    f"{temp_name}: {cleanup_error}"
+                )
 
         result: ToolResult = {"path": path, "bytes_written": len(encoded)}
         if cleanup_warning is not None:

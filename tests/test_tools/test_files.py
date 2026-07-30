@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import olla.tools.files as file_tools
 from olla.tools.files import _validate_backend_support, read_file, write_file
 
 
@@ -122,7 +123,7 @@ def test_encoding_failure_preserves_existing_file(tmp_path):
     assert path.read_bytes() == b"ORIGINAL"
 
 
-def test_failed_descriptor_write_restores_original(tmp_path, mocker):
+def test_failed_staging_write_preserves_original(tmp_path, mocker):
     path = tmp_path / "existing.txt"
     path.write_bytes(b"ORIGINAL")
     snapshot = read_file(str(path))["snapshot"]
@@ -149,27 +150,27 @@ def test_failed_descriptor_write_restores_original(tmp_path, mocker):
     assert list(tmp_path.iterdir()) == [path]
 
 
-def test_overwrite_does_not_clobber_target_swapped_after_last_check(
+def test_stale_exchange_preserves_target_and_displaced_original(
     tmp_path, mocker
 ):
     path = tmp_path / "existing.txt"
+    moved = tmp_path / "moved.txt"
     path.write_bytes(b"ORIGINAL")
     snapshot = read_file(str(path))["snapshot"]
-    real_ftruncate = os.ftruncate
+    real_exchange = file_tools._exchange_files
     swapped = False
 
-    def swap_then_truncate(descriptor, length):
+    def swap_then_exchange(directory_fd, source, destination):
         nonlocal swapped
         if not swapped:
             swapped = True
-            replacement = tmp_path / "external.txt"
-            replacement.write_bytes(b"EXTERNAL")
-            os.replace(replacement, path)
-        return real_ftruncate(descriptor, length)
+            path.rename(moved)
+            path.write_bytes(b"EXTERNAL")
+        return real_exchange(directory_fd, source, destination)
 
     mocker.patch(
-        "olla.tools.files.os.ftruncate",
-        side_effect=swap_then_truncate,
+        "olla.tools.files._exchange_files",
+        side_effect=swap_then_exchange,
     )
 
     result = write_file(
@@ -180,6 +181,11 @@ def test_overwrite_does_not_clobber_target_swapped_after_last_check(
 
     assert result["stale"] is True
     assert path.read_bytes() == b"EXTERNAL"
+    assert moved.read_bytes() == b"ORIGINAL"
+    assert sorted(entry.name for entry in tmp_path.iterdir()) == [
+        "existing.txt",
+        "moved.txt",
+    ]
 
 
 def test_atomic_overwrite_preserves_existing_mode(tmp_path):
