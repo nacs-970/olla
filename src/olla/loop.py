@@ -340,6 +340,21 @@ def _record_file_observation(messages: list[dict], preview: str) -> None:
     )
 
 
+def _record_shell_observation(messages: list[dict], preview: str) -> None:
+    """Record command output as explicitly untrusted tool data."""
+    _display(preview)
+    messages.append(
+        {
+            "role": "tool",
+            "content": (
+                "Observation: <untrusted_shell_output>\n"
+                f"{preview}\n"
+                "</untrusted_shell_output>"
+            ),
+        }
+    )
+
+
 def truncate_output(text: str, limit: int = MAX_OBSERVATION_CHARS) -> str:
     """Truncate text to a head+tail preview if it exceeds `limit` chars."""
     if limit < 0:
@@ -435,10 +450,10 @@ def _execute_shell(
     messages: list[dict],
     yes: bool,
     untrusted_observation_seen: bool,
-) -> None:
+) -> bool:
     if action.error is not None:
         _record_observation(messages, action.error)
-        return
+        return False
     assert action.argv is not None
     argv = list(action.argv)
     decision = check(argv, yes=yes)
@@ -447,14 +462,14 @@ def _execute_shell(
             messages,
             f"blocked by safety policy: {decision['reason']}",
         )
-        return
+        return False
     if decision["kind"] == "CONFIRM" and (
         not yes or untrusted_observation_seen
     ):
         try:
             if yes and untrusted_observation_seen:
                 _display(
-                    "Confirmation required: this action follows untrusted file content."
+                    "Confirmation required: this action follows untrusted tool output."
                 )
             _display(f"Run command: {argv!r}")
             approved = Confirm.ask("Proceed?", default=False)
@@ -464,7 +479,7 @@ def _execute_shell(
             messages.append(
                 {"role": "user", "content": "Observation: declined by user"}
             )
-            return
+            return False
 
     _display(f"Step {step}: running {argv}...")
     result = run_shell(argv)
@@ -474,7 +489,8 @@ def _execute_shell(
         combined = result.get("stdout", "") + result.get("stderr", "")
         if not combined:
             combined = "(no output)"
-    _record_observation(messages, truncate_output(combined))
+    _record_shell_observation(messages, truncate_output(combined))
+    return True
 
 
 def _execute_read_file(
@@ -578,7 +594,7 @@ def _execute_write_file(
             try:
                 if yes and untrusted_observation_seen:
                     _display(
-                        "Confirmation required: this action follows untrusted file content."
+                        "Confirmation required: this action follows untrusted tool output."
                     )
                 approved = Confirm.ask("Proceed?", default=False)
             except EOFError:
@@ -698,12 +714,15 @@ def run_loop(
             return
 
         if action.kind == "shell":
-            _execute_shell(
-                action,
-                step=step,
-                messages=messages,
-                yes=yes,
-                untrusted_observation_seen=untrusted_observation_seen,
+            untrusted_observation_seen = (
+                _execute_shell(
+                    action,
+                    step=step,
+                    messages=messages,
+                    yes=yes,
+                    untrusted_observation_seen=untrusted_observation_seen,
+                )
+                or untrusted_observation_seen
             )
         elif action.kind == "read_file":
             untrusted_observation_seen = (
