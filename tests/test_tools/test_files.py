@@ -69,6 +69,52 @@ def test_write_file_success(tmp_path):
     assert "error" not in result
 
 
+def test_new_file_syncs_staging_and_parent_directory(tmp_path, mocker):
+    path = tmp_path / "out.txt"
+    real_fsync = os.fsync
+    synced_kinds = []
+
+    def record_fsync(descriptor):
+        synced_kinds.append(
+            "directory"
+            if stat.S_ISDIR(os.fstat(descriptor).st_mode)
+            else "file"
+        )
+        return real_fsync(descriptor)
+
+    mocker.patch("olla.tools.files.os.fsync", side_effect=record_fsync)
+
+    result = write_file(str(path), "durable")
+
+    assert "error" not in result
+    assert path.read_bytes() == b"durable"
+    assert "file" in synced_kinds
+    assert synced_kinds[-1] == "directory"
+
+
+def test_new_file_directory_sync_failure_returns_durability_warning(
+    tmp_path, mocker
+):
+    path = tmp_path / "out.txt"
+    real_fsync = os.fsync
+
+    def fail_directory_fsync(descriptor):
+        if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise OSError("directory sync failed")
+        return real_fsync(descriptor)
+
+    mocker.patch(
+        "olla.tools.files.os.fsync",
+        side_effect=fail_directory_fsync,
+    )
+
+    result = write_file(str(path), "durable")
+
+    assert result["bytes_written"] == 7
+    assert "directory durability could not be confirmed" in result["warning"]
+    assert path.read_bytes() == b"durable"
+
+
 def test_new_file_and_staging_respect_restrictive_umask(tmp_path):
     script = textwrap.dedent(
         """
@@ -490,9 +536,17 @@ def test_create_staging_close_failure_after_publication_returns_warning(
     tmp_path, mocker
 ):
     path = tmp_path / "new.txt"
+    real_close_descriptor = file_tools._close_descriptor
+
+    def fail_staging_close(descriptor, description):
+        if description == "staging file":
+            os.close(descriptor)
+            return "could not close staging file: close failed"
+        return real_close_descriptor(descriptor, description)
+
     mocker.patch(
-        "olla.tools.files.os.close",
-        side_effect=OSError("close failed"),
+        "olla.tools.files._close_descriptor",
+        side_effect=fail_staging_close,
     )
 
     result = write_file(str(path), "MODEL")
@@ -504,17 +558,18 @@ def test_create_staging_close_failure_after_publication_returns_warning(
 
 def test_create_close_failure_after_publication_returns_warning(tmp_path, mocker):
     path = tmp_path / "new.txt"
-    real_close = os.close
-    close_count = 0
+    real_close_descriptor = file_tools._close_descriptor
 
-    def fail_directory_close(descriptor):
-        nonlocal close_count
-        close_count += 1
-        if close_count == 2:
-            raise OSError("close failed")
-        return real_close(descriptor)
+    def fail_directory_close(descriptor, description):
+        if description == "parent directory":
+            os.close(descriptor)
+            return "could not close parent directory: close failed"
+        return real_close_descriptor(descriptor, description)
 
-    mocker.patch("olla.tools.files.os.close", side_effect=fail_directory_close)
+    mocker.patch(
+        "olla.tools.files._close_descriptor",
+        side_effect=fail_directory_close,
+    )
 
     result = write_file(str(path), "MODEL")
 

@@ -297,6 +297,7 @@ def write_file(
         os.fchmod(staging_fd, 0o600)
         _write_descriptor(staging_fd, encoded)
         os.fchmod(staging_fd, publish_mode)
+        os.fsync(staging_fd)
 
     def staging_name_matches(name: str) -> bool:
         assert directory_fd is not None
@@ -374,6 +375,17 @@ def write_file(
                 temp_name = None
             except OSError:
                 pass
+            try:
+                os.fsync(directory_fd)
+            except OSError as durability_error:
+                return {
+                    "path": path,
+                    "bytes_written": len(encoded),
+                    "warning": (
+                        "write published, but directory durability could not "
+                        f"be confirmed: {durability_error}"
+                    ),
+                }
         else:
             assert target_fd is not None
             stage_payload(stat.S_IMODE(expected_snapshot["mode"]))
