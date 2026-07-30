@@ -50,6 +50,16 @@ def test_write_file_success(tmp_path):
     assert "error" not in result
 
 
+def test_write_file_accepts_basename_near_filesystem_name_max(tmp_path):
+    name_max = os.pathconf(tmp_path, "PC_NAME_MAX")
+    path = tmp_path / ("x" * (name_max - 1))
+
+    result = write_file(str(path), "content")
+
+    assert "error" not in result
+    assert path.read_text(encoding="utf-8") == "content"
+
+
 def test_write_file_missing_parent_dir_errors(tmp_path):
     path = tmp_path / "nonexistent_dir" / "out.txt"
 

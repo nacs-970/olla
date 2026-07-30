@@ -100,7 +100,7 @@ def _stale_result(path: str) -> ToolResult:
 def _create_temp_file(directory_fd: int, name: str, mode: int) -> tuple[int, str]:
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | _nofollow_flags()
     for _attempt in range(100):
-        temp_name = f".{name}.{secrets.token_hex(8)}.tmp"
+        temp_name = f".olla.{secrets.token_hex(8)}.tmp"
         try:
             return os.open(temp_name, flags, mode, dir_fd=directory_fd), temp_name
         except FileExistsError:
