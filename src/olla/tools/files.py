@@ -197,6 +197,46 @@ def _descriptor_matches_snapshot(
     )
 
 
+def _descriptor_xattrs(descriptor: int) -> dict[str, bytes]:
+    """Read every extended attribute through a retained descriptor."""
+    return {
+        name: os.getxattr(descriptor, name)
+        for name in os.listxattr(descriptor)
+    }
+
+
+def _copy_and_verify_metadata(source_fd: int, destination_fd: int) -> None:
+    """Preserve security-relevant inode metadata or fail before publication."""
+    source_stat = os.fstat(source_fd)
+    source_mode = stat.S_IMODE(source_stat.st_mode)
+    source_xattrs = _descriptor_xattrs(source_fd)
+
+    os.fchown(destination_fd, source_stat.st_uid, source_stat.st_gid)
+    os.fchmod(destination_fd, source_mode)
+    for name, value in source_xattrs.items():
+        os.setxattr(destination_fd, name, value)
+
+    source_flags = getattr(source_stat, "st_flags", None)
+    if source_flags is not None:
+        fchflags = getattr(os, "fchflags", None)
+        if fchflags is None:
+            raise OSError("platform cannot preserve file flags")
+        fchflags(destination_fd, source_flags)
+
+    destination_stat = os.fstat(destination_fd)
+    if (
+        destination_stat.st_uid != source_stat.st_uid
+        or destination_stat.st_gid != source_stat.st_gid
+        or stat.S_IMODE(destination_stat.st_mode) != source_mode
+        or _descriptor_xattrs(destination_fd) != source_xattrs
+        or (
+            source_flags is not None
+            and getattr(destination_stat, "st_flags", None) != source_flags
+        )
+    ):
+        raise OSError("could not verify preserved file metadata")
+
+
 def _close_descriptor(descriptor: int, description: str) -> str | None:
     """Close one descriptor once and report, rather than raise, any failure."""
     try:
@@ -462,6 +502,9 @@ def write_file(
         else:
             assert target_fd is not None
             stage_payload(stat.S_IMODE(expected_snapshot["mode"]))
+            assert staging_fd is not None
+            _copy_and_verify_metadata(target_fd, staging_fd)
+            os.fsync(staging_fd)
             assert temp_name is not None
 
             try:

@@ -428,6 +428,45 @@ def test_atomic_overwrite_preserves_existing_mode(tmp_path):
     assert stat.S_IMODE(path.stat().st_mode) == 0o751
 
 
+def test_atomic_overwrite_preserves_user_xattrs(tmp_path):
+    path = tmp_path / "existing.txt"
+    path.write_bytes(b"ORIGINAL")
+    try:
+        os.setxattr(path, "user.olla-review", b"keep")
+    except (AttributeError, OSError) as error:
+        pytest.skip(f"user xattrs unavailable: {error}")
+    snapshot = read_file(str(path))["snapshot"]
+
+    result = write_file(str(path), "MODEL", expected_snapshot=snapshot)
+
+    assert result["status"] == "success"
+    assert path.read_bytes() == b"MODEL"
+    assert os.getxattr(path, "user.olla-review") == b"keep"
+
+
+def test_overwrite_refuses_when_extended_metadata_cannot_be_copied(
+    tmp_path, mocker
+):
+    path = tmp_path / "existing.txt"
+    path.write_bytes(b"ORIGINAL")
+    try:
+        os.setxattr(path, "user.olla-review", b"keep")
+    except (AttributeError, OSError) as error:
+        pytest.skip(f"user xattrs unavailable: {error}")
+    snapshot = read_file(str(path))["snapshot"]
+    mocker.patch(
+        "olla.tools.files.os.setxattr",
+        side_effect=PermissionError("metadata denied"),
+    )
+
+    result = write_file(str(path), "MODEL", expected_snapshot=snapshot)
+
+    assert result["status"] == "error"
+    assert "metadata denied" in result["error"]
+    assert path.read_bytes() == b"ORIGINAL"
+    assert os.getxattr(path, "user.olla-review") == b"keep"
+
+
 def test_overwrite_syncs_directory_after_removing_displaced_original(
     tmp_path, mocker
 ):
