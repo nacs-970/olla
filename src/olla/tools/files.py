@@ -246,11 +246,22 @@ def write_file(
     published = False
     result: ToolResult | None = None
 
-    def stage_payload(mode: int) -> None:
+    def stage_payload(mode: int, *, derive_creation_mode: bool = False) -> None:
         nonlocal staging_fd, temp_name
-        staging_fd, temp_name = _create_temp_file(directory_fd, p.name, mode)
-        os.fchmod(staging_fd, mode)
+        create_mode = 0o666 if derive_creation_mode else 0o600
+        staging_fd, temp_name = _create_temp_file(
+            directory_fd,
+            p.name,
+            create_mode,
+        )
+        publish_mode = (
+            stat.S_IMODE(os.fstat(staging_fd).st_mode)
+            if derive_creation_mode
+            else mode
+        )
+        os.fchmod(staging_fd, 0o600)
         _write_descriptor(staging_fd, encoded)
+        os.fchmod(staging_fd, publish_mode)
         descriptor = staging_fd
         staging_fd = None
         close_error = _close_descriptor(descriptor, "staging file")
@@ -277,7 +288,7 @@ def write_file(
                 return _stale_result(path)
 
         if expected_snapshot is None:
-            stage_payload(0o666)
+            stage_payload(0o600, derive_creation_mode=True)
             assert temp_name is not None
             try:
                 os.link(

@@ -2,6 +2,9 @@
 
 import os
 import stat
+import subprocess
+import sys
+import textwrap
 from types import SimpleNamespace
 
 import pytest
@@ -63,6 +66,42 @@ def test_write_file_success(tmp_path):
     assert result["path"] == str(path)
     assert result["bytes_written"] == 6
     assert "error" not in result
+
+
+def test_new_file_and_staging_respect_restrictive_umask(tmp_path):
+    script = textwrap.dedent(
+        """
+        import os
+        import stat
+        import sys
+
+        import olla.tools.files as file_tools
+
+        directory = sys.argv[1]
+        target = os.path.join(directory, "out.txt")
+        real_unlink = os.unlink
+
+        def preserve_staging(path, *args, **kwargs):
+            if str(path).startswith(".olla."):
+                raise OSError("preserve staging for mode inspection")
+            return real_unlink(path, *args, **kwargs)
+
+        os.umask(0o077)
+        file_tools.os.unlink = preserve_staging
+        result = file_tools.write_file(target, "secret")
+        entries = [os.path.join(directory, name) for name in os.listdir(directory)]
+        modes = [stat.S_IMODE(os.stat(path).st_mode) for path in entries]
+        assert result["bytes_written"] == 6
+        assert len(entries) == 2
+        assert all(mode == 0o600 for mode in modes), modes
+        """
+    )
+
+    subprocess.run(
+        [sys.executable, "-c", script, str(tmp_path)],
+        check=True,
+        env={**os.environ, "PYTHONPATH": "src"},
+    )
 
 
 def test_write_file_accepts_basename_near_filesystem_name_max(tmp_path):
