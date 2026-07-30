@@ -146,7 +146,7 @@ def _stale_result(path: str) -> ToolResult:
 
 
 def _create_temp_file(directory_fd: int, name: str, mode: int) -> tuple[int, str]:
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | _nofollow_flags()
+    flags = os.O_RDWR | os.O_CREAT | os.O_EXCL | _nofollow_flags()
     for _attempt in range(100):
         temp_name = f".olla.{secrets.token_hex(8)}.tmp"
         try:
@@ -307,6 +307,7 @@ def write_file(
     p = Path(path)
     try:
         encoded = content.encode("utf-8")
+        payload_digest = _digest_bytes(encoded)
     except UnicodeEncodeError as error:
         return {"path": path, "error": f"could not write {path}: {error}"}
 
@@ -349,6 +350,13 @@ def write_file(
             return False
         return _snapshot(named_stat) == _snapshot(os.fstat(staging_fd))
 
+    def staging_payload_matches() -> bool:
+        assert staging_fd is not None
+        return (
+            os.fstat(staging_fd).st_size == len(encoded)
+            and _digest_descriptor(staging_fd) == payload_digest
+        )
+
     def perform_write() -> ToolResult:
         nonlocal directory_fd, displaced_protected, published, target_fd, temp_name
         directory_fd = (
@@ -378,7 +386,7 @@ def write_file(
         if expected_snapshot is None:
             stage_payload(0o600, derive_creation_mode=True)
             assert temp_name is not None
-            if not staging_name_matches(temp_name):
+            if not staging_name_matches(temp_name) or not staging_payload_matches():
                 temp_name = None
                 return _stale_result(path)
             try:
@@ -392,7 +400,7 @@ def write_file(
             except FileExistsError:
                 return _stale_result(path)
             published = True
-            if not staging_name_matches(p.name):
+            if not staging_name_matches(p.name) or not staging_payload_matches():
                 temp_name = None
                 try:
                     os.unlink(p.name, dir_fd=directory_fd)
@@ -440,14 +448,17 @@ def write_file(
                 target_fd, expected_snapshot
             ) or not _same_file(path_stat, expected_snapshot):
                 return _stale_result(path)
-            if not staging_name_matches(temp_name):
+            if not staging_name_matches(temp_name) or not staging_payload_matches():
                 temp_name = None
                 return _stale_result(path)
 
             _exchange_files(directory_fd, temp_name, p.name)
             published = True
             displaced_protected = True
-            staging_replaced = not staging_name_matches(p.name)
+            staging_identity_changed = not staging_name_matches(p.name)
+            staging_replaced = (
+                staging_identity_changed or not staging_payload_matches()
+            )
             try:
                 displaced_stat = os.stat(
                     temp_name,
@@ -489,7 +500,7 @@ def write_file(
                     }
                 published = False
                 displaced_protected = False
-                if staging_replaced:
+                if staging_identity_changed:
                     temp_name = None
                 return _stale_result(path)
 

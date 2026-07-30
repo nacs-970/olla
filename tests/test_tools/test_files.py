@@ -493,6 +493,26 @@ def test_create_rejects_substituted_staging_name(tmp_path, mocker):
     assert not path.exists()
 
 
+def test_create_rejects_modified_staging_payload(tmp_path, mocker):
+    path = tmp_path / "new.txt"
+    real_link = os.link
+
+    def modify_then_link(source, destination, **kwargs):
+        source_fd = kwargs["src_dir_fd"]
+        attacker_fd = os.open(source, os.O_WRONLY, dir_fd=source_fd)
+        os.ftruncate(attacker_fd, 0)
+        os.write(attacker_fd, b"ATTACKER")
+        os.close(attacker_fd)
+        return real_link(source, destination, **kwargs)
+
+    mocker.patch("olla.tools.files.os.link", side_effect=modify_then_link)
+
+    result = write_file(str(path), "MODEL")
+
+    assert result["stale"] is True
+    assert not path.exists()
+
+
 def test_overwrite_rolls_back_substituted_staging_name(tmp_path, mocker):
     path = tmp_path / "existing.txt"
     path.write_bytes(b"ORIGINAL")
@@ -525,6 +545,35 @@ def test_overwrite_rolls_back_substituted_staging_name(tmp_path, mocker):
     assert result["stale"] is True
     assert path.read_bytes() == b"ORIGINAL"
     assert not any(entry.read_bytes() == b"MODEL" for entry in tmp_path.iterdir())
+
+
+def test_overwrite_rolls_back_modified_staging_payload(tmp_path, mocker):
+    path = tmp_path / "existing.txt"
+    path.write_bytes(b"ORIGINAL")
+    snapshot = read_file(str(path))["snapshot"]
+    real_exchange = file_tools._exchange_files
+    modified = False
+
+    def modify_then_exchange(directory_fd, source, destination):
+        nonlocal modified
+        if not modified:
+            modified = True
+            attacker_fd = os.open(source, os.O_WRONLY, dir_fd=directory_fd)
+            os.ftruncate(attacker_fd, 0)
+            os.write(attacker_fd, b"ATTACKER")
+            os.close(attacker_fd)
+        return real_exchange(directory_fd, source, destination)
+
+    mocker.patch(
+        "olla.tools.files._exchange_files",
+        side_effect=modify_then_exchange,
+    )
+
+    result = write_file(str(path), "MODEL", expected_snapshot=snapshot)
+
+    assert result["stale"] is True
+    assert path.read_bytes() == b"ORIGINAL"
+    assert list(tmp_path.iterdir()) == [path]
 
 
 def test_create_retries_one_shot_temp_cleanup_failure(tmp_path, mocker):
