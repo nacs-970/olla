@@ -542,13 +542,10 @@ def write_file(
                     temp_name = None
                 return _stale_result(path)
 
+            os.unlink(temp_name, dir_fd=directory_fd)
+            temp_name = None
             displaced_protected = False
             os.fsync(directory_fd)
-            try:
-                os.unlink(temp_name, dir_fd=directory_fd)
-                temp_name = None
-            except OSError:
-                pass
 
         return {"path": path, "bytes_written": len(encoded)}
 

@@ -428,6 +428,39 @@ def test_atomic_overwrite_preserves_existing_mode(tmp_path):
     assert stat.S_IMODE(path.stat().st_mode) == 0o751
 
 
+def test_overwrite_syncs_directory_after_removing_displaced_original(
+    tmp_path, mocker
+):
+    path = tmp_path / "existing.txt"
+    path.write_bytes(b"ORIGINAL")
+    snapshot = read_file(str(path))["snapshot"]
+    real_fsync = os.fsync
+    real_unlink = os.unlink
+    events = []
+
+    def record_fsync(descriptor):
+        events.append(
+            "fsync-directory"
+            if stat.S_ISDIR(os.fstat(descriptor).st_mode)
+            else "fsync-file"
+        )
+        return real_fsync(descriptor)
+
+    def record_unlink(name, *args, **kwargs):
+        if str(name).startswith(".olla."):
+            events.append("unlink-displaced")
+        return real_unlink(name, *args, **kwargs)
+
+    mocker.patch("olla.tools.files.os.fsync", side_effect=record_fsync)
+    mocker.patch("olla.tools.files.os.unlink", side_effect=record_unlink)
+
+    result = write_file(str(path), "MODEL", expected_snapshot=snapshot)
+
+    assert "error" not in result
+    assert path.read_bytes() == b"MODEL"
+    assert events[-2:] == ["unlink-displaced", "fsync-directory"]
+
+
 def test_recreated_identical_file_is_stale(tmp_path):
     path = tmp_path / "existing.txt"
     path.write_bytes(b"same content\n")
