@@ -3,7 +3,7 @@
 from typing import TypedDict
 
 
-class FileSnapshot(TypedDict):
+class _FileMetadata(TypedDict):
     """Identity and version metadata captured from an open file descriptor."""
 
     device: int
@@ -12,6 +12,15 @@ class FileSnapshot(TypedDict):
     ctime_ns: int
     size: int
     mode: int
+    uid: int
+    gid: int
+    nlink: int
+
+
+class FileSnapshot(_FileMetadata, total=False):
+    """File metadata with an optional content digest for regular files."""
+
+    digest: str
 
 
 class ToolResult(TypedDict, total=False):

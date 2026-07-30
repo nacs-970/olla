@@ -2,6 +2,7 @@
 
 import ctypes
 import errno
+import hashlib
 import os
 import secrets
 import stat
@@ -66,19 +67,31 @@ def _validate_backend_support(
 _validate_backend_support()
 
 
-def _snapshot(file_stat: os.stat_result) -> FileSnapshot:
-    return {
+def _snapshot(
+    file_stat: os.stat_result,
+    *,
+    digest: str | None = None,
+) -> FileSnapshot:
+    snapshot: FileSnapshot = {
         "device": file_stat.st_dev,
         "inode": file_stat.st_ino,
         "mtime_ns": file_stat.st_mtime_ns,
         "ctime_ns": file_stat.st_ctime_ns,
         "size": file_stat.st_size,
         "mode": file_stat.st_mode,
+        "uid": file_stat.st_uid,
+        "gid": file_stat.st_gid,
+        "nlink": file_stat.st_nlink,
     }
+    if digest is not None:
+        snapshot["digest"] = digest
+    return snapshot
 
 
 def _same_file(file_stat: os.stat_result, expected: FileSnapshot) -> bool:
-    return _snapshot(file_stat) == expected
+    return _snapshot(file_stat) == {
+        key: value for key, value in expected.items() if key != "digest"
+    }
 
 
 def _nofollow_flags() -> int:
@@ -163,6 +176,26 @@ def _read_descriptor(descriptor: int) -> bytes:
     return b"".join(chunks)
 
 
+def _digest_bytes(data: bytes) -> str:
+    return hashlib.blake2b(data, digest_size=32).hexdigest()
+
+
+def _digest_descriptor(descriptor: int) -> str:
+    return _digest_bytes(_read_descriptor(descriptor))
+
+
+def _descriptor_matches_snapshot(
+    descriptor: int,
+    expected: FileSnapshot,
+) -> bool:
+    expected_digest = expected.get("digest")
+    return (
+        expected_digest is not None
+        and _same_file(os.fstat(descriptor), expected)
+        and _digest_descriptor(descriptor) == expected_digest
+    )
+
+
 def _close_descriptor(descriptor: int, description: str) -> str | None:
     """Close one descriptor once and report, rather than raise, any failure."""
     try:
@@ -235,7 +268,11 @@ def read_file(path: str) -> ToolResult:
             result = {"path": path, "error": f"file changed while reading: {path}"}
         else:
             content = data.decode("utf-8")
-            result = {"path": path, "content": content, "snapshot": _snapshot(after)}
+            result = {
+                "path": path,
+                "content": content,
+                "snapshot": _snapshot(after, digest=_digest_bytes(data)),
+            }
     except FileNotFoundError:
         result = {"path": path, "error": f"file not found: {path}"}
     except IsADirectoryError:
@@ -335,7 +372,7 @@ def write_file(
                 return _stale_result(path)
 
             fcntl.flock(target_fd, fcntl.LOCK_EX)
-            if not _same_file(os.fstat(target_fd), expected_snapshot):
+            if not _descriptor_matches_snapshot(target_fd, expected_snapshot):
                 return _stale_result(path)
 
         if expected_snapshot is None:
@@ -399,9 +436,9 @@ def write_file(
                 )
             except (FileNotFoundError, OSError):
                 return _stale_result(path)
-            if not _same_file(os.fstat(target_fd), expected_snapshot) or not _same_file(
-                path_stat, expected_snapshot
-            ):
+            if not _descriptor_matches_snapshot(
+                target_fd, expected_snapshot
+            ) or not _same_file(path_stat, expected_snapshot):
                 return _stale_result(path)
             if not staging_name_matches(temp_name):
                 temp_name = None
@@ -411,11 +448,6 @@ def write_file(
             published = True
             displaced_protected = True
             staging_replaced = not staging_name_matches(p.name)
-            published_stat = os.stat(
-                p.name,
-                dir_fd=directory_fd,
-                follow_symlinks=False,
-            )
             try:
                 displaced_stat = os.stat(
                     temp_name,
@@ -424,15 +456,21 @@ def write_file(
                 )
             except (FileNotFoundError, OSError):
                 displaced_stat = None
+            displaced_descriptor_stat = os.fstat(target_fd)
             expected_after_exchange = dict(expected_snapshot)
-            # renameat2/renameatx update both exchanged inodes' ctime. Normalize
-            # only that commit-caused field; all data, mode, and identity fields
-            # must still match the complete pre-commit snapshot.
-            expected_after_exchange["ctime_ns"] = published_stat.st_ctime_ns
+            # The exchange itself updates the displaced inode's ctime. Normalize
+            # only that syscall-caused field; retain the read-time content digest
+            # and every other identity/version field.
+            expected_after_exchange["ctime_ns"] = (
+                displaced_descriptor_stat.st_ctime_ns
+            )
             if (
                 staging_replaced
                 or displaced_stat is None
                 or not _same_file(displaced_stat, expected_after_exchange)
+                or not _descriptor_matches_snapshot(
+                    target_fd, expected_after_exchange
+                )
             ):
                 try:
                     _exchange_files(directory_fd, temp_name, p.name)

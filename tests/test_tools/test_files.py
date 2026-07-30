@@ -22,6 +22,9 @@ def test_read_file_success(tmp_path):
 
     assert result["path"] == str(path)
     assert result["content"] == "hello from file\n"
+    assert result["snapshot"]["digest"] == file_tools._digest_bytes(
+        b"hello from file\n"
+    )
     assert "error" not in result
 
 
@@ -332,6 +335,38 @@ def test_in_place_edit_at_exchange_is_restored_as_stale(tmp_path, mocker):
         "MODEL",
         expected_snapshot=snapshot,
     )
+
+    assert result["stale"] is True
+    assert path.read_bytes() == b"EXTERNAL"
+    assert list(tmp_path.iterdir()) == [path]
+
+
+def test_same_size_edit_with_restored_mtime_is_restored_as_stale(
+    tmp_path, mocker
+):
+    path = tmp_path / "existing.txt"
+    path.write_bytes(b"ORIGINAL")
+    snapshot = read_file(str(path))["snapshot"]
+    real_exchange = file_tools._exchange_files
+    mutated = False
+
+    def mutate_then_exchange(directory_fd, source, destination):
+        nonlocal mutated
+        if not mutated:
+            mutated = True
+            path.write_bytes(b"EXTERNAL")
+            os.utime(
+                path,
+                ns=(path.stat().st_atime_ns, snapshot["mtime_ns"]),
+            )
+        return real_exchange(directory_fd, source, destination)
+
+    mocker.patch(
+        "olla.tools.files._exchange_files",
+        side_effect=mutate_then_exchange,
+    )
+
+    result = write_file(str(path), "MODEL", expected_snapshot=snapshot)
 
     assert result["stale"] is True
     assert path.read_bytes() == b"EXTERNAL"
