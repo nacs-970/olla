@@ -3,6 +3,8 @@
 
 `olla` is a lightweight Python CLI for running agentic shell and file tasks with local Ollama models, designed to stay responsive with small models and constrained hardware.
 
+> **Work in progress:** This project is under active development, so features and behavior may change.
+
 ## Requirements
 
 - Python `>=3.10`
