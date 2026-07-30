@@ -712,7 +712,7 @@ def _execute_memory(
     step: int,
     messages: list[dict],
     scratchpad: Scratchpad,
-) -> None:
+) -> bool:
     assert action.memory_request is not None
     preview = _handle_memory(
         action.memory_request,
@@ -722,8 +722,9 @@ def _execute_memory(
     )
     if action.memory_request.tool == "recall":
         _record_memory_observation(messages, preview)
-    else:
-        _record_observation(messages, preview)
+        return True
+    _record_observation(messages, preview)
+    return False
 
 
 def run_loop(
@@ -806,11 +807,14 @@ def run_loop(
                 untrusted_observation_seen=untrusted_observation_seen,
             )
         elif action.kind == "memory":
-            _execute_memory(
-                action,
-                step=step,
-                messages=messages,
-                scratchpad=scratchpad,
+            untrusted_observation_seen = (
+                _execute_memory(
+                    action,
+                    step=step,
+                    messages=messages,
+                    scratchpad=scratchpad,
+                )
+                or untrusted_observation_seen
             )
         elif action.kind == "unknown":
             _record_observation(messages, f"unknown tool '{action.tool}'")

@@ -1599,6 +1599,47 @@ def test_file_instruction_recalled_from_memory_stays_untrusted(tmp_path, mocker)
     )
 
 
+def test_recalled_memory_cannot_use_yes_for_write(tmp_path, mocker):
+    target = tmp_path / "exfiltrated.txt"
+    mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            "<tool>remember</tool><args>note\nuntrusted</args>",
+            "<tool>recall</tool><args>note</args>",
+            f"<tool>write_file</tool><args>{target}\nstolen\n</args>",
+            "<final>done</final>",
+        ],
+    )
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask", return_value=False)
+    mock_write = mocker.patch("olla.loop.write_file")
+
+    run_loop("use the note", "model", 4, "sys", yes=True)
+
+    mock_confirm.assert_called_once()
+    mock_write.assert_not_called()
+    assert not target.exists()
+
+
+def test_recalled_memory_cannot_use_yes_for_confirm_tier_shell(mocker):
+    mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            "<tool>remember</tool><args>note\nuntrusted</args>",
+            "<tool>recall</tool><args>note</args>",
+            "<tool>shell</tool><args>python -c 'print(1)'</args>",
+            "<final>done</final>",
+        ],
+    )
+    mocker.patch("olla.loop.check", return_value={"kind": "CONFIRM"})
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask", return_value=False)
+    mock_shell = mocker.patch("olla.loop.run_shell")
+
+    run_loop("use the note", "model", 4, "sys", yes=True)
+
+    mock_confirm.assert_called_once_with("Proceed?", default=False)
+    mock_shell.assert_not_called()
+
+
 def test_untrusted_shell_output_cannot_use_yes_for_shell_or_write(
     tmp_path, mocker
 ):
