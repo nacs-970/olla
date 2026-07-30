@@ -8,6 +8,7 @@ from pathlib import Path
 
 import ollama
 from rich.prompt import Confirm
+from rich.text import Text
 
 from olla.parser import parse_response
 from olla.safety import check
@@ -122,11 +123,13 @@ def _render_write_preview(
     if current is None:
         body = truncate_output(proposed)
         return (
+            "=== TRUSTED WRITE PREVIEW START ===\n"
             "Create new file\n"
             f"Resolved path: {resolved_label}\n"
             f"Proposed bytes: {proposed_bytes}\n"
             "--- proposed content ---\n"
-            f"{body}"
+            f"{body}\n"
+            "=== TRUSTED WRITE PREVIEW END ==="
         )
 
     diff = "".join(
@@ -140,11 +143,20 @@ def _render_write_preview(
     if not diff:
         diff = "(no content changes)"
     return (
+        "=== TRUSTED WRITE PREVIEW START ===\n"
         "Overwrite existing file\n"
         f"Resolved path: {resolved_label}\n"
         f"Current bytes: {_utf8_size(current)}\n"
         f"Proposed bytes: {proposed_bytes}\n"
-        f"{truncate_output(diff)}"
+        f"{truncate_output(diff)}\n"
+        "=== TRUSTED WRITE PREVIEW END ==="
+    )
+
+
+def _write_confirmation_prompt(resolved: Path, proposed: str) -> Text:
+    """Put authoritative write metadata in the markup-free final prompt."""
+    return Text(
+        f"Write {_utf8_size(proposed)} bytes to {_metadata_safe(resolved)}?"
     )
 
 
@@ -596,7 +608,10 @@ def _execute_write_file(
                     _display(
                         "Confirmation required: this action follows untrusted tool output."
                     )
-                approved = Confirm.ask("Proceed?", default=False)
+                approved = Confirm.ask(
+                    _write_confirmation_prompt(resolved, file_content),
+                    default=False,
+                )
             except EOFError:
                 approved = False
             if not approved:
