@@ -43,6 +43,53 @@ def parse_response(content: str) -> dict:
     if len(outer_finals) > 1:
         return {"type": "none", "raw": content}
 
+    # Identify special tools from the envelope before their payload. Once the
+    # outer <args> opens, file and memory content is opaque and may contain
+    # protocol-looking text without creating additional calls.
+    first_args_open = ARGS_OPEN_RE.search(content)
+    if first_args_open is not None:
+        prefix_end = first_args_open.start()
+        prefix_tool_openings = list(TOOL_OPEN_RE.finditer(content, 0, prefix_end))
+        prefix_tool_closings = list(TOOL_CLOSE_RE.finditer(content, 0, prefix_end))
+        prefix_args_closings = list(ARGS_CLOSE_RE.finditer(content, 0, prefix_end))
+        if (
+            len(prefix_tool_openings) == 1
+            and len(prefix_tool_closings) <= 1
+            and not prefix_args_closings
+        ):
+            tool_open = prefix_tool_openings[0]
+            if prefix_tool_closings:
+                tool_close = prefix_tool_closings[0]
+                valid_tool_close = tool_open.end() <= tool_close.start()
+                tool_end = tool_close.start()
+            else:
+                valid_tool_close = True
+                tool_end = prefix_end
+
+            tool = content[tool_open.end() : tool_end].strip()
+            if valid_tool_close and tool in {"write_file", "remember", "recall"}:
+                args_close = ARGS_CLOSE_RE.search(content, first_args_open.end())
+                if args_close is None:
+                    args_end = len(content)
+                else:
+                    args_end = args_close.start()
+                    suffix = content[args_close.end() :]
+                    if any(
+                        pattern.search(suffix) is not None
+                        for pattern in (
+                            TOOL_OPEN_RE,
+                            TOOL_CLOSE_RE,
+                            ARGS_OPEN_RE,
+                            ARGS_CLOSE_RE,
+                        )
+                    ):
+                        return {"type": "none", "raw": content}
+
+                args_raw = content[first_args_open.end() : args_end]
+                if tool == "recall":
+                    args_raw = args_raw.strip()
+                return {"type": "tool", "tool": tool, "args_raw": args_raw}
+
     tool_openings = list(TOOL_OPEN_RE.finditer(content))
     args_openings = list(ARGS_OPEN_RE.finditer(content))
     tool_closings = list(TOOL_CLOSE_RE.finditer(content))
@@ -79,10 +126,6 @@ def parse_response(content: str) -> dict:
     if not tool:
         return {"type": "none", "raw": content}
     args_raw = content[args_open.end() : args_end]
-    if tool in {"write_file", "remember"}:
-        return {"type": "tool", "tool": tool, "args_raw": args_raw}
-    if tool == "recall":
-        return {"type": "tool", "tool": tool, "args_raw": args_raw.strip()}
     return {
         "type": "tool",
         "tool": tool,

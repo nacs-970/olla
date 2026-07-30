@@ -71,6 +71,38 @@ def test_write_file_args_preserve_trailing_newline():
     assert result["args_raw"].endswith("hello\n")
 
 
+@pytest.mark.parametrize(
+    ("tool", "args_raw", "expected"),
+    [
+        (
+            "write_file",
+            "/tmp/out.txt\nliteral <tool>x</tool> <args> <final>data</final>",
+            "/tmp/out.txt\nliteral <tool>x</tool> <args> <final>data</final>",
+        ),
+        (
+            "remember",
+            "key\nliteral <tool>x</tool> <args> <final>data</final>",
+            "key\nliteral <tool>x</tool> <args> <final>data</final>",
+        ),
+        (
+            "recall",
+            " literal <tool>x</tool> <args> <final>data</final> ",
+            "literal <tool>x</tool> <args> <final>data</final>",
+        ),
+    ],
+)
+def test_special_tool_payload_preserves_protocol_looking_text(
+    tool, args_raw, expected
+):
+    content = f"<tool>{tool}</tool><args>{args_raw}</args>"
+
+    assert parse_response(content) == {
+        "type": "tool",
+        "tool": tool,
+        "args_raw": expected,
+    }
+
+
 def test_write_file_without_args_tag_returns_none():
     content = "<tool>write_file</tool>"
     result = parse_response(content)
