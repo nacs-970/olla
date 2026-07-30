@@ -237,6 +237,7 @@ def write_file(
     staging_fd: int | None = None
     temp_name: str | None = None
     published = False
+    displaced_protected = False
     result: ToolResult | None = None
 
     def stage_payload(mode: int, *, derive_creation_mode: bool = False) -> None:
@@ -262,7 +263,7 @@ def write_file(
             raise OSError(close_error)
 
     def perform_write() -> ToolResult:
-        nonlocal directory_fd, published, target_fd, temp_name
+        nonlocal directory_fd, displaced_protected, published, target_fd, temp_name
         directory_flags = os.O_RDONLY | os.O_DIRECTORY
         directory_fd = os.open(p.parent, directory_flags | _nofollow_flags())
 
@@ -318,6 +319,8 @@ def write_file(
                 return _stale_result(path)
 
             _exchange_files(directory_fd, temp_name, p.name)
+            published = True
+            displaced_protected = True
             try:
                 displaced_stat = os.stat(
                     temp_name,
@@ -333,16 +336,23 @@ def write_file(
                 try:
                     _exchange_files(directory_fd, temp_name, p.name)
                 except (OSError, NotImplementedError) as rollback_error:
+                    recovery_path = str(p.parent / temp_name)
                     return {
                         "path": path,
-                        "error": (
-                            f"could not write {path}: destination changed during "
-                            f"commit and restoration failed: {rollback_error}"
+                        "bytes_written": len(encoded),
+                        "commit_uncertain": True,
+                        "recovery_path": recovery_path,
+                        "warning": (
+                            f"destination changed during commit and restoration "
+                            f"failed: {rollback_error}; replacement remains published "
+                            f"and displaced destination is preserved at {recovery_path}"
                         ),
                     }
+                published = False
+                displaced_protected = False
                 return _stale_result(path)
 
-            published = True
+            displaced_protected = False
             os.fsync(directory_fd)
             try:
                 os.unlink(temp_name, dir_fd=directory_fd)
@@ -376,7 +386,11 @@ def write_file(
             close_error = _close_descriptor(descriptor, "staging file")
             if close_error is not None:
                 cleanup_errors.append(close_error)
-        if temp_name is not None and directory_fd is not None:
+        if (
+            temp_name is not None
+            and directory_fd is not None
+            and not displaced_protected
+        ):
             try:
                 os.unlink(temp_name, dir_fd=directory_fd)
             except (OSError, NotImplementedError) as error:

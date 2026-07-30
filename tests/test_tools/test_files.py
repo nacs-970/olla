@@ -5,6 +5,7 @@ import stat
 import subprocess
 import sys
 import textwrap
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -289,6 +290,44 @@ def test_in_place_edit_at_exchange_is_restored_as_stale(tmp_path, mocker):
     assert result["stale"] is True
     assert path.read_bytes() == b"EXTERNAL"
     assert list(tmp_path.iterdir()) == [path]
+
+
+def test_rollback_failure_preserves_displaced_file_and_reports_publication(
+    tmp_path, mocker
+):
+    path = tmp_path / "existing.txt"
+    path.write_bytes(b"ORIGINAL")
+    snapshot = read_file(str(path))["snapshot"]
+    real_exchange = file_tools._exchange_files
+    exchange_count = 0
+
+    def mutate_then_fail_rollback(directory_fd, source, destination):
+        nonlocal exchange_count
+        exchange_count += 1
+        if exchange_count == 1:
+            path.write_bytes(b"EXTERNAL")
+            return real_exchange(directory_fd, source, destination)
+        raise OSError("forced rollback failure")
+
+    mocker.patch(
+        "olla.tools.files._exchange_files",
+        side_effect=mutate_then_fail_rollback,
+    )
+
+    result = write_file(
+        str(path),
+        "MODEL",
+        expected_snapshot=snapshot,
+    )
+
+    assert result["bytes_written"] == 5
+    assert result["commit_uncertain"] is True
+    assert "replacement remains published" in result["warning"]
+    assert path.read_bytes() == b"MODEL"
+    recovery = result["recovery_path"]
+    assert os.path.dirname(recovery) == str(tmp_path)
+    assert os.path.basename(recovery).startswith(".olla.")
+    assert Path(recovery).read_bytes() == b"EXTERNAL"
 
 
 def test_atomic_overwrite_preserves_existing_mode(tmp_path):
