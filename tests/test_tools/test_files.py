@@ -489,8 +489,8 @@ def test_create_rejects_substituted_staging_name(tmp_path, mocker):
 
     result = write_file(str(path), "MODEL")
 
-    assert result["stale"] is True
-    assert not path.exists()
+    assert result["commit_uncertain"] is True
+    assert path.read_bytes() == b"ATTACKER"
 
 
 def test_create_rejects_modified_staging_payload(tmp_path, mocker):
@@ -511,6 +511,28 @@ def test_create_rejects_modified_staging_payload(tmp_path, mocker):
 
     assert result["stale"] is True
     assert not path.exists()
+
+
+def test_create_does_not_delete_concurrent_destination_replacement(
+    tmp_path, mocker
+):
+    path = tmp_path / "new.txt"
+    real_link = os.link
+
+    def replace_after_link(source, destination, **kwargs):
+        result = real_link(source, destination, **kwargs)
+        external = tmp_path / "external.tmp"
+        external.write_bytes(b"EXTERNAL")
+        os.replace(external, path)
+        return result
+
+    mocker.patch("olla.tools.files.os.link", side_effect=replace_after_link)
+
+    result = write_file(str(path), "MODEL")
+
+    assert result["commit_uncertain"] is True
+    assert path.read_bytes() == b"EXTERNAL"
+    assert Path(result["recovery_path"]).read_bytes() == b"MODEL"
 
 
 def test_overwrite_rolls_back_substituted_staging_name(tmp_path, mocker):
@@ -542,8 +564,9 @@ def test_overwrite_rolls_back_substituted_staging_name(tmp_path, mocker):
 
     result = write_file(str(path), "MODEL", expected_snapshot=snapshot)
 
-    assert result["stale"] is True
-    assert path.read_bytes() == b"ORIGINAL"
+    assert result["commit_uncertain"] is True
+    assert path.read_bytes() == b"ATTACKER"
+    assert Path(result["recovery_path"]).read_bytes() == b"ORIGINAL"
     assert not any(entry.read_bytes() == b"MODEL" for entry in tmp_path.iterdir())
 
 
@@ -574,6 +597,33 @@ def test_overwrite_rolls_back_modified_staging_payload(tmp_path, mocker):
     assert result["stale"] is True
     assert path.read_bytes() == b"ORIGINAL"
     assert list(tmp_path.iterdir()) == [path]
+
+
+def test_overwrite_does_not_replace_concurrent_destination_replacement(
+    tmp_path, mocker
+):
+    path = tmp_path / "existing.txt"
+    path.write_bytes(b"ORIGINAL")
+    snapshot = read_file(str(path))["snapshot"]
+    real_exchange = file_tools._exchange_files
+
+    def replace_after_exchange(directory_fd, source, destination):
+        result = real_exchange(directory_fd, source, destination)
+        external = tmp_path / "external.tmp"
+        external.write_bytes(b"EXTERNAL")
+        os.replace(external, path)
+        return result
+
+    mocker.patch(
+        "olla.tools.files._exchange_files",
+        side_effect=replace_after_exchange,
+    )
+
+    result = write_file(str(path), "MODEL", expected_snapshot=snapshot)
+
+    assert result["commit_uncertain"] is True
+    assert path.read_bytes() == b"EXTERNAL"
+    assert Path(result["recovery_path"]).read_bytes() == b"ORIGINAL"
 
 
 def test_create_retries_one_shot_temp_cleanup_failure(tmp_path, mocker):

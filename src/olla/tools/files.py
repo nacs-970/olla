@@ -400,7 +400,30 @@ def write_file(
             except FileExistsError:
                 return _stale_result(path)
             published = True
-            if not staging_name_matches(p.name) or not staging_payload_matches():
+            destination_matches_staging = staging_name_matches(p.name)
+            if not destination_matches_staging:
+                recovery_path = (
+                    str(p.parent / temp_name)
+                    if staging_name_matches(temp_name)
+                    else None
+                )
+                temp_name = None
+                published = False
+                uncertain: ToolResult = {
+                    "path": path,
+                    "commit_uncertain": True,
+                    "warning": (
+                        "destination changed during commit; the externally owned "
+                        "destination was left intact"
+                    ),
+                }
+                if recovery_path is not None:
+                    uncertain["recovery_path"] = recovery_path
+                    uncertain["warning"] += (
+                        f" and the staged payload is preserved at {recovery_path}"
+                    )
+                return uncertain
+            if not staging_payload_matches():
                 temp_name = None
                 try:
                     os.unlink(p.name, dir_fd=directory_fd)
@@ -456,9 +479,7 @@ def write_file(
             published = True
             displaced_protected = True
             staging_identity_changed = not staging_name_matches(p.name)
-            staging_replaced = (
-                staging_identity_changed or not staging_payload_matches()
-            )
+            staging_payload_changed = not staging_payload_matches()
             try:
                 displaced_stat = os.stat(
                     temp_name,
@@ -475,10 +496,27 @@ def write_file(
             expected_after_exchange["ctime_ns"] = (
                 displaced_descriptor_stat.st_ctime_ns
             )
+            displaced_name_matches = (
+                displaced_stat is not None
+                and _snapshot(displaced_stat)
+                == _snapshot(displaced_descriptor_stat)
+            )
+            if staging_identity_changed or not displaced_name_matches:
+                recovery_path = str(p.parent / temp_name)
+                uncertain = {
+                    "path": path,
+                    "commit_uncertain": True,
+                    "recovery_path": recovery_path,
+                    "warning": (
+                        "a commit pathname changed ownership; ambiguous names were "
+                        "left intact and the recovery object is preserved at "
+                        f"{recovery_path}"
+                    ),
+                }
+                temp_name = None
+                return uncertain
             if (
-                staging_replaced
-                or displaced_stat is None
-                or not _same_file(displaced_stat, expected_after_exchange)
+                staging_payload_changed
                 or not _descriptor_matches_snapshot(
                     target_fd, expected_after_exchange
                 )
