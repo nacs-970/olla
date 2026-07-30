@@ -352,6 +352,21 @@ def _record_file_observation(messages: list[dict], preview: str) -> None:
     )
 
 
+def _record_memory_observation(messages: list[dict], preview: str) -> None:
+    """Record recalled notes as explicitly untrusted scratchpad data."""
+    _display(preview)
+    messages.append(
+        {
+            "role": "tool",
+            "content": (
+                "Observation: <untrusted_memory_content>\n"
+                f"{preview}\n"
+                "</untrusted_memory_content>"
+            ),
+        }
+    )
+
+
 def _record_shell_observation(messages: list[dict], preview: str) -> None:
     """Record command output as explicitly untrusted tool data."""
     _display(preview)
@@ -693,7 +708,10 @@ def _execute_memory(
         scratchpad=scratchpad,
         execute=True,
     )
-    _record_observation(messages, preview)
+    if action.memory_request.tool == "recall":
+        _record_memory_observation(messages, preview)
+    else:
+        _record_observation(messages, preview)
 
 
 def run_loop(
