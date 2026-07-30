@@ -185,6 +185,25 @@ def test_outer_final_wins_after_unclosed_literal_final_in_write_payload():
     assert parse_response(content) == {"type": "final", "text": "done"}
 
 
+def test_final_inside_additional_args_block_is_not_an_outer_answer():
+    content = (
+        "<tool>remember</tool><args>key\nvalue</args>"
+        "<args><final>NOT_OUTER</final></args>"
+    )
+
+    assert parse_response(content) == {"type": "none", "raw": content}
+
+
+def test_multiple_outer_finals_after_unclosed_payload_final_are_rejected():
+    content = (
+        "<tool>remember</tool><args>key\n"
+        "literal <final>payload</args>"
+        "<final>first</final><final>second</final>"
+    )
+
+    assert parse_response(content) == {"type": "none", "raw": content}
+
+
 @pytest.mark.parametrize(
     "content",
     [

@@ -2,7 +2,8 @@
 
 import re
 
-FINAL_RE = re.compile(r"<final>(.*?)(?:</final>|$)", re.DOTALL | re.IGNORECASE)
+FINAL_OPEN_RE = re.compile(r"<final>", re.IGNORECASE)
+FINAL_CLOSE_RE = re.compile(r"</final>", re.IGNORECASE)
 TOOL_OPEN_RE = re.compile(r"<tool>", re.IGNORECASE)
 TOOL_CLOSE_RE = re.compile(r"</tool>", re.IGNORECASE)
 ARGS_OPEN_RE = re.compile(r"<args>", re.IGNORECASE)
@@ -33,14 +34,24 @@ def parse_response(content: str) -> dict:
     can contain protocol-looking text and must not be fence-stripped.
     """
     args_spans = _args_payload_spans(content)
-    outer_finals = [
-        match
-        for match in FINAL_RE.finditer(content)
-        if _outside_spans(match.start(), args_spans)
+    outer_final_openings = [
+        opening
+        for opening in FINAL_OPEN_RE.finditer(content)
+        if _outside_spans(opening.start(), args_spans)
     ]
-    if len(outer_finals) == 1:
-        return {"type": "final", "text": outer_finals[0].group(1).strip()}
-    if len(outer_finals) > 1:
+    if len(outer_final_openings) == 1:
+        opening = outer_final_openings[0]
+        closing = next(
+            (
+                candidate
+                for candidate in FINAL_CLOSE_RE.finditer(content, opening.end())
+                if _outside_spans(candidate.start(), args_spans)
+            ),
+            None,
+        )
+        end = closing.start() if closing is not None else len(content)
+        return {"type": "final", "text": content[opening.end() : end].strip()}
+    if len(outer_final_openings) > 1:
         return {"type": "none", "raw": content}
 
     # Identify special tools from the envelope before their payload. Once the
@@ -74,14 +85,6 @@ def parse_response(content: str) -> dict:
                 else:
                     args_end = args_close.start()
                     suffix = content[args_close.end() :]
-                    suffix_finals = list(FINAL_RE.finditer(suffix))
-                    if len(suffix_finals) == 1:
-                        return {
-                            "type": "final",
-                            "text": suffix_finals[0].group(1).strip(),
-                        }
-                    if len(suffix_finals) > 1:
-                        return {"type": "none", "raw": content}
                     if any(
                         pattern.search(suffix) is not None
                         for pattern in (
