@@ -81,13 +81,6 @@ def _same_file(file_stat: os.stat_result, expected: FileSnapshot) -> bool:
     return _snapshot(file_stat) == expected
 
 
-def _same_object(file_stat: os.stat_result, expected: FileSnapshot) -> bool:
-    return (
-        file_stat.st_dev == expected["device"]
-        and file_stat.st_ino == expected["inode"]
-    )
-
-
 def _nofollow_flags() -> int:
     return os.O_NOFOLLOW | os.O_CLOEXEC
 
@@ -333,7 +326,7 @@ def write_file(
                 )
             except (FileNotFoundError, OSError):
                 displaced_stat = None
-            if displaced_stat is None or not _same_object(
+            if displaced_stat is None or not _same_file(
                 displaced_stat,
                 expected_snapshot,
             ):

@@ -261,6 +261,36 @@ def test_stale_exchange_preserves_target_and_displaced_original(
     ]
 
 
+def test_in_place_edit_at_exchange_is_restored_as_stale(tmp_path, mocker):
+    path = tmp_path / "existing.txt"
+    path.write_bytes(b"ORIGINAL")
+    snapshot = read_file(str(path))["snapshot"]
+    real_exchange = file_tools._exchange_files
+    mutated = False
+
+    def mutate_then_exchange(directory_fd, source, destination):
+        nonlocal mutated
+        if not mutated:
+            mutated = True
+            path.write_bytes(b"EXTERNAL")
+        return real_exchange(directory_fd, source, destination)
+
+    mocker.patch(
+        "olla.tools.files._exchange_files",
+        side_effect=mutate_then_exchange,
+    )
+
+    result = write_file(
+        str(path),
+        "MODEL",
+        expected_snapshot=snapshot,
+    )
+
+    assert result["stale"] is True
+    assert path.read_bytes() == b"EXTERNAL"
+    assert list(tmp_path.iterdir()) == [path]
+
+
 def test_atomic_overwrite_preserves_existing_mode(tmp_path):
     path = tmp_path / "executable.sh"
     path.write_text("old\n", encoding="utf-8")
