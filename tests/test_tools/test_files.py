@@ -31,6 +31,20 @@ def test_read_file_not_found(tmp_path):
     assert "content" not in result
 
 
+def test_read_file_close_failure_returns_error(tmp_path, mocker):
+    path = tmp_path / "hello.txt"
+    path.write_text("hello", encoding="utf-8")
+    mocker.patch(
+        "olla.tools.files.os.close",
+        side_effect=OSError("close failed"),
+    )
+
+    result = read_file(str(path))
+
+    assert "close failed" in result["error"]
+    assert "content" not in result
+
+
 def test_backend_validation_rejects_non_posix_with_actionable_error():
     unsupported_os = SimpleNamespace(name="nt")
 
@@ -303,3 +317,37 @@ def test_create_reports_persistent_temp_cleanup_failure_as_warning(
     assert path.read_bytes() == b"MODEL"
     leftovers = [entry for entry in tmp_path.iterdir() if entry != path]
     assert len(leftovers) == 1
+
+
+def test_create_close_failure_before_publication_returns_error(tmp_path, mocker):
+    path = tmp_path / "new.txt"
+    mocker.patch(
+        "olla.tools.files.os.close",
+        side_effect=OSError("close failed"),
+    )
+
+    result = write_file(str(path), "MODEL")
+
+    assert "close failed" in result["error"]
+    assert not path.exists()
+
+
+def test_create_close_failure_after_publication_returns_warning(tmp_path, mocker):
+    path = tmp_path / "new.txt"
+    real_close = os.close
+    close_count = 0
+
+    def fail_directory_close(descriptor):
+        nonlocal close_count
+        close_count += 1
+        if close_count == 2:
+            raise OSError("close failed")
+        return real_close(descriptor)
+
+    mocker.patch("olla.tools.files.os.close", side_effect=fail_directory_close)
+
+    result = write_file(str(path), "MODEL")
+
+    assert "error" not in result
+    assert "close failed" in result["warning"]
+    assert path.read_bytes() == b"MODEL"

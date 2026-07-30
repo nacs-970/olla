@@ -123,6 +123,23 @@ def _write_descriptor(descriptor: int, data: bytes) -> None:
     os.fsync(descriptor)
 
 
+def _read_descriptor(descriptor: int) -> bytes:
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    chunks = []
+    while chunk := os.read(descriptor, 1024 * 1024):
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _close_descriptor(descriptor: int, description: str) -> str | None:
+    """Close one descriptor once and report, rather than raise, any failure."""
+    try:
+        os.close(descriptor)
+    except (OSError, ValueError) as error:
+        return f"could not close {description}: {error}"
+    return None
+
+
 def _exchange_files(directory_fd: int, source: str, destination: str) -> None:
     """Atomically exchange two names without an overwrite race."""
     libc = ctypes.CDLL(None, use_errno=True)
@@ -170,6 +187,7 @@ def read_file(path: str) -> ToolResult:
     an `error` message. Never raises.
     """
     descriptor: int | None = None
+    result: ToolResult
     try:
         descriptor = os.open(path, os.O_RDONLY | _nofollow_flags())
         before = os.fstat(descriptor)
@@ -178,24 +196,26 @@ def read_file(path: str) -> ToolResult:
         if not stat.S_ISREG(before.st_mode):
             raise OSError(f"not a regular file: {path}")
 
-        with os.fdopen(descriptor, "rb") as stream:
-            descriptor = None
-            data = stream.read()
-            after = os.fstat(stream.fileno())
+        data = _read_descriptor(descriptor)
+        after = os.fstat(descriptor)
 
         if _snapshot(before) != _snapshot(after):
-            return {"path": path, "error": f"file changed while reading: {path}"}
-        content = data.decode("utf-8")
-        return {"path": path, "content": content, "snapshot": _snapshot(after)}
+            result = {"path": path, "error": f"file changed while reading: {path}"}
+        else:
+            content = data.decode("utf-8")
+            result = {"path": path, "content": content, "snapshot": _snapshot(after)}
     except FileNotFoundError:
-        return {"path": path, "error": f"file not found: {path}"}
+        result = {"path": path, "error": f"file not found: {path}"}
     except IsADirectoryError:
-        return {"path": path, "error": f"is a directory: {path}"}
+        result = {"path": path, "error": f"is a directory: {path}"}
     except (UnicodeDecodeError, OSError, ValueError, NotImplementedError) as e:
-        return {"path": path, "error": f"could not read {path}: {e}"}
+        result = {"path": path, "error": f"could not read {path}: {e}"}
     finally:
         if descriptor is not None:
-            os.close(descriptor)
+            close_error = _close_descriptor(descriptor, f"read file {path}")
+            if close_error is not None:
+                result = {"path": path, "error": f"could not read {path}: {close_error}"}
+    return result
 
 
 def write_file(
@@ -221,10 +241,24 @@ def write_file(
 
     directory_fd: int | None = None
     target_fd: int | None = None
+    staging_fd: int | None = None
     temp_name: str | None = None
     published = False
-    cleanup_warning: str | None = None
-    try:
+    result: ToolResult | None = None
+
+    def stage_payload(mode: int) -> None:
+        nonlocal staging_fd, temp_name
+        staging_fd, temp_name = _create_temp_file(directory_fd, p.name, mode)
+        os.fchmod(staging_fd, mode)
+        _write_descriptor(staging_fd, encoded)
+        descriptor = staging_fd
+        staging_fd = None
+        close_error = _close_descriptor(descriptor, "staging file")
+        if close_error is not None:
+            raise OSError(close_error)
+
+    def perform_write() -> ToolResult:
+        nonlocal directory_fd, published, target_fd, temp_name
         directory_flags = os.O_RDONLY | os.O_DIRECTORY
         directory_fd = os.open(p.parent, directory_flags | _nofollow_flags())
 
@@ -243,11 +277,8 @@ def write_file(
                 return _stale_result(path)
 
         if expected_snapshot is None:
-            temp_fd, temp_name = _create_temp_file(directory_fd, p.name, 0o666)
-            try:
-                _write_descriptor(temp_fd, encoded)
-            finally:
-                os.close(temp_fd)
+            stage_payload(0o666)
+            assert temp_name is not None
             try:
                 os.link(
                     temp_name,
@@ -262,27 +293,12 @@ def write_file(
             try:
                 os.unlink(temp_name, dir_fd=directory_fd)
                 temp_name = None
-            except OSError as cleanup_error:
-                try:
-                    os.unlink(temp_name, dir_fd=directory_fd)
-                    temp_name = None
-                except OSError:
-                    cleanup_warning = (
-                        f"write succeeded, but could not clean up temporary file "
-                        f"{temp_name}: {cleanup_error}"
-                    )
+            except OSError:
+                pass
         else:
             assert target_fd is not None
-            temp_fd, temp_name = _create_temp_file(
-                directory_fd,
-                p.name,
-                stat.S_IMODE(expected_snapshot["mode"]),
-            )
-            os.fchmod(temp_fd, stat.S_IMODE(expected_snapshot["mode"]))
-            try:
-                _write_descriptor(temp_fd, encoded)
-            finally:
-                os.close(temp_fd)
+            stage_payload(stat.S_IMODE(expected_snapshot["mode"]))
+            assert temp_name is not None
 
             try:
                 path_stat = os.stat(
@@ -327,36 +343,76 @@ def write_file(
             try:
                 os.unlink(temp_name, dir_fd=directory_fd)
                 temp_name = None
-            except OSError as cleanup_error:
-                cleanup_warning = (
-                    f"write succeeded, but could not clean up replaced file "
-                    f"{temp_name}: {cleanup_error}"
-                )
+            except OSError:
+                pass
 
-        result: ToolResult = {"path": path, "bytes_written": len(encoded)}
-        if cleanup_warning is not None:
-            result["warning"] = cleanup_warning
-        return result
+        return {"path": path, "bytes_written": len(encoded)}
+
+    try:
+        result = perform_write()
     except FileNotFoundError:
-        return {
+        result = {
             "path": path,
             "error": f"parent directory does not exist: {p.parent}",
         }
     except (OSError, ValueError, NotImplementedError) as error:
         if published:
-            return {
+            result = {
                 "path": path,
                 "bytes_written": len(encoded),
                 "warning": f"write succeeded, but cleanup failed: {error}",
             }
-        return {"path": path, "error": f"could not write {path}: {error}"}
+        else:
+            result = {"path": path, "error": f"could not write {path}: {error}"}
     finally:
+        cleanup_errors = []
+        if staging_fd is not None:
+            descriptor = staging_fd
+            staging_fd = None
+            close_error = _close_descriptor(descriptor, "staging file")
+            if close_error is not None:
+                cleanup_errors.append(close_error)
         if temp_name is not None and directory_fd is not None:
             try:
                 os.unlink(temp_name, dir_fd=directory_fd)
-            except (OSError, NotImplementedError):
-                pass
+            except (OSError, NotImplementedError) as error:
+                cleanup_errors.append(
+                    f"could not remove temporary file {temp_name}: {error}"
+                )
         if target_fd is not None:
-            os.close(target_fd)
+            descriptor = target_fd
+            target_fd = None
+            close_error = _close_descriptor(descriptor, "target file")
+            if close_error is not None:
+                cleanup_errors.append(close_error)
         if directory_fd is not None:
-            os.close(directory_fd)
+            descriptor = directory_fd
+            directory_fd = None
+            close_error = _close_descriptor(descriptor, "parent directory")
+            if close_error is not None:
+                cleanup_errors.append(close_error)
+
+        if cleanup_errors:
+            cleanup_message = "; ".join(cleanup_errors)
+            if published:
+                if result is None or "error" in result:
+                    result = {"path": path, "bytes_written": len(encoded)}
+                previous_warning = result.get("warning")
+                result["warning"] = (
+                    f"{previous_warning}; {cleanup_message}"
+                    if previous_warning
+                    else f"write succeeded, but cleanup failed: {cleanup_message}"
+                )
+            else:
+                previous_error = result.get("error") if result is not None else None
+                result = {
+                    "path": path,
+                    "error": (
+                        f"{previous_error}; cleanup failed: {cleanup_message}"
+                        if previous_error
+                        else f"could not write {path}: cleanup failed: {cleanup_message}"
+                    ),
+                }
+
+    assert result is not None
+    return result
