@@ -57,6 +57,9 @@ class Scratchpad:
 
     def remember(self, call: RememberCall) -> ToolResult:
         """Store or replace one value and return a non-disclosing acknowledgment."""
+        key = call.key.strip()
+        if not key:
+            return {"error": "invalid remember: key must not be empty"}
         if len(call.value) > MAX_VALUE_CHARS:
             return {
                 "error": (
@@ -65,8 +68,8 @@ class Scratchpad:
                 )
             }
 
-        is_new = call.key not in self._values
-        old_length = 0 if is_new else len(self._values[call.key])
+        is_new = key not in self._values
+        old_length = 0 if is_new else len(self._values[key])
         current_total = sum(len(value) for value in self._values.values())
         projected_total = current_total - old_length + len(call.value)
 
@@ -80,16 +83,19 @@ class Scratchpad:
                 )
             }
 
-        self._values[call.key] = call.value
+        self._values[key] = call.value
         if call.value == "":
-            return {"content": f"remembered empty: {call.key}"}
-        return {"content": f"remembered: {call.key}"}
+            return {"content": f"remembered empty: {key}"}
+        return {"content": f"remembered: {key}"}
 
     def recall(self, key: str) -> ToolResult:
         """Return one explicitly requested note or a recoverable missing-key error."""
-        if key not in self._values:
-            return {"error": f"memory not found: {key}"}
-        value = self._values[key]
+        normalized_key = key.strip()
+        if not normalized_key:
+            return {"error": "invalid recall: key must not be empty"}
+        if normalized_key not in self._values:
+            return {"error": f"memory not found: {normalized_key}"}
+        value = self._values[normalized_key]
         if value == "":
-            return {"content": f"memory is empty: {key}"}
+            return {"content": f"memory is empty: {normalized_key}"}
         return {"content": value}

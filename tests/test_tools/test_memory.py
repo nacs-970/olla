@@ -68,6 +68,33 @@ def test_scratchpad_remember_recall_and_replace_contract():
     assert scratchpad.recall("Key") == {"error": "memory not found: Key"}
 
 
+def test_scratchpad_rejects_empty_keys_at_public_boundary():
+    scratchpad = Scratchpad()
+
+    assert scratchpad.remember(RememberCall("", "secret")) == {
+        "error": "invalid remember: key must not be empty"
+    }
+    assert scratchpad.remember(RememberCall("   ", "secret")) == {
+        "error": "invalid remember: key must not be empty"
+    }
+    assert scratchpad.recall("") == {
+        "error": "invalid recall: key must not be empty"
+    }
+    assert scratchpad.recall(" \t ") == {
+        "error": "invalid recall: key must not be empty"
+    }
+
+
+def test_scratchpad_normalizes_keys_at_public_boundary():
+    scratchpad = Scratchpad()
+
+    assert scratchpad.remember(RememberCall("  MixedCase  ", "value")) == {
+        "content": "remembered: MixedCase"
+    }
+    assert scratchpad.recall("MixedCase") == {"content": "value"}
+    assert scratchpad.recall("  MixedCase  ") == {"content": "value"}
+
+
 def test_scratchpad_empty_and_whitespace_values():
     scratchpad = Scratchpad()
 
