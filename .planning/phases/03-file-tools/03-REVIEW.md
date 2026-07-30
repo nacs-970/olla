@@ -1,6 +1,6 @@
 ---
 phase: 03-file-tools
-reviewed: 2026-07-30T12:35:25Z
+reviewed: 2026-07-30T15:17:40Z
 depth: standard
 files_reviewed: 9
 files_reviewed_list:
@@ -14,8 +14,8 @@ files_reviewed_list:
   - tests/test_prompts.py
   - tests/test_tools/test_files.py
 findings:
-  critical: 4
-  warning: 4
+  critical: 6
+  warning: 2
   info: 0
   total: 8
 status: issues_found
@@ -23,108 +23,114 @@ status: issues_found
 
 # Phase 03: Code Review Report
 
-**Reviewed:** 2026-07-30T12:35:25Z
+**Reviewed:** 2026-07-30T15:17:40Z
 **Depth:** standard
 **Files Reviewed:** 9
 **Status:** issues_found
 
 ## Summary
 
-Phase 03 is not safe to ship. The scoped and full test suites pass, but deterministic probes reproduced three write-boundary defects: an external replacement can be clobbered after the final identity check, a previously read file that disappears is silently recreated, and a post-publication cleanup error can report failure or raise after the target has already been created. The confirmation renderer also leaves Unicode bidi controls active, allowing a path or proposed payload to visually spoof the approval context. Four additional correctness and portability defects affect protocol-looking file content, non-POSIX imports, repetition detection, and valid long filenames.
+The nine scoped files were read in full and reviewed for correctness, security, and maintainability. The scoped suite passes (187 tests), and Ruff reports no violations, but deterministic race probes reproduced four failures outside the current tests: a same-size concurrent target edit can be discarded, both create and overwrite can publish modified staging bytes while reporting the model payload's length, and a concurrent replacement of a newly created target is deleted. The existing overwrite path also syncs the directory before removing the displaced original, so successful cleanup is not durable, while the loop reports `commit_uncertain` results as successful writes. Finally, atomic replacement silently loses extended metadata.
 
 ## Narrative Findings (AI reviewer)
 
+The findings below come from direct adversarial review and local deterministic probes. No structural/fallow findings were supplied.
+
 ## Critical Issues
 
-### CR-01: Existing-file replacement has a final check-to-replace clobber window
+### CR-01: Restoring mtime lets a concurrent edit bypass stale detection and be deleted
 
-**Classification:** BLOCKER
-**File:** `/home/nacs/Documents/git/olla/src/olla/tools/files.py:157-173`
-**Issue:** `write_file()` validates the locked descriptor and current directory entry at lines 157-167, then performs a separate unconditional `os.replace()` at lines 168-173. `flock()` is advisory and protects the opened inode, not the pathname. Another process can replace the pathname after the validation; `os.replace()` then destroys that unapproved replacement. A deterministic probe swapped in `EXTERNAL` from inside the `os.replace` call; `write_file()` returned success and the target contained `MODEL`.
-**Fix:** Use a commit primitive whose mutation is conditional on the destination still being the authorized object, or fail closed on platforms without one. If portable conditional replacement is unavailable, write through the already-open verified descriptor with explicit rollback/error handling rather than unconditionally replacing a pathname. Add a regression that swaps the directory entry immediately after the last validation and asserts the external object is never overwritten.
-
-### CR-02: A previously observed file can disappear and be silently recreated
-
-**Classification:** BLOCKER
-**File:** `/home/nacs/Documents/git/olla/src/olla/loop.py:487-512`
-**Issue:** `_execute_write_file()` derives overwrite intent only from `resolved.exists()`. If a file was successfully read and is then deleted before line 487, `target_existed` becomes false, the retained `_FileReadSnapshot` is ignored, and the write is sent as an unrestricted creation with `expected_snapshot=None`. The probe read `ORIGINAL`, deleted the target, and the loop recreated it as `MODEL` while reporting success. A disappeared observed target is stale and must require another read.
-**Fix:** Derive the policy from whether a snapshot exists, not only from current existence. When `read_snapshots` contains the path, always validate and pass its identity so a missing target produces a stale refusal. Reserve `expected_snapshot=None` for paths that had no successful same-run read.
+**Classification:** BLOCKER (Critical)
+**File:** `/home/nacs/Documents/git/olla/src/olla/tools/files.py:427-464`
+**Issue:** After `RENAME_EXCHANGE`, the code overwrites the expected target `ctime_ns` with the newly published staging inode's ctime and then compares the displaced target against that normalized snapshot. There is no content digest. A concurrent writer can replace bytes with a same-size payload and restore the original mtime before the exchange; the exchange then supplies a fresh ctime that the code explicitly accepts. A deterministic probe changed `ORIGINAL` to same-length `EXTERNAL`, restored `mtime_ns`, and invoked the real exchange. `write_file()` returned `bytes_written: 5`, published `MODEL`, and unlinked the displaced external edit. This violates the race-aware stale-write contract and loses data.
+**Fix:** Include an immutable content digest (and omitted identity fields such as uid/gid/link count) in the snapshot returned by `read_file`. Verify the target descriptor against that expected digest immediately before exchange and verify the still-open displaced target descriptor again after exchange, before unlinking it. Any mismatch must roll back or preserve the displaced object at a reported recovery path.
 
 ```python
-snapshot = read_snapshots.get(resolved)
-if snapshot is not None:
-    if not snapshot.fully_observed or snapshot.identity is None:
-        refuse_write()
-    expected_snapshot = snapshot.identity
-else:
-    expected_snapshot = None  # genuine create-only request
+expected_digest = expected_snapshot["digest"]
+if _digest_descriptor(target_fd) != expected_digest:
+    return _stale_result(path)
+
+_exchange_files(directory_fd, temp_name, p.name)
+if _digest_descriptor(target_fd) != expected_digest:
+    return rollback_or_preserve_recovery_file()
 ```
 
-### CR-03: Cleanup failure can occur after publication but be reported as failure or escape
+### CR-02: Staging validation accepts attacker-modified bytes as the model payload
 
-**Classification:** BLOCKER
-**File:** `/home/nacs/Documents/git/olla/src/olla/tools/files.py:141-189`
-**Issue:** The create branch publishes the target with `os.link()` and then unlinks the temporary name. If that unlink fails, the outer `except` returns an error even though the target already contains the payload. If cleanup fails again in `finally`, only `FileNotFoundError` is caught, so the function raises `OSError` and leaves both names despite its “Never raises” contract. The deterministic persistent-failure probe produced exactly that state: the target existed, a temp file remained, and `write_file()` raised.
-**Fix:** Track publication as the commit point and keep cleanup failures separate from write success. Prefer a no-replace publish primitive that does not require post-publication unlinking. If hard-link publication remains, never convert an already committed write into a failure result, catch cleanup errors in `finally`, and return/report a cleanup warning consistent with the target's actual state. Add one-shot and persistent-unlink-failure tests.
-
-### CR-04: Unicode bidi controls can spoof the write confirmation display
-
-**Classification:** BLOCKER
-**File:** `/home/nacs/Documents/git/olla/src/olla/loop.py:26-39`
-**Issue:** `_terminal_safe()` escapes C0/C1 bytes and surrogates but passes Unicode formatting controls such as U+202E RIGHT-TO-LEFT OVERRIDE through unchanged. These characters can reorder the displayed resolved path or proposed content immediately before the fixed `Proceed?` prompt, undermining the user's ability to identify what they are approving. A direct probe showed `_terminal_safe("safe\u202egnp.exe")` still contained the live U+202E character.
-**Fix:** Preserve newline deliberately, but visibly escape all other non-printable/format characters before display, including bidi embeddings, overrides, isolates, and line/paragraph separators.
+**Classification:** BLOCKER (Critical)
+**File:** `/home/nacs/Documents/git/olla/src/olla/tools/files.py:284-313`
+**Issue:** `staging_name_matches()` compares the staging pathname's current stat to the staging descriptor's current stat. It never compares either object to the payload that was written and fsynced. If the staging inode is modified in place before `os.link()` or `_exchange_files()`, both current snapshots still agree. Deterministic create and overwrite probes truncated the staging inode to `ATTACKER` inside the publication hook; both calls returned `bytes_written: 5` for `MODEL`, while the destination contained `ATTACKER`. This allows a writable staging file to substitute bytes without detection.
+**Fix:** Keep staging files mode `0600` until publication, capture a digest of `encoded`, and re-read/hash the retained staging descriptor immediately before and after publication. Compare the digest and byte count to the intended payload rather than comparing two mutable metadata snapshots. Prefer an anonymous `O_TMPFILE` or a private mode-0700 staging directory where supported so other directory writers cannot open or replace the staging object.
 
 ```python
-if character == "\n":
-    rendered.append(character)
-elif not character.isprintable():
-    width = 4 if codepoint <= 0xFFFF else 8
-    rendered.append(f"\\u{codepoint:0{width}x}")
-else:
-    rendered.append(character)
+payload_digest = hashlib.blake2b(encoded).digest()
+if _digest_descriptor(staging_fd) != payload_digest:
+    return _stale_result(path)
+# Publish, then verify the retained descriptor again before reporting success.
 ```
+
+### CR-03: Mismatch cleanup deletes a concurrent writer's replacement
+
+**Classification:** BLOCKER (Critical)
+**File:** `/home/nacs/Documents/git/olla/src/olla/tools/files.py:358-370`
+**Issue:** When the newly linked destination no longer matches the staging descriptor, the code assumes it owns the current destination name and unconditionally calls `os.unlink(p.name)`. A deterministic hook successfully linked the model staging file, atomically replaced the destination with `EXTERNAL`, and returned. `write_file()` detected the mismatch, deleted the external file, returned a stale error, and left only an `.olla.*.tmp` file. The same cleanup pattern also unlinks temporary names by pathname at lines 460-499 after earlier identity checks, leaving additional check-to-unlink races.
+**Fix:** Never unlink a pathname after observing that it no longer identifies the object owned by this operation. Treat the destination as externally owned, leave it intact, and return a stale/uncertain result. Put exchange temporaries in a private directory (using separate source/destination dirfds with `renameat2`) so cleanup names cannot be replaced by another directory writer; otherwise preserve ambiguous objects and report recovery paths instead of deleting by name.
+
+### CR-04: Existing-file cleanup is acknowledged before its directory entry is durable
+
+**Classification:** BLOCKER (Critical)
+**File:** `/home/nacs/Documents/git/olla/src/olla/tools/files.py:458-464`
+**Issue:** The overwrite path calls `fsync(directory_fd)` while the displaced original still exists at `.olla.*.tmp`, then unlinks that name and returns success without syncing the directory again. The observed order is `fsync-file`, `fsync-file`, `fsync-directory`, `unlink-displaced`. POSIX does not make the unlink durable until the containing directory is synced, so a crash after a reported success can resurrect a hidden copy of the old contents. That is both a cleanup defect and a confidentiality risk for overwritten secrets.
+**Fix:** Remove the verified displaced name first, then fsync the directory after the unlink. If an earlier fsync is retained to make the exchange durable, perform a second directory fsync after cleanup and report a durability warning if it fails.
+
+```python
+os.unlink(temp_name, dir_fd=directory_fd)
+temp_name = None
+os.fsync(directory_fd)  # persists exchange and removal of the old name
+```
+
+### CR-05: `commit_uncertain` is rendered as a successful write
+
+**Classification:** BLOCKER (Critical)
+**Files:** `/home/nacs/Documents/git/olla/src/olla/tools/files.py:363-370`, `/home/nacs/Documents/git/olla/src/olla/loop.py:648-662`
+**Issue:** The backend returns warning-only dictionaries for uncertain commits. The loop treats every result without an `error` key as success, defaults a missing `bytes_written` to zero, prints `wrote 0 bytes`, and clears the read snapshot. In a deterministic create probe, the destination contained `EXTERNAL` and the backend returned only `commit_uncertain: True` plus a warning; the loop's branch would tell the model the write succeeded. The rollback-failure result is similarly presented as an ordinary successful write even though the destination and recovery file require intervention.
+**Fix:** Make the result contract discriminated (`status: success | stale | uncertain | error`) and handle `uncertain` before the success branch. The observation must say that the outcome is unknown, include the recovery path when present, and require a new `read_file`; it must never emit the normal `wrote N bytes` message.
+
+```python
+if result.get("commit_uncertain"):
+    read_snapshots.pop(resolved, None)
+    preview = f"write outcome uncertain: {result['warning']}; read_file before retrying"
+elif "error" in result:
+    ...
+else:
+    preview = f"wrote {result['bytes_written']} bytes to ..."
+```
+
+### CR-06: Atomic overwrite silently discards extended file metadata
+
+**Classification:** BLOCKER (Critical)
+**File:** `/home/nacs/Documents/git/olla/src/olla/tools/files.py:284-300`
+**Issue:** For an existing file, the staging inode copies only permission bits before it replaces the destination. Ownership, POSIX ACLs, extended attributes, security labels, and other inode metadata are not copied. A deterministic probe set `user.olla-review=keep`, performed a successful overwrite, and then received `ENODATA` when reading the attribute. The operation reports full success despite losing metadata the user did not ask to change; loss of an ACL or security label can also change who may access the file.
+**Fix:** Capture and copy supported ownership and extended metadata from `target_fd` to `staging_fd` before publication, then verify it. If the platform cannot preserve security-relevant metadata, refuse the overwrite or return an explicit warning requiring confirmation rather than silently dropping it. Add regressions for user xattrs and POSIX ACLs where supported.
 
 ## Warnings
 
-### WR-01: Special-tool payloads still reject protocol-looking file content
+### WR-01: An unclosed literal `<final>` inside a special payload hides a real outer final
 
 **Classification:** WARNING
-**File:** `/home/nacs/Documents/git/olla/src/olla/parser.py:46-61`
-**Issue:** The parser docstring says `write_file`, `remember`, and `recall` payloads may contain protocol-looking text, but the global counts for `<tool>`, `</tool>`, and `<args>` include occurrences inside the payload. A valid write whose content contains `literal <tool>x</tool>` therefore returns `{"type": "none"}` instead of preserving the bytes. The existing tests cover fences and a literal `<final>`, but not the other protocol tags.
-**Fix:** Parse the one outer tool/args envelope statefully. Once a special tool and its outer `<args>` opening are identified, treat its payload as opaque until the outer `</args>` (or end of response) rather than counting nested-looking tag text as structure. Add round-trip cases containing literal `<tool>`, `</tool>`, `<args>`, and `<final>` strings.
+**File:** `/home/nacs/Documents/git/olla/src/olla/parser.py:35-42`
+**Issue:** `FINAL_RE.finditer()` is non-overlapping. If write/memory payload text contains an unclosed literal `<final>` and a real `<final>done</final>` follows the args block, the first regex match consumes through the real closing tag; it is then discarded because its start is inside the args span, and the real outer opening is never considered. `parse_response()` returns the tool call instead of the documented final winner. For example, `<tool>write_file</tool><args>/tmp/a\nliteral <final> marker</args><final>done</final>` is parsed as `write_file`.
+**Fix:** Replace the overlapping regex searches with one ordered tag tokenizer/stack, or explicitly scan the suffix after the matched outer `</args>` for final blocks before returning a special tool. Add this exact unclosed-literal regression.
 
-### WR-02: The file backend introduces an undeclared POSIX-only runtime dependency
-
-**Classification:** WARNING
-**File:** `/home/nacs/Documents/git/olla/src/olla/tools/files.py:3`
-**Issue:** `fcntl` is imported unconditionally, and the implementation depends on directory file descriptors, `O_DIRECTORY`/`O_NOFOLLOW`, and `dir_fd` forms of `os.link`, `os.replace`, and `os.unlink`. The package metadata declares only Python `>=3.10`, so on Windows importing `olla.loop` fails before the CLI can start. Other platforms can raise `NotImplementedError` for unsupported `dir_fd` operations, which is not handled by the current error path.
-**Fix:** Either declare and enforce POSIX-only support with an actionable startup error, or isolate this backend behind capability checks and provide a safe Windows implementation. Do not silently replace missing anti-symlink flags with zero when the associated guarantee cannot be maintained.
-
-### WR-03: Malformed and valid writes can share a repetition signature
+### WR-02: `ToolResult` omits fields that production code returns and consumes
 
 **Classification:** WARNING
-**File:** `/home/nacs/Documents/git/olla/src/olla/loop.py:215-236`
-**Issue:** A write with no content line uses `("write_file", path, "missing-content-line")`. A valid write to the same absolute path whose literal content is `missing-content-line` produces the identical tuple. The direct probe confirmed equality, so alternating two semantically different actions can increment the consecutive-repeat counter and stop the loop as if the same call occurred three times.
-**Fix:** Include an explicit status discriminator in every write signature, for example `("write_file", "invalid", path, "missing-content-line")` versus `("write_file", "valid", normalized_path, file_content)`, and add a collision regression.
-
-### WR-04: Valid long target names fail because the temp name embeds the full basename
-
-**Classification:** WARNING
-**File:** `/home/nacs/Documents/git/olla/src/olla/tools/files.py:39-47`
-**Issue:** `_create_temp_file()` constructs `.{name}.{token}.tmp`. A target basename can be valid near the filesystem's `NAME_MAX` while the derived temp basename exceeds it. On the current filesystem, a valid 250-byte target name failed with `ENAMETOOLONG` because the temporary name added 22 bytes. Both creation and overwrite paths are affected.
-**Fix:** Use a short fixed temporary prefix independent of the target basename, such as `.olla.<token>.tmp`, and add a test using a valid basename close to `os.pathconf(directory, "PC_NAME_MAX")`.
-
-## Validation
-
-- Scoped phase suite: `.venv/bin/python -B -m pytest -p no:cacheprovider -q tests/test_loop.py tests/test_parser.py tests/test_prompts.py tests/test_tools/test_files.py` — `155 passed`.
-- Full repository suite: `.venv/bin/python -B -m pytest -p no:cacheprovider -q` — `258 passed`.
-- Ruff across all nine scoped files with `--no-cache` — passed.
-- `git diff --check` for the scoped diff — passed.
-- Deterministic probes reproduced CR-01, CR-02, CR-03, WR-01, WR-03, and WR-04; a direct renderer probe confirmed CR-04.
-- No source files were modified.
+**Files:** `/home/nacs/Documents/git/olla/src/olla/tools/base.py:17-34`, `/home/nacs/Documents/git/olla/src/olla/tools/files.py:363-369`
+**Issue:** `write_file()` returns `commit_uncertain` and `recovery_path`, but neither key exists in the `ToolResult` TypedDict. The declared shared contract therefore rejects valid production results under static checking and gives callers no typed way to distinguish an uncertain commit from success—the ambiguity that contributes to CR-05.
+**Fix:** Add the missing keys (or, preferably, define a discriminated write-result union with required fields per status) and exhaustively branch on that status in the loop.
 
 ---
 
-_Reviewed: 2026-07-30T12:35:25Z_
+_Reviewed: 2026-07-30T15:17:40Z_
 _Reviewer: the agent (gsd-code-reviewer)_
 _Depth: standard_
