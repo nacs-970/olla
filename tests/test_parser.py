@@ -42,6 +42,47 @@ def test_outer_markdown_fence_is_removed_from_unclosed_args(content, expected):
     assert parse_response(content) == expected
 
 
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        (
+            "```\n<tool>remember</tool><args>key\nvalue\n````",
+            {"type": "tool", "tool": "remember", "args_raw": "key\nvalue"},
+        ),
+        (
+            "```text\n<tool>recall</tool><args> key \n`````",
+            {"type": "tool", "tool": "recall", "args_raw": "key"},
+        ),
+        (
+            "~~~\n<tool>write_file</tool><args>/tmp/out.txt\nbody\n~~~~",
+            {
+                "type": "tool",
+                "tool": "write_file",
+                "args_raw": "/tmp/out.txt\nbody",
+            },
+        ),
+        (
+            "```\n<tool>shell</tool><args>echo hi\n````",
+            {"type": "tool", "tool": "shell", "args_raw": "echo hi"},
+        ),
+    ],
+)
+def test_longer_outer_markdown_fence_is_removed_from_unclosed_args(
+    content, expected
+):
+    assert parse_response(content) == expected
+
+
+def test_shorter_outer_markdown_fence_is_not_removed():
+    content = "````\n<tool>shell</tool><args>echo hi\n```"
+
+    assert parse_response(content) == {
+        "type": "tool",
+        "tool": "shell",
+        "args_raw": "echo hi\n```",
+    }
+
+
 def test_surrounding_prose_tolerance():
     content = "Sure, I'll check that.\n<tool>shell</tool><args>pwd</args>\nLet me run this."
     result = parse_response(content)

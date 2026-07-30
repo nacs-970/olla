@@ -17,8 +17,10 @@ def _unwrap_outer_markdown_fence(content: str) -> str:
     if opening is None:
         return content
     delimiter = opening.group(1)
+    fence_char = re.escape(delimiter[0])
+    minimum = len(delimiter)
     closing = re.search(
-        rf"\r?\n[ \t]*{re.escape(delimiter)}[ \t]*(?:\r?\n)?\Z",
+        rf"\r?\n[ \t]*{fence_char}{{{minimum},}}[ \t]*(?:\r?\n)?\Z",
         content,
     )
     if closing is None:
