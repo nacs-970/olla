@@ -217,3 +217,43 @@ def test_new_file_publish_does_not_follow_destination_symlink(tmp_path):
     assert result["stale"] is True
     assert path.is_symlink()
     assert referent.read_bytes() == b"REFERENT"
+
+
+def test_create_retries_one_shot_temp_cleanup_failure(tmp_path, mocker):
+    path = tmp_path / "new.txt"
+    real_unlink = os.unlink
+    attempts = 0
+
+    def fail_once(target, *args, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise OSError("temporary cleanup failed")
+        return real_unlink(target, *args, **kwargs)
+
+    mocker.patch("olla.tools.files.os.unlink", side_effect=fail_once)
+
+    result = write_file(str(path), "MODEL")
+
+    assert "error" not in result
+    assert "warning" not in result
+    assert path.read_bytes() == b"MODEL"
+    assert list(tmp_path.iterdir()) == [path]
+
+
+def test_create_reports_persistent_temp_cleanup_failure_as_warning(
+    tmp_path, mocker
+):
+    path = tmp_path / "new.txt"
+    mocker.patch(
+        "olla.tools.files.os.unlink",
+        side_effect=OSError("temporary cleanup failed"),
+    )
+
+    result = write_file(str(path), "MODEL")
+
+    assert "error" not in result
+    assert "cleanup" in result["warning"]
+    assert path.read_bytes() == b"MODEL"
+    leftovers = [entry for entry in tmp_path.iterdir() if entry != path]
+    assert len(leftovers) == 1

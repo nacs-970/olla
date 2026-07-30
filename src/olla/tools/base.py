@@ -26,6 +26,7 @@ class ToolResult(TypedDict, total=False):
     stdout: str
     stderr: str
     error: str
+    warning: str
     path: str
     content: str
     snapshot: FileSnapshot

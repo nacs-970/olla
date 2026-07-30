@@ -565,6 +565,8 @@ def _execute_write_file(
         preview = (
             f"wrote {result.get('bytes_written', 0)} bytes to {final_resolved}"
         )
+        if "warning" in result:
+            preview = f"{preview}; warning: {result['warning']}"
         read_snapshots.pop(resolved, None)
     _record_observation(messages, preview)
 

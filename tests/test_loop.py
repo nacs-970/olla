@@ -418,6 +418,31 @@ def test_run_loop_write_file_confirm_approved(tmp_path, mocker, capsys):
     mock_write_file.assert_called_once()
 
 
+def test_run_loop_write_file_reports_cleanup_warning(tmp_path, mocker, capsys):
+    target = tmp_path / "x.txt"
+    mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            f"<tool>write_file</tool><args>{target}\nMODEL</args>",
+            "<final>done</final>",
+        ],
+    )
+    mocker.patch(
+        "olla.loop.write_file",
+        return_value={
+            "path": str(target),
+            "bytes_written": 5,
+            "warning": "temporary file remains",
+        },
+    )
+
+    run_loop("write a file", "test-model", 2, "sys", yes=True)
+
+    output = capsys.readouterr().out
+    assert "wrote 5 bytes" in output
+    assert "warning: temporary file remains" in output
+
+
 def test_run_loop_write_file_shows_resolved_path(tmp_path, mocker, capsys):
     target = tmp_path / "x.txt"
     mock_chat = mocker.patch("olla.loop.ollama.chat")

@@ -135,6 +135,8 @@ def write_file(
     directory_fd: int | None = None
     target_fd: int | None = None
     temp_name: str | None = None
+    published = False
+    cleanup_warning: str | None = None
     try:
         directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
         directory_fd = os.open(p.parent, directory_flags | _nofollow_flags())
@@ -169,8 +171,19 @@ def write_file(
                 )
             except FileExistsError:
                 return _stale_result(path)
-            os.unlink(temp_name, dir_fd=directory_fd)
-            temp_name = None
+            published = True
+            try:
+                os.unlink(temp_name, dir_fd=directory_fd)
+                temp_name = None
+            except OSError as cleanup_error:
+                try:
+                    os.unlink(temp_name, dir_fd=directory_fd)
+                    temp_name = None
+                except OSError:
+                    cleanup_warning = (
+                        f"write succeeded, but could not clean up temporary file "
+                        f"{temp_name}: {cleanup_error}"
+                    )
         else:
             assert target_fd is not None
             try:
@@ -213,19 +226,28 @@ def write_file(
             if not _same_object(path_stat, expected_snapshot):
                 return _stale_result(path)
 
-        return {"path": path, "bytes_written": len(encoded)}
+        result: ToolResult = {"path": path, "bytes_written": len(encoded)}
+        if cleanup_warning is not None:
+            result["warning"] = cleanup_warning
+        return result
     except FileNotFoundError:
         return {
             "path": path,
             "error": f"parent directory does not exist: {p.parent}",
         }
     except (OSError, ValueError) as error:
+        if published:
+            return {
+                "path": path,
+                "bytes_written": len(encoded),
+                "warning": f"write succeeded, but cleanup failed: {error}",
+            }
         return {"path": path, "error": f"could not write {path}: {error}"}
     finally:
         if temp_name is not None and directory_fd is not None:
             try:
                 os.unlink(temp_name, dir_fd=directory_fd)
-            except FileNotFoundError:
+            except OSError:
                 pass
         if target_fd is not None:
             os.close(target_fd)
