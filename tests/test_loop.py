@@ -131,9 +131,20 @@ def test_run_loop_tool_then_final(mocker, capsys):
     # appended to the message history as the Observation.
     call_args = mock_chat.call_args_list[1]
     messages = call_args.kwargs["messages"]
-    obs_messages = [m for m in messages if m["role"] == "user" and m["content"].startswith("Observation:")]
+    obs_messages = [
+        message
+        for message in messages
+        if message["role"] == "tool"
+        and message["content"].startswith(
+            "Observation: <untrusted_shell_output>"
+        )
+    ]
     assert len(obs_messages) == 1
-    assert obs_messages[0]["content"] == "Observation: hi\n"
+    assert obs_messages[0]["content"] == (
+        "Observation: <untrusted_shell_output>\n"
+        "hi\n\n"
+        "</untrusted_shell_output>"
+    )
 
 
 def test_run_loop_unknown_tool_returns_observation(mocker, capsys):
@@ -195,8 +206,19 @@ def test_run_loop_tool_result_real_no_output_success(mocker, capsys):
 
     call_args = mock_chat.call_args_list[1]
     messages = call_args.kwargs["messages"]
-    obs_messages = [m for m in messages if m["role"] == "user" and m["content"].startswith("Observation:")]
-    assert obs_messages[0]["content"] == "Observation: (no output)"
+    obs_messages = [
+        message
+        for message in messages
+        if message["role"] == "tool"
+        and message["content"].startswith(
+            "Observation: <untrusted_shell_output>"
+        )
+    ]
+    assert obs_messages[0]["content"] == (
+        "Observation: <untrusted_shell_output>\n"
+        "(no output)\n"
+        "</untrusted_shell_output>"
+    )
 
 
 def test_run_loop_truncates_none_response_in_history(mocker, capsys):
