@@ -176,6 +176,15 @@ def test_outer_final_wins_after_literal_final_in_remember_value():
     assert parse_response(content) == {"type": "final", "text": "done"}
 
 
+def test_outer_final_wins_after_unclosed_literal_final_in_write_payload():
+    content = (
+        "<tool>write_file</tool><args>/tmp/a\n"
+        "literal <final> marker</args><final>done</final>"
+    )
+
+    assert parse_response(content) == {"type": "final", "text": "done"}
+
+
 @pytest.mark.parametrize(
     "content",
     [

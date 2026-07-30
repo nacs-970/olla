@@ -74,6 +74,14 @@ def parse_response(content: str) -> dict:
                 else:
                     args_end = args_close.start()
                     suffix = content[args_close.end() :]
+                    suffix_finals = list(FINAL_RE.finditer(suffix))
+                    if len(suffix_finals) == 1:
+                        return {
+                            "type": "final",
+                            "text": suffix_finals[0].group(1).strip(),
+                        }
+                    if len(suffix_finals) > 1:
+                        return {"type": "none", "raw": content}
                     if any(
                         pattern.search(suffix) is not None
                         for pattern in (
