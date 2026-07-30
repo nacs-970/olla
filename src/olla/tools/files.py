@@ -140,6 +140,7 @@ def parent_directory_matches_path(path: str, expected: FileSnapshot) -> bool:
 def _stale_result(path: str) -> ToolResult:
     return {
         "path": path,
+        "status": "stale",
         "stale": True,
         "error": f"refused: {path} changed or appeared before the write",
     }
@@ -309,7 +310,11 @@ def write_file(
         encoded = content.encode("utf-8")
         payload_digest = _digest_bytes(encoded)
     except UnicodeEncodeError as error:
-        return {"path": path, "error": f"could not write {path}: {error}"}
+        return {
+            "path": path,
+            "status": "error",
+            "error": f"could not write {path}: {error}",
+        }
 
     directory_fd: int | None = None
     target_fd: int | None = None
@@ -620,4 +625,11 @@ def write_file(
                 }
 
     assert result is not None
+    if "status" not in result:
+        if result.get("commit_uncertain"):
+            result["status"] = "uncertain"
+        elif "error" in result:
+            result["status"] = "stale" if result.get("stale") else "error"
+        else:
+            result["status"] = "success"
     return result

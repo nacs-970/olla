@@ -473,6 +473,45 @@ def test_run_loop_write_file_reports_cleanup_warning(tmp_path, mocker, capsys):
     assert "warning: temporary file remains" in output
 
 
+def test_run_loop_reports_uncertain_write_without_success_message(
+    tmp_path, mocker, capsys
+):
+    target = tmp_path / "x.txt"
+    recovery = tmp_path / ".olla.recovery.tmp"
+    mock_model = mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            f"<tool>write_file</tool><args>{target}\nMODEL</args>",
+            "<final>done</final>",
+        ],
+    )
+    mocker.patch(
+        "olla.loop.write_file",
+        return_value={
+            "path": str(target),
+            "status": "uncertain",
+            "commit_uncertain": True,
+            "recovery_path": str(recovery),
+            "warning": "destination changed during commit",
+        },
+    )
+
+    run_loop("write a file", "test-model", 2, "sys", yes=True)
+
+    output = capsys.readouterr().out
+    assert "wrote 0 bytes" not in output
+    messages = mock_model.call_args_list[1].args[1]
+    observations = [
+        message["content"]
+        for message in messages
+        if message["role"] == "user"
+        and message["content"].startswith("Observation:")
+    ]
+    assert any("write outcome uncertain" in item for item in observations)
+    assert any(str(recovery) in item for item in observations)
+    assert any("read_file" in item for item in observations)
+
+
 def test_run_loop_write_file_shows_resolved_path(tmp_path, mocker, capsys):
     target = tmp_path / "x.txt"
     mock_chat = mocker.patch("olla.loop.ollama.chat")

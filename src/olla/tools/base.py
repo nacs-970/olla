@@ -1,6 +1,6 @@
 """Shared tool-result contract for all olla tools."""
 
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 
 class _FileMetadata(TypedDict):
@@ -41,3 +41,4 @@ class ToolResult(TypedDict, total=False):
     snapshot: FileSnapshot
     stale: bool
     bytes_written: int
+    status: Literal["success", "stale", "uncertain", "error"]

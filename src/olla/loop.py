@@ -645,7 +645,19 @@ def _execute_write_file(
             parent_directory_fd=parent_fd,
             expected_parent_snapshot=parent_snapshot,
         )
-        if "error" in result:
+        if result.get("status") == "uncertain" or result.get(
+            "commit_uncertain"
+        ):
+            read_snapshots.pop(resolved, None)
+            warning = result.get(
+                "warning", "the backend could not confirm the write outcome"
+            )
+            preview = f"write outcome uncertain: {warning}"
+            recovery_path = result.get("recovery_path")
+            if recovery_path is not None:
+                preview += f"; recovery object: {_metadata_safe(recovery_path)}"
+            preview += "; use read_file on the target before retrying"
+        elif "error" in result:
             if result.get("stale"):
                 read_snapshots.pop(resolved, None)
                 preview = _read_again_observation(resolved)
