@@ -150,6 +150,26 @@ def test_failed_staging_write_preserves_original(tmp_path, mocker):
     assert list(tmp_path.iterdir()) == [path]
 
 
+def test_interrupted_staging_write_preserves_complete_original(tmp_path, mocker):
+    path = tmp_path / "existing.txt"
+    path.write_bytes(b"ORIGINAL")
+    snapshot = read_file(str(path))["snapshot"]
+    mocker.patch(
+        "olla.tools.files.os.write",
+        side_effect=KeyboardInterrupt,
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        write_file(
+            str(path),
+            "replacement",
+            expected_snapshot=snapshot,
+        )
+
+    assert path.read_bytes() == b"ORIGINAL"
+    assert list(tmp_path.iterdir()) == [path]
+
+
 def test_stale_exchange_preserves_target_and_displaced_original(
     tmp_path, mocker
 ):
