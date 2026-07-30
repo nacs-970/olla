@@ -3,6 +3,7 @@
 import pytest
 
 from olla.tools.memory import (
+    MAX_KEY_CHARS,
     MAX_KEYS,
     MAX_TOTAL_CHARS,
     MAX_VALUE_CHARS,
@@ -42,6 +43,23 @@ def test_parse_remember_args_rejects_oversized_value():
     )
 
 
+def test_parse_remember_args_enforces_key_length_boundary():
+    boundary = "k" * MAX_KEY_CHARS
+    oversized = boundary + "x"
+
+    assert parse_remember_args(f"{boundary}\nvalue") == (
+        RememberCall(boundary, "value"),
+        None,
+    )
+    assert parse_remember_args(f"{oversized}\nvalue") == (
+        None,
+        (
+            f"memory key too large: {MAX_KEY_CHARS + 1} characters; "
+            f"maximum is {MAX_KEY_CHARS}"
+        ),
+    )
+
+
 @pytest.mark.parametrize(
     ("args_raw", "expected"),
     [
@@ -52,6 +70,28 @@ def test_parse_remember_args_rejects_oversized_value():
 )
 def test_parse_recall_args_contract(args_raw, expected):
     assert parse_recall_args(args_raw) == expected
+
+
+@pytest.mark.parametrize("delimiter", ["\n", "\r", "\r\n"])
+def test_parse_recall_args_rejects_embedded_line_delimiters(delimiter):
+    assert parse_recall_args(f"first{delimiter}second") == (
+        None,
+        "invalid recall: key must be one line",
+    )
+
+
+def test_parse_recall_args_enforces_key_length_boundary():
+    boundary = "k" * MAX_KEY_CHARS
+    oversized = boundary + "x"
+
+    assert parse_recall_args(boundary) == (boundary, None)
+    assert parse_recall_args(oversized) == (
+        None,
+        (
+            f"memory key too large: {MAX_KEY_CHARS + 1} characters; "
+            f"maximum is {MAX_KEY_CHARS}"
+        ),
+    )
 
 
 def test_scratchpad_remember_recall_and_replace_contract():
@@ -82,6 +122,42 @@ def test_scratchpad_rejects_empty_keys_at_public_boundary():
     }
     assert scratchpad.recall(" \t ") == {
         "error": "invalid recall: key must not be empty"
+    }
+
+
+@pytest.mark.parametrize("delimiter", ["\n", "\r", "\r\n"])
+def test_scratchpad_rejects_multiline_keys_at_public_boundary(delimiter):
+    scratchpad = Scratchpad()
+    key = f"first{delimiter}second"
+
+    assert scratchpad.remember(RememberCall(key, "secret")) == {
+        "error": "invalid remember: key must be one line"
+    }
+    assert scratchpad.recall(key) == {
+        "error": "invalid recall: key must be one line"
+    }
+
+
+def test_scratchpad_enforces_key_length_atomically_at_public_boundary():
+    scratchpad = Scratchpad()
+    boundary = "k" * MAX_KEY_CHARS
+    oversized = boundary + "x"
+
+    assert scratchpad.remember(RememberCall(boundary, "value")) == {
+        "content": f"remembered: {boundary}"
+    }
+    assert scratchpad.recall(boundary) == {"content": "value"}
+    assert scratchpad.remember(RememberCall(oversized, "secret")) == {
+        "error": (
+            f"memory key too large: {MAX_KEY_CHARS + 1} characters; "
+            f"maximum is {MAX_KEY_CHARS}"
+        )
+    }
+    assert scratchpad.recall(oversized) == {
+        "error": (
+            f"memory key too large: {MAX_KEY_CHARS + 1} characters; "
+            f"maximum is {MAX_KEY_CHARS}"
+        )
     }
 
 

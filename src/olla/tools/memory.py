@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from olla.tools.base import ToolResult
 
+MAX_KEY_CHARS = 128
 MAX_VALUE_CHARS = 2_000
 MAX_KEYS = 32
 MAX_TOTAL_CHARS = 16_000
@@ -17,14 +18,32 @@ class RememberCall:
     value: str
 
 
+def _validate_key(key: str, tool: str) -> tuple[str | None, str | None]:
+    """Normalize one public key and reject unreachable protocol states."""
+    normalized = key.strip()
+    if not normalized:
+        return None, f"invalid {tool}: key must not be empty"
+    if len(normalized.splitlines()) > 1:
+        return None, f"invalid {tool}: key must be one line"
+    if len(normalized) > MAX_KEY_CHARS:
+        return (
+            None,
+            (
+                f"memory key too large: {len(normalized)} characters; "
+                f"maximum is {MAX_KEY_CHARS}"
+            ),
+        )
+    return normalized, None
+
+
 def parse_remember_args(
     args_raw: str,
 ) -> tuple[RememberCall | None, str | None]:
     """Parse a trimmed key line and preserve the remaining value verbatim."""
     key_line, separator, value = args_raw.partition("\n")
-    key = key_line.strip()
-    if not key:
-        return None, "invalid remember: key must not be empty"
+    key, error = _validate_key(key_line, "remember")
+    if error is not None:
+        return None, error
     if not separator:
         return (
             None,
@@ -38,15 +57,13 @@ def parse_remember_args(
                 f"maximum is {MAX_VALUE_CHARS}"
             ),
         )
+    assert key is not None
     return RememberCall(key=key, value=value), None
 
 
 def parse_recall_args(args_raw: str) -> tuple[str | None, str | None]:
     """Parse and validate one case-sensitive recall key."""
-    key = args_raw.strip()
-    if not key:
-        return None, "invalid recall: key must not be empty"
-    return key, None
+    return _validate_key(args_raw, "recall")
 
 
 class Scratchpad:
@@ -57,9 +74,10 @@ class Scratchpad:
 
     def remember(self, call: RememberCall) -> ToolResult:
         """Store or replace one value and return a non-disclosing acknowledgment."""
-        key = call.key.strip()
-        if not key:
-            return {"error": "invalid remember: key must not be empty"}
+        key, error = _validate_key(call.key, "remember")
+        if error is not None:
+            return {"error": error}
+        assert key is not None
         if len(call.value) > MAX_VALUE_CHARS:
             return {
                 "error": (
@@ -90,9 +108,10 @@ class Scratchpad:
 
     def recall(self, key: str) -> ToolResult:
         """Return one explicitly requested note or a recoverable missing-key error."""
-        normalized_key = key.strip()
-        if not normalized_key:
-            return {"error": "invalid recall: key must not be empty"}
+        normalized_key, error = _validate_key(key, "recall")
+        if error is not None:
+            return {"error": error}
+        assert normalized_key is not None
         if normalized_key not in self._values:
             return {"error": f"memory not found: {normalized_key}"}
         value = self._values[normalized_key]

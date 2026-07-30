@@ -714,11 +714,13 @@ def _execute_memory(
     scratchpad: Scratchpad,
 ) -> bool:
     assert action.memory_request is not None
-    preview = _handle_memory(
-        action.memory_request,
-        step=step,
-        scratchpad=scratchpad,
-        execute=True,
+    preview = truncate_output(
+        _handle_memory(
+            action.memory_request,
+            step=step,
+            scratchpad=scratchpad,
+            execute=True,
+        )
     )
     if action.memory_request.tool == "recall":
         _record_memory_observation(messages, preview)

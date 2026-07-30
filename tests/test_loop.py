@@ -14,6 +14,7 @@ from olla.loop import (
 )
 from olla.safety import check
 from olla.tools.files import write_file as safe_write_file
+from olla.tools.memory import MAX_KEY_CHARS
 
 
 def test_truncate_output_under_limit():
@@ -2415,6 +2416,35 @@ def test_run_loop_memory_results_match_observations(
         ]
     mock_confirm.assert_not_called()
     mock_check.assert_not_called()
+
+
+def test_oversized_memory_key_cannot_exceed_observation_budget(mocker, capsys):
+    oversized = "k" * (MAX_KEY_CHARS + MAX_OBSERVATION_CHARS)
+    responses = iter(
+        [
+            {"message": {"content": f"<tool>recall</tool><args>{oversized}</args>"}},
+            {"message": {"content": "<final>done</final>"}},
+        ]
+    )
+    messages_by_call = []
+
+    def fake_chat(**kwargs):
+        messages_by_call.append([message.copy() for message in kwargs["messages"]])
+        return next(responses)
+
+    mocker.patch("olla.loop.ollama.chat", side_effect=fake_chat)
+
+    run_loop("recall the note", "test-model", 2, "sys")
+
+    observations = [
+        message["content"]
+        for message in messages_by_call[1]
+        if message["content"].startswith("Observation:")
+    ]
+    assert len(observations) == 1
+    assert len(observations[0]) <= MAX_OBSERVATION_CHARS
+    assert oversized not in observations[0]
+    assert oversized not in capsys.readouterr().out
 
 
 @pytest.mark.parametrize(
