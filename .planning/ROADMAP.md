@@ -79,6 +79,17 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] 02-07-PLAN.md — Gap closure round 4: dot-segment equivalent-form root-target bypass on rule 7 (`chmod/chown -R /.`, `//.`, `/./`) (CR-02 round 4) (SAFE-02, SAFE-04)
 - [x] 02-08-PLAN.md — Gap closure round 5: Python 3.10 import compatibility — drop `typing.NotRequired` (PEP 655, 3.11+) from `safety.py`'s `Decision` TypedDict, restoring `import olla.safety` on the declared >=3.10 floor (CR-01) (LOOP-04, SAFE-01, SAFE-02, SAFE-03, SAFE-04)
 
+### Phase 02.1: API connect with olla, not just ollama now (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 2
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 02.1 to break down)
+
 ### Phase 3: File Tools
 
 **Goal**: As a user running an agentic task with olla, I want the model to read existing files and write modified files through the confirm-gate, so that it can inspect and update my project's files to complete the task.
