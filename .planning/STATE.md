@@ -1,20 +1,23 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: milestone
-current_phase: 03
-current_phase_name: file-tools
-status: verifying
-stopped_at: Completed Phase 03 code-review fixes; ready for re-review and verification
-last_updated: "2026-07-29T05:28:27+07:00"
+current_phase: 02.1
+current_phase_name: api-connect-with-olla-not-just-ollama-now
+status: planning
+stopped_at: Phase 02.1 context gathered
+last_updated: "2026-09-03T22:45:02.123Z"
 last_activity: 2026-07-29
 last_activity_desc: Completed all Phase 03 code-review fixes
+state_head: 59fcae6402cfc2d05484e7c4f5a1738a28d97d5f
 progress:
-  total_phases: 4
-  completed_phases: 3
+  total_phases: 5
+  completed_phases: 1
   total_plans: 17
   completed_plans: 17
+milestone_name: milestone
 ---
+
+Total Phases: 4
 
 # Project State
 
@@ -23,13 +26,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-10)
 
 **Core value:** Stay fast and accurate on small local models — minimal per-turn token overhead so 2-4B models on constrained hardware stay responsive and don't drift under a bloated context.
-**Current focus:** Phase 03 — file-tools
+**Current focus:** Phase 02.1 — API connect with olla, not just ollama now
 
 ## Current Position
 
-Phase: 03 (file-tools) — EXECUTING
-Plan: 5 of 5
-Status: Phase complete — ready for verification
+Phase: 02.1 (api-connect-with-olla-not-just-ollama-now) — URGENT INSERTION
+Plan: 0 of 0
+Status: ready to plan
 Last activity: 2026-07-29 — Completed Plan 03-05 guarded existing-file edits
 
 Progress: [██████████] 100%
@@ -65,6 +68,11 @@ Progress: [██████████] 100%
 | Phase 03 P05 | 10 min | 2 tasks | 4 files |
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 5 added: API connect with olla, not just ollama now
+- Phase 02.1 inserted after Phase 2: API connect with olla, not just ollama now (URGENT)
 
 ### Decisions
 
@@ -111,6 +119,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-07-29T05:28:27+07:00
-Stopped at: Completed Phase 03 code-review fixes; ready for re-review and verification
-Resume file: None
+Last session: 2026-09-03T22:45:02.062Z
+Stopped at: Phase 02.1 context gathered
+Resume file: .planning/phases/02.1-api-connect-with-olla-not-just-ollama-now/02.1-CONTEXT.md
