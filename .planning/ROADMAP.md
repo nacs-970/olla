@@ -84,7 +84,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Goal:** [Urgent work - to be planned]
 **Requirements**: TBD
 **Depends on:** Phase 2
-**Plans:** 0 plans
+**Plans:** 2/2 plans complete
 
 Plans:
 
