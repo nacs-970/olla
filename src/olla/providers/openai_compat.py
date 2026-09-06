@@ -6,6 +6,7 @@ from collections.abc import Iterator
 
 import httpx
 
+from olla.debug import debug_log, is_debug, mask_secret
 from olla.providers.base import ProviderError, StreamChunk
 
 
@@ -121,6 +122,22 @@ class OpenAICompatProvider:
         max_attempts = len(backoff_delays) + 1
         last_exception: Exception | None = None
 
+        if is_debug():
+            debug_log(
+                f"HTTP POST {self.base_url}/chat/completions",
+                {
+                    "model": self.model,
+                    "stream": True,
+                    "messages_count": len(messages),
+                    "headers": {
+                        "Authorization": f"Bearer {mask_secret(self.api_key)}",
+                        "HTTP-Referer": headers.get("HTTP-Referer"),
+                        "X-Title": headers.get("X-Title"),
+                        "Content-Type": headers.get("Content-Type"),
+                    },
+                },
+            )
+
         for attempt in range(max_attempts):
             try:
                 with (
@@ -132,6 +149,8 @@ class OpenAICompatProvider:
                         json=payload,
                     ) as response,
                 ):
+                        if is_debug():
+                            debug_log(f"HTTP response received: status {response.status_code}")
                         if response.status_code in (429, 500, 502, 503, 504):
                             error_body = response.read().decode("utf-8", errors="replace")
                             if attempt < len(backoff_delays):

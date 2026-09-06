@@ -1,8 +1,11 @@
 """CLI entry point wiring TASK + flags to the ReAct loop."""
 
+import os
+
 import click
 
-from olla.config import load_config
+from olla.config import find_config_path, load_config
+from olla.debug import debug_log, mask_secret, set_debug
 from olla.loop import run_loop
 from olla.prompts import SYSTEM_PROMPT
 from olla.smoke import run_smoke_test
@@ -22,9 +25,29 @@ from olla.smoke import run_smoke_test
 @click.option("--smoke-test", is_flag=True, help="Run format-compliance check against --model")
 @click.option("--api-key", required=False, default=None, help="API key for remote model provider")
 @click.option("--base-url", required=False, default=None, help="Custom base URL for OpenAI-compatible API")
-def main(task, model, dry_run, max_steps, yes, smoke_test, api_key, base_url):
+@click.option("--debug", is_flag=True, help="Show verbose debug information (prompts, tools, responses)")
+def main(task, model, dry_run, max_steps, yes, smoke_test, api_key, base_url, debug):
     """Run an agentic task against a local or remote model."""
     cfg = load_config()
+    debug = debug or os.environ.get("OLLA_DEBUG", "").lower() in ("1", "true", "yes") or bool(cfg.get("debug"))
+    if debug:
+        set_debug(True)
+        cfg_path = find_config_path()
+        debug_log("Debug mode enabled")
+        debug_log(
+            "CLI configuration resolved",
+            {
+                "config_path": str(cfg_path) if cfg_path else None,
+                "model_specified": model,
+                "default_model": cfg.get("default_model") or cfg.get("model"),
+                "api_key": mask_secret(api_key or cfg.get("api_key")),
+                "base_url": base_url or cfg.get("base_url"),
+                "dry_run": dry_run,
+                "yes": yes,
+                "max_steps": max_steps,
+            },
+        )
+
     model = model or cfg.get("default_model") or cfg.get("model")
     api_key = api_key or cfg.get("api_key")
     base_url = base_url or cfg.get("base_url")
@@ -49,4 +72,5 @@ def main(task, model, dry_run, max_steps, yes, smoke_test, api_key, base_url):
         dry_run=dry_run,
         api_key=api_key,
         base_url=base_url,
+        debug=debug,
     )

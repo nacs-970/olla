@@ -14,6 +14,11 @@ from olla.providers import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _isolate_config(monkeypatch):
+    monkeypatch.setattr("olla.providers.load_config", dict)
+
+
 def test_default_routing_ollama():
     """Unprefixed model names route to OllamaProvider."""
     provider, model_id = get_provider("qwen2.5:3b")

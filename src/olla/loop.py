@@ -12,6 +12,7 @@ import ollama
 from rich.prompt import Confirm
 from rich.text import Text
 
+from olla.debug import debug_log, mask_secret, set_debug
 from olla.parser import parse_response
 from olla.providers import Provider, ProviderError, get_provider
 from olla.safety import check
@@ -349,12 +350,14 @@ def _track_repetition(
 
 def _record_observation(messages: list[dict], preview: str) -> None:
     """Print and append the exact same tool result as an Observation."""
+    debug_log("Observation recorded", preview)
     _display(preview)
     messages.append({"role": "user", "content": f"Observation: {preview}"})
 
 
 def _record_file_observation(messages: list[dict], preview: str) -> None:
     """Record file bytes as provenance-preserving, explicitly untrusted data."""
+    debug_log("File observation recorded", preview)
     _display(preview)
     messages.append(
         {
@@ -370,6 +373,7 @@ def _record_file_observation(messages: list[dict], preview: str) -> None:
 
 def _record_memory_observation(messages: list[dict], preview: str) -> None:
     """Record recalled notes as explicitly untrusted scratchpad data."""
+    debug_log("Memory observation recorded", preview)
     _display(preview)
     messages.append(
         {
@@ -385,6 +389,7 @@ def _record_memory_observation(messages: list[dict], preview: str) -> None:
 
 def _record_shell_observation(messages: list[dict], preview: str) -> None:
     """Record command output as explicitly untrusted tool data."""
+    debug_log("Shell observation recorded", preview)
     _display(preview)
     messages.append(
         {
@@ -558,6 +563,7 @@ def _execute_shell(
     assert action.argv is not None
     argv = list(action.argv)
     decision = check(argv, yes=yes)
+    debug_log(f"Step {step} - Shell safety check", {"argv": argv, "decision": decision})
     if decision["kind"] == "BLOCK":
         _record_observation(
             messages,
@@ -584,6 +590,7 @@ def _execute_shell(
 
     _display(f"Step {step}: running {argv}...")
     result = run_shell(argv)
+    debug_log(f"Step {step} - Shell execution result", result)
     if "error" in result:
         combined = result["error"]
     else:
@@ -608,6 +615,7 @@ def _execute_read_file(
     resolved = action.resolved
     _display(f"Step {step}: reading {_metadata_safe(resolved)}...")
     result = read_file(str(resolved))
+    debug_log(f"Step {step} - Read file result", {"path": str(resolved), "chars_read": len(result.get("content", "")) if "content" in result else None, "error": result.get("error")})
     if "error" in result:
         read_snapshots.pop(resolved, None)
         _record_observation(messages, truncate_output(result["error"]))
@@ -760,6 +768,7 @@ def _execute_write_file(
             if "warning" in result:
                 preview = f"{preview}; warning: {result['warning']}"
             read_snapshots.pop(resolved, None)
+        debug_log(f"Step {step} - Write file result", {"target": str(final_resolved), "result": result})
         _record_observation(messages, preview)
     finally:
         try:
@@ -776,6 +785,14 @@ def _execute_memory(
     scratchpad: Scratchpad,
 ) -> bool:
     assert action.memory_request is not None
+    debug_log(
+        f"Step {step} - Memory request",
+        {
+            "tool": action.memory_request.tool,
+            "signature": action.memory_request.signature,
+            "scratchpad_keys": list(scratchpad._data.keys()) if hasattr(scratchpad, "_data") else None,
+        },
+    )
     preview = truncate_output(
         _handle_memory(
             action.memory_request,
@@ -800,8 +817,12 @@ def run_loop(
     dry_run: bool = False,
     api_key: str | None = None,
     base_url: str | None = None,
+    debug: bool = False,
 ) -> None:
     """Drive the reason-act-observe loop until a <final> answer or max_steps."""
+    if debug:
+        set_debug(True)
+
     try:
         provider, resolved_model = get_provider(
             model=model, api_key=api_key, base_url=base_url
@@ -810,15 +831,33 @@ def run_loop(
         _display(f"Model initialization failed: {error}")
         return
 
+    debug_log(
+        "Loop initialization",
+        {
+            "task": task,
+            "model": model,
+            "resolved_model": resolved_model,
+            "provider": provider.__class__.__name__,
+            "max_steps": max_steps,
+            "yes": yes,
+            "dry_run": dry_run,
+            "api_key": mask_secret(api_key),
+            "base_url": base_url,
+        },
+    )
+
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": task},
     ]
     if dry_run:
+        debug_log("Executing dry run turn")
         content = _stream_model_turn(provider, messages, model=resolved_model)
         if content is None:
             return
-        _preview_action(_prepare_action(content), yes=yes)
+        action = _prepare_action(content)
+        debug_log("Dry run action parsed", {"kind": action.kind, "tool": action.tool})
+        _preview_action(action, yes=yes)
         return
 
     scratchpad = Scratchpad()
@@ -828,10 +867,37 @@ def run_loop(
     untrusted_observation_seen = False
 
     for step in range(1, max_steps + 1):
+        debug_log(
+            f"=== Step {step}/{max_steps} ===",
+            {
+                "message_count": len(messages),
+                "messages": [
+                    {
+                        "role": m["role"],
+                        "chars": len(m.get("content", "")),
+                        "content": m.get("content", ""),
+                    }
+                    for m in messages
+                ],
+            },
+        )
         content = _stream_model_turn(provider, messages, model=resolved_model)
         if content is None:
+            debug_log(f"Step {step} - Model turn returned None")
             return
+        debug_log(f"Step {step} - Raw model response", content)
         action = _prepare_action(content)
+        debug_log(
+            f"Step {step} - Action parsed",
+            {
+                "kind": action.kind,
+                "tool": action.tool,
+                "signature": str(action.signature),
+                "error": action.error,
+                "text": action.text,
+                "args_raw": action.args_raw,
+            },
+        )
         history_content = truncate_output(content) if action.kind == "none" else content
         messages.append({"role": "assistant", "content": history_content})
 
