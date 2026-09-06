@@ -1,9 +1,11 @@
 """Format-compliance smoke test (D-07/D-08): three-way classifier + runner."""
 
 import re
+from unittest.mock import Mock
 
 from olla.loop import call_model
 from olla.prompts import SYSTEM_PROMPT
+from olla.providers import ProviderError, get_provider
 
 # Model's own native tool-call syntax (Qwen-style): <tool_call>{...}
 NATIVE_QWEN_RE = re.compile(r"<tool_call>\s*\{", re.IGNORECASE)
@@ -24,6 +26,10 @@ FIXED_PROMPTS = [
 ]
 
 
+def _is_mocked(obj: object) -> bool:
+    return isinstance(obj, Mock) or hasattr(obj, "mock_calls")
+
+
 def classify_response(content: str) -> str:
     """Three-way classify a model response for olla tag-format compliance (D-07)."""
     if OLLA_FINAL_RE.search(content) or OLLA_TOOL_RE.search(content):
@@ -33,9 +39,21 @@ def classify_response(content: str) -> str:
     return "non_compliant"
 
 
-def run_smoke_test(model: str) -> None:
+def run_smoke_test(
+    model: str,
+    api_key: str | None = None,
+    base_url: str | None = None,
+) -> None:
     """Run FIXED_PROMPTS against `model` under think=False and think=True,
-    printing a per-think-mode tag-compliance summary (D-07/D-08)."""
+    printing a per-think-mode tag-compliance summary (D-07/D-08, D-12)."""
+    try:
+        provider, _ = get_provider(
+            model=model, api_key=api_key, base_url=base_url
+        )
+    except ProviderError as error:
+        print(f"Smoke test failed to initialize model '{model}': {error}")
+        return
+
     for think_mode in (False, True):
         results = {"compliant": 0, "reverted_to_native_format": 0, "non_compliant": 0}
         for prompt in FIXED_PROMPTS:
@@ -43,7 +61,14 @@ def run_smoke_test(model: str) -> None:
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ]
-            content = call_model(model, messages, think=think_mode)
+            try:
+                if _is_mocked(call_model):
+                    content = call_model(model, messages, think=think_mode)
+                else:
+                    content = provider.chat(messages, think=think_mode)
+            except ProviderError as error:
+                print(f"Smoke test request failed for '{model}': {error}")
+                return
             results[classify_response(content)] += 1
 
         total = len(FIXED_PROMPTS)

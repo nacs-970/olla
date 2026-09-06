@@ -35,7 +35,14 @@ def test_task_and_model_call_run_loop_with_defaults(mocker):
 
     assert result.exit_code == 0
     mock_run_loop.assert_called_once_with(
-        task="do something", model="some-model", max_steps=15, system_prompt=SYSTEM_PROMPT, yes=False, dry_run=False
+        task="do something",
+        model="some-model",
+        max_steps=15,
+        system_prompt=SYSTEM_PROMPT,
+        yes=False,
+        dry_run=False,
+        api_key=None,
+        base_url=None,
     )
 
 
@@ -47,7 +54,14 @@ def test_max_steps_option_threaded_through(mocker):
 
     assert result.exit_code == 0
     mock_run_loop.assert_called_once_with(
-        task="do something", model="some-model", max_steps=5, system_prompt=SYSTEM_PROMPT, yes=False, dry_run=False
+        task="do something",
+        model="some-model",
+        max_steps=5,
+        system_prompt=SYSTEM_PROMPT,
+        yes=False,
+        dry_run=False,
+        api_key=None,
+        base_url=None,
     )
 
 
@@ -60,7 +74,14 @@ def test_dry_run_flag_threaded_through(mocker):
     assert result.exit_code == 0
     assert "--dry-run is not yet enforced" not in result.output
     mock_run_loop.assert_called_once_with(
-        task="do something", model="some-model", max_steps=15, system_prompt=SYSTEM_PROMPT, yes=False, dry_run=True
+        task="do something",
+        model="some-model",
+        max_steps=15,
+        system_prompt=SYSTEM_PROMPT,
+        yes=False,
+        dry_run=True,
+        api_key=None,
+        base_url=None,
     )
 
 
@@ -73,7 +94,44 @@ def test_yes_flag_threaded_through(mocker):
     assert result.exit_code == 0
     assert "--yes is not yet enforced" not in result.output
     mock_run_loop.assert_called_once_with(
-        task="do something", model="some-model", max_steps=15, system_prompt=SYSTEM_PROMPT, yes=True, dry_run=False
+        task="do something",
+        model="some-model",
+        max_steps=15,
+        system_prompt=SYSTEM_PROMPT,
+        yes=True,
+        dry_run=False,
+        api_key=None,
+        base_url=None,
+    )
+
+
+def test_api_key_and_base_url_passed_to_run_loop(mocker):
+    mock_run_loop = mocker.patch("olla.cli.run_loop")
+    runner = CliRunner()
+
+    result = runner.invoke(
+        main,
+        [
+            "do something",
+            "--model",
+            "openrouter/meta-llama/llama-3.1-8b",
+            "--api-key",
+            "sk-secret",
+            "--base-url",
+            "https://custom.api/v1",
+        ],
+    )
+
+    assert result.exit_code == 0
+    mock_run_loop.assert_called_once_with(
+        task="do something",
+        model="openrouter/meta-llama/llama-3.1-8b",
+        max_steps=15,
+        system_prompt=SYSTEM_PROMPT,
+        yes=False,
+        dry_run=False,
+        api_key="sk-secret",
+        base_url="https://custom.api/v1",
     )
 
 
@@ -85,7 +143,22 @@ def test_smoke_test_flag_calls_run_smoke_test(mocker):
     result = runner.invoke(main, ["--smoke-test", "--model", "some-model"])
 
     assert result.exit_code == 0
-    mock_run_smoke_test.assert_called_once_with("some-model")
+    mock_run_smoke_test.assert_called_once_with("some-model", api_key=None, base_url=None)
+    mock_run_loop.assert_not_called()
+
+
+def test_smoke_test_with_api_key_and_base_url(mocker):
+    mock_run_smoke_test = mocker.patch("olla.cli.run_smoke_test")
+    mock_run_loop = mocker.patch("olla.cli.run_loop")
+    runner = CliRunner()
+
+    result = runner.invoke(
+        main,
+        ["--smoke-test", "--model", "some-model", "--api-key", "my-key", "--base-url", "https://api.test/v1"],
+    )
+
+    assert result.exit_code == 0
+    mock_run_smoke_test.assert_called_once_with("some-model", api_key="my-key", base_url="https://api.test/v1")
     mock_run_loop.assert_not_called()
 
 

@@ -84,3 +84,31 @@ def test_run_smoke_test_warns_when_think_false_below_80_percent(mocker, capsys):
     # The line immediately after think=True's compliance line must not be a WARNING.
     if think_true_line_index + 1 < len(lines):
         assert "WARNING" not in lines[think_true_line_index + 1]
+
+
+def test_run_smoke_test_remote_provider(mocker, capsys):
+    mock_provider = mocker.MagicMock()
+    mock_provider.chat.return_value = "<final>42</final>"
+    mock_get = mocker.patch("olla.smoke.get_provider", return_value=(mock_provider, "llama-3.1"))
+
+    run_smoke_test("openrouter/meta-llama/llama-3.1-8b", api_key="test-key", base_url="https://test.api/v1")
+
+    mock_get.assert_called_once_with(
+        model="openrouter/meta-llama/llama-3.1-8b",
+        api_key="test-key",
+        base_url="https://test.api/v1",
+    )
+    captured = capsys.readouterr()
+    assert "100% compliant" in captured.out
+
+
+def test_run_smoke_test_init_provider_error(mocker, capsys):
+    from olla.providers import ProviderError
+
+    mocker.patch("olla.smoke.get_provider", side_effect=ProviderError("Missing API key"))
+
+    run_smoke_test("openrouter/meta-llama/llama-3.1-8b")
+
+    captured = capsys.readouterr()
+    assert "Smoke test failed to initialize model" in captured.out
+    assert "Missing API key" in captured.out

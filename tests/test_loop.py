@@ -2513,3 +2513,75 @@ def test_run_loop_different_memory_values_reset_repetition_guard(mocker, capsys)
     assert "same remember call repeated 3x" not in captured.out
     assert "done" in captured.out
     assert mock_remember.call_count == 5
+
+
+def test_prepare_action_ignores_tools_inside_thinking():
+    """Verify tool tags inside <think>...</think> are excluded from action execution."""
+    from olla.loop import _prepare_action
+
+    content = (
+        "<think>I should consider <tool>shell</tool><args>rm -rf /</args> but I won't.</think>"
+        "<final>Safe direct answer</final>"
+    )
+    action = _prepare_action(content)
+    assert action.kind == "final"
+    assert action.text == "Safe direct answer"
+
+
+def test_stream_model_turn_dimmed_thinking(mocker, capsys):
+    """Reasoning chunks are rendered in dimmed styling and text is printed in real-time."""
+    from unittest.mock import MagicMock
+
+    from olla.loop import _stream_model_turn
+    from olla.providers import StreamChunk
+
+    mock_provider = MagicMock()
+    mock_provider.stream_chat.return_value = [
+        StreamChunk(text="considering...", is_thought=True),
+        StreamChunk(text="Hello world", is_thought=False),
+    ]
+
+    result = _stream_model_turn(mock_provider, [{"role": "user", "content": "hi"}], model="test")
+    assert result == "considering...Hello world"
+
+    captured = capsys.readouterr().out
+    assert "\033[2mconsidering...\033[0m" in captured
+    assert "Hello world" in captured
+
+
+def test_run_loop_catches_provider_error_diagnostically(mocker, capsys):
+    """ProviderError in get_provider aborts run_loop with clean diagnostic message."""
+    from olla.providers import ProviderError
+
+    mocker.patch("olla.loop.get_provider", side_effect=ProviderError("Bad API key provided"))
+
+    run_loop(
+        task="do work",
+        model="openrouter/meta-llama/llama-3.1-8b",
+        max_steps=10,
+        system_prompt="sys",
+    )
+
+    captured = capsys.readouterr().out
+    assert "Model initialization failed: Bad API key provided" in captured
+
+
+def test_run_loop_passes_api_key_and_base_url_to_provider(mocker):
+    """api_key and base_url are threaded to get_provider."""
+    mock_provider = mocker.MagicMock()
+    mock_provider.stream_chat.return_value = []
+    mock_get_provider = mocker.patch("olla.loop.get_provider", return_value=(mock_provider, "llama-3.1"))
+
+    run_loop(
+        task="test auth",
+        model="openrouter/llama-3.1",
+        max_steps=1,
+        system_prompt="sys",
+        api_key="sk-123",
+        base_url="https://api.test/v1",
+        dry_run=True,
+    )
+
+    mock_get_provider.assert_called_once_with(
+        model="openrouter/llama-3.1", api_key="sk-123", base_url="https://api.test/v1"
+    )

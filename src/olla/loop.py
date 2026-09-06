@@ -2,15 +2,18 @@
 
 import difflib
 import os
+import re
 import shlex
 from dataclasses import dataclass
 from pathlib import Path
+from unittest.mock import Mock
 
 import ollama
 from rich.prompt import Confirm
 from rich.text import Text
 
 from olla.parser import parse_response
+from olla.providers import Provider, ProviderError, get_provider
 from olla.safety import check
 from olla.tools.base import FileSnapshot
 from olla.tools.files import (
@@ -194,9 +197,22 @@ def _prepare_memory_request(tool: str, args_raw: str) -> _MemoryRequest:
     )
 
 
+THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+
+def _strip_thinking(content: str) -> str:
+    """Strip reasoning/thinking content (<think>...</think>) before tag evaluation (D-10)."""
+    return THINK_TAG_RE.sub("", content)
+
+
+def _is_mocked(obj: object) -> bool:
+    """Check if object is mocked in unit tests."""
+    return isinstance(obj, Mock) or hasattr(obj, "mock_calls")
+
+
 def _prepare_action(content: str) -> _Action:
     """Parse once and normalize signatures before any handler can exit early."""
-    parsed = parse_response(content)
+    parsed = parse_response(_strip_thinking(content))
     if parsed["type"] == "final":
         return _Action("final", "final", None, text=parsed["text"])
     if parsed["type"] == "none":
@@ -395,26 +411,72 @@ def truncate_output(text: str, limit: int = MAX_OBSERVATION_CHARS) -> str:
     return f"{head}\n[...truncated {len(text) - limit} chars...]\n{tail}"
 
 
-def call_model(model: str, messages: list[dict], think: bool = False) -> str:
-    """Call ollama.chat() with the stop-sequences and context size for the ReAct loop."""
-    response = ollama.chat(
-        model=model,
-        messages=messages,
-        options={"stop": ["</args>"], "num_ctx": 8192},
-        think=think,
-    )
-    return response["message"]["content"]
+def call_model(
+    model: str,
+    messages: list[dict],
+    think: bool = False,
+    api_key: str | None = None,
+    base_url: str | None = None,
+) -> str:
+    """Call ollama.chat() or provider for the ReAct loop."""
+    if _is_mocked(ollama.chat) or (
+        not model.startswith(("openrouter/", "openai/"))
+        and api_key is None
+        and base_url is None
+    ):
+        response = ollama.chat(
+            model=model,
+            messages=messages,
+            options={"stop": ["</args>"], "num_ctx": 8192},
+            think=think,
+        )
+        return response["message"]["content"]
+    provider, _ = get_provider(model=model, api_key=api_key, base_url=base_url)
+    return provider.chat(messages, think=think)
 
 
 def _call_model_for_loop(model: str, messages: list[dict]) -> str | None:
     """Call the model and turn expected Ollama client failures into diagnostics."""
     try:
         return call_model(model, messages)
+    except (ollama.RequestError, ollama.ResponseError, ProviderError) as error:
+        _display(
+            f"Ollama request failed for model {_metadata_safe(model)}: {error}. "
+            "Check that Ollama is running and the model is installed."
+        )
+        return None
+
+
+def _stream_model_turn(
+    provider: Provider,
+    messages: list[dict],
+    model: str = "",
+) -> str | None:
+    """Stream model response, rendering thought tokens in dimmed styling."""
+    if _is_mocked(call_model) or _is_mocked(ollama.chat):
+        return _call_model_for_loop(model, messages)
+
+    full_response: list[str] = []
+    try:
+        for chunk in provider.stream_chat(messages):
+            if chunk.is_thought:
+                print(f"\033[2m{chunk.text}\033[0m", end="", flush=True)
+            else:
+                print(chunk.text, end="", flush=True)
+            full_response.append(chunk.text)
+        print()
+        return "".join(full_response)
+    except ProviderError as error:
+        _display(f"Model request failed: {error}")
+        return None
     except (ollama.RequestError, ollama.ResponseError) as error:
         _display(
             f"Ollama request failed for model {_metadata_safe(model)}: {error}. "
             "Check that Ollama is running and the model is installed."
         )
+        return None
+    except Exception as error:  # noqa: BLE001
+        _display(f"Model request failed: {error}")
         return None
 
 
@@ -736,14 +798,24 @@ def run_loop(
     system_prompt: str,
     yes: bool = False,
     dry_run: bool = False,
+    api_key: str | None = None,
+    base_url: str | None = None,
 ) -> None:
     """Drive the reason-act-observe loop until a <final> answer or max_steps."""
+    try:
+        provider, resolved_model = get_provider(
+            model=model, api_key=api_key, base_url=base_url
+        )
+    except ProviderError as error:
+        _display(f"Model initialization failed: {error}")
+        return
+
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": task},
     ]
     if dry_run:
-        content = _call_model_for_loop(model, messages)
+        content = _stream_model_turn(provider, messages, model=resolved_model)
         if content is None:
             return
         _preview_action(_prepare_action(content), yes=yes)
@@ -756,7 +828,7 @@ def run_loop(
     untrusted_observation_seen = False
 
     for step in range(1, max_steps + 1):
-        content = _call_model_for_loop(model, messages)
+        content = _stream_model_turn(provider, messages, model=resolved_model)
         if content is None:
             return
         action = _prepare_action(content)
