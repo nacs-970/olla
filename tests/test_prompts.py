@@ -113,3 +113,13 @@ def test_system_prompt_does_not_teach_automatic_memory_or_compaction():
     assert "automatic memory" not in lowered
     assert "inject all" not in lowered
     assert "compact" not in lowered
+
+
+def test_system_prompt_teaches_planning_checklist_guidance():
+    lowered = SYSTEM_PROMPT.lower()
+
+    assert "multi-step tasks" in lowered
+    assert "checklist" in lowered
+    assert "remember (key: plan)" in lowered
+    assert "update completed items in memory" in lowered
+

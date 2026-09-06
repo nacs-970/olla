@@ -292,6 +292,37 @@ def test_run_loop_max_steps_no_final(mocker, capsys):
     assert len(corrective) == 2
 
 
+def test_run_loop_unlimited_runs_until_final(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>remember</tool><args>plan\n1. do stuff</args>"}},
+        {"message": {"content": "<final>Completed all steps successfully.</final>"}},
+    ]
+
+    run_loop(task="multi-step goal", model="test-model", max_steps=0, system_prompt="sys")
+
+    captured = capsys.readouterr()
+    assert "Completed all steps successfully." in captured.out
+    assert "Reached max steps" not in captured.out
+    assert mock_chat.call_count == 2
+
+
+def test_run_loop_unlimited_stops_on_repetition_guard(mocker, capsys):
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.return_value = {"message": {"content": "<tool>shell</tool><args>pwd</args>"}}
+    mocker.patch(
+        "olla.loop.run_shell",
+        return_value={"exit_code": 0, "stdout": "/home/user\n", "stderr": ""},
+    )
+
+    run_loop(task="stuck task", model="test-model", max_steps=0, system_prompt="sys")
+
+    captured = capsys.readouterr()
+    assert "olla stopped: same shell call repeated 3x — model likely stuck" in captured.out
+    assert "Reached max steps" not in captured.out
+    assert mock_chat.call_count == 3
+
+
 def test_run_loop_allow_tier_no_prompt(mocker, capsys):
     mock_chat = mocker.patch("olla.loop.ollama.chat")
     mock_chat.side_effect = [

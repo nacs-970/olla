@@ -1,6 +1,7 @@
 """ReAct loop step execution."""
 
 import difflib
+import itertools
 import os
 import re
 import shlex
@@ -866,9 +867,11 @@ def run_loop(
     repeat_count = 0
     untrusted_observation_seen = False
 
-    for step in range(1, max_steps + 1):
+    step_iter = range(1, max_steps + 1) if max_steps > 0 else itertools.count(1)
+    for step in step_iter:
+        total_label = str(max_steps) if max_steps > 0 else "unlimited"
         debug_log(
-            f"=== Step {step}/{max_steps} ===",
+            f"=== Step {step}/{total_label} ===",
             {
                 "message_count": len(messages),
                 "messages": [
@@ -969,4 +972,5 @@ def run_loop(
                 }
             )
 
-    _display(f"Reached max steps ({max_steps}) without a <final> answer.")
+    if max_steps > 0:
+        _display(f"Reached max steps ({max_steps}) without a <final> answer.")

@@ -36,6 +36,9 @@ To retrieve one scratchpad note by its trimmed key, respond with:
 
 Remember and recall are scratchpad only. They are never a source of file contents.
 
+For multi-step tasks, initialize a step-by-step checklist on turn 1 using remember (key: plan).
+Before executing next actions, update completed items in memory.
+
 When you have the final answer for the user, respond with:
 <final>your answer text here</final>
 

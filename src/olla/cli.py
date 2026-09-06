@@ -20,14 +20,18 @@ from olla.smoke import run_smoke_test
     help="Model identifier (e.g. qwen2.5:3b or openrouter/meta-llama/llama-3.1-8b)",
 )
 @click.option("--dry-run", is_flag=True)
-@click.option("--max-steps", default=15, show_default=True, type=int)
+@click.option("--max-steps", default=50, show_default=True, type=int, help="Maximum number of steps (0 for unlimited)")
+@click.option("--unlimited", is_flag=True, help="Run without step limit (equivalent to --max-steps 0)")
 @click.option("--yes", is_flag=True)
 @click.option("--smoke-test", is_flag=True, help="Run format-compliance check against --model")
 @click.option("--api-key", required=False, default=None, help="API key for remote model provider")
 @click.option("--base-url", required=False, default=None, help="Custom base URL for OpenAI-compatible API")
 @click.option("--debug", is_flag=True, help="Show verbose debug information (prompts, tools, responses)")
-def main(task, model, dry_run, max_steps, yes, smoke_test, api_key, base_url, debug):
+def main(task, model, dry_run, max_steps, unlimited, yes, smoke_test, api_key, base_url, debug):
     """Run an agentic task against a local or remote model."""
+    if unlimited:
+        max_steps = 0
+
     cfg = load_config()
     debug = debug or os.environ.get("OLLA_DEBUG", "").lower() in ("1", "true", "yes") or bool(cfg.get("debug"))
     if debug:
