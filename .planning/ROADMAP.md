@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Core Loop + Shell Tool + CLI** - Working ReAct loop that parses model tags, runs shell commands, and installs as `olla`; format compliance validated against target models (completed 2026-06-11)
 - [x] **Phase 2: Safety Gate + Loop Control** - Blocklist, confirm-before-execute, dry-run, step cap, and repetition guard gate every dangerous action (gap closure round 3 in progress — 02-06 pending) (completed 2026-06-13)
 - [x] **Phase 3: File Tools** - Model can read and write files through the safety gate (completed 2026-06-15)
-- [ ] **Phase 4: Memory Tool** - Model can store and recall cross-turn scratchpad notes
+- [x] **Phase 4: Memory Tool** - Model can store and recall cross-turn scratchpad notes (completed 2026-09-07)
 
 ## Phase Details
 
@@ -150,5 +150,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 1. Core Loop + Shell Tool + CLI | 2/2 | Complete   | 2026-06-11 |
 | 2. Safety Gate + Loop Control | 8/8 | Complete   | 2026-06-14 |
 | 3. File Tools | 5/5 | Complete   | 2026-07-29 |
-| 4. Memory Tool | 2/2 | In Progress|  |
+| 4. Memory Tool | 2/2 | Complete   | 2026-09-07 |
 </content>
+
