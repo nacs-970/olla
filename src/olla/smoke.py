@@ -25,6 +25,8 @@ FIXED_PROMPTS = [
     "What is 2 + 2? Answer directly.",
 ]
 
+COMPLIANCE_THRESHOLD_PCT = 80.0
+
 
 def _is_mocked(obj: object) -> bool:
     return isinstance(obj, Mock) or hasattr(obj, "mock_calls")
@@ -79,8 +81,8 @@ def run_smoke_test(
             f"{results['reverted_to_native_format']} reverted to native format, "
             f"{results['non_compliant']} non-compliant"
         )
-        if think_mode is False and compliance_pct < 80:
+        if think_mode is False and compliance_pct < COMPLIANCE_THRESHOLD_PCT:
             print(
-                f"  WARNING: {model} below 80% threshold (D-08) — flagged for follow-up, "
+                f"  WARNING: {model} below {COMPLIANCE_THRESHOLD_PCT:.0f}% threshold (D-08) — flagged for follow-up, "
                 f"no fallback format built"
             )

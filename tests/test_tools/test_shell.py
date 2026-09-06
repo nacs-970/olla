@@ -43,6 +43,14 @@ def test_empty_argv_errors():
     assert "empty command" in result["error"]
 
 
+def test_permission_denied(tmp_path):
+    script = tmp_path / "script.sh"
+    script.write_text("#!/bin/sh\necho hi\n")
+    script.chmod(0o644)  # no execute bit
+    result = run_shell([str(script)])
+    assert "permission denied" in result["error"]
+
+
 # Malformed-quoting handling (formerly test_unbalanced_quote) is now the
 # caller's responsibility via shlex.split() in olla.loop, covered by
 # tests/test_loop.py::test_run_loop_malformed_args_recovers.

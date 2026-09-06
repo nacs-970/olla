@@ -7,12 +7,12 @@ import shlex
 from typing import Literal, TypedDict
 
 
-class Decision(TypedDict, total=False):
+class _DecisionRequired(TypedDict):
     kind: Literal["ALLOW", "CONFIRM", "BLOCK"]
-    reason: str  # present only when kind == "BLOCK"; total=False is a
-    # type-checker-only relaxation (no runtime enforcement either way) chosen
-    # to avoid PEP 655's optional-key type marker (Python >=3.11 only) per
-    # CR-01 -- check() always sets `kind` on every return path.
+
+
+class Decision(_DecisionRequired, total=False):
+    reason: str  # present only when kind == "BLOCK"
 
 
 # D-01: whole-binary allowlist — read-only, side-effect-free commands that
@@ -235,15 +235,18 @@ def _blocklist_match(argv: list[str]) -> str | None:
     # equivalent-form target (`//`, `///`, ...) (CR-02 round 3), or a
     # dot-segment equivalent-form target (`/.`, `//.`, `/./`, ...) that
     # os.path.normpath resolves to `/` or `//` (round 4).
-    if binary in ("chmod", "chown") and any(
-        _normalize_slash_target(a) == "/" or os.path.normpath(a).rstrip("/") == ""
-        for a in argv[1:]
-    ):
-        if any(
+    if (
+        binary in ("chmod", "chown")
+        and any(
+            _normalize_slash_target(a) == "/" or os.path.normpath(a).rstrip("/") == ""
+            for a in argv[1:]
+        )
+        and any(
             (a.startswith("-") and not a.startswith("--") and "R" in a) or a == "--recursive"
             for a in argv[1:]
-        ):
-            return f"'{binary} -R' targeting '/' is destructive"
+        )
+    ):
+        return f"'{binary} -R' targeting '/' is destructive"
 
     return None
 

@@ -361,7 +361,8 @@ def test_empty_argv_blocks_with_reason():
 # (or python3.11) and confirm it exits 0 with no ImportError.
 def test_safety_module_has_no_python311_only_typing_symbols():
     source_path = inspect.getsourcefile(check)
-    source = open(source_path).read()
+    with open(source_path, encoding="utf-8") as f:
+        source = f.read()
     assert "NotRequired" not in source
     assert "Required[" not in source
 

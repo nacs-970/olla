@@ -15,7 +15,14 @@ def run_shell(argv: list[str], timeout: int = 30) -> ToolResult:
     if not argv:
         return {"argv": argv, "error": "empty command"}
     try:
-        result = subprocess.run(argv, shell=False, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(
+            argv,
+            shell=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
         return {
             "argv": argv,
             "returncode": result.returncode,
@@ -24,5 +31,7 @@ def run_shell(argv: list[str], timeout: int = 30) -> ToolResult:
         }
     except FileNotFoundError:
         return {"argv": argv, "error": f"command not found: {argv[0]}"}
+    except PermissionError:
+        return {"argv": argv, "error": f"permission denied: {argv[0]}"}
     except subprocess.TimeoutExpired:
         return {"argv": argv, "error": f"command timed out after {timeout}s"}
