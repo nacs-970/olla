@@ -103,6 +103,17 @@ class OpenAICompatProvider:
         self._context_length = 128000
         return self._context_length
 
+    @staticmethod
+    def _sanitize_messages(messages: list[dict]) -> list[dict]:
+        """Convert 'tool' role messages to 'user' for OpenAI-compatible APIs without native function calling."""
+        sanitized = []
+        for msg in messages:
+            if msg.get("role") == "tool":
+                sanitized.append({"role": "user", "content": msg.get("content", "")})
+            else:
+                sanitized.append(msg)
+        return sanitized
+
     def _raw_stream_request(self, messages: list[dict]) -> Iterator[StreamChunk]:
         """Execute streaming HTTP request with retries and parse SSE chunks."""
         headers = {
@@ -111,9 +122,10 @@ class OpenAICompatProvider:
             "X-Title": "olla CLI Agent",
             "Content-Type": "application/json",
         }
+        sanitized_messages = self._sanitize_messages(messages)
         payload = {
             "model": self.model,
-            "messages": messages,
+            "messages": sanitized_messages,
             "stop": ["</args>"],
             "stream": True,
         }

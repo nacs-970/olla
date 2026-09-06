@@ -74,3 +74,8 @@ def main(task, model, dry_run, max_steps, yes, smoke_test, api_key, base_url, de
         base_url=base_url,
         debug=debug,
     )
+
+
+if __name__ == "__main__":
+    main()
+
