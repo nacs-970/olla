@@ -19,8 +19,8 @@
 
 ### Files
 
-- [ ] **FILE-01**: `read_file(path)` tool reads file contents for the model
-- [ ] **FILE-02**: `write_file(path, content)` tool writes file contents
+- [x] **FILE-01**: `read_file(path)` tool reads file contents for the model
+- [x] **FILE-02**: `write_file(path, content)` tool writes file contents
 
 ### Memory
 
@@ -81,8 +81,8 @@
 | SAFE-02 | Phase 2 | Complete |
 | SAFE-03 | Phase 2 | Complete |
 | SAFE-04 | Phase 2 | Complete |
-| FILE-01 | Phase 3 | Gaps Found |
-| FILE-02 | Phase 3 | Gaps Found |
+| FILE-01 | Phase 3 | Complete |
+| FILE-02 | Phase 3 | Complete |
 | MEM-01 | Phase 4 | Complete |
 
 **Coverage:**

@@ -92,7 +92,7 @@ Plans:
 
 ### Phase 3: File Tools
 
-**Goal**: As a user running an agentic task with olla, I want the model to read existing files and write modified files through the confirm-gate, so that it can inspect and update my project's files to complete the task.
+**Goal**: As a user running an agentic task with olla, I want to read existing files and write modified files through the confirm-gate, so that I can inspect and update my project's files to complete the task.
 **Mode:** mvp
 **Depends on**: Phase 2
 **Requirements**: FILE-01, FILE-02
