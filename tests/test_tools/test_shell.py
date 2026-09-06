@@ -51,6 +51,14 @@ def test_permission_denied(tmp_path):
     assert "permission denied" in result["error"]
 
 
+def test_non_utf8_binary_stdout_handled_gracefully():
+    # When a process outputs non-UTF-8 bytes, errors="replace" prevents UnicodeDecodeError crash
+    code = "import sys; sys.stdout.buffer.write(bytes([104, 101, 108, 108, 111, 32, 255, 254]))"
+    result = run_shell(["python3", "-c", code])
+    assert result["returncode"] == 0
+    assert "hello" in result["stdout"]
+
+
 # Malformed-quoting handling (formerly test_unbalanced_quote) is now the
 # caller's responsibility via shlex.split() in olla.loop, covered by
 # tests/test_loop.py::test_run_loop_malformed_args_recovers.

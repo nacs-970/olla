@@ -20,6 +20,7 @@ def run_shell(argv: list[str], timeout: int = 30) -> ToolResult:
             shell=False,
             capture_output=True,
             text=True,
+            errors="replace",
             timeout=timeout,
             check=False,
         )
