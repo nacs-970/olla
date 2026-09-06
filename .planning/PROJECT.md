@@ -2,11 +2,22 @@
 
 ## What This Is
 
-A lightweight Python CLI agent that wraps local Ollama models and remote OpenAI-compatible providers in a tight ReAct (reason → act → observe) loop. Run agentic tasks — shell commands, file edits, scratchpad memory notes — against small local LLMs (0.6B-7B range) or remote endpoints without framework bloat or heavyweight dependencies.
+A lightweight Python CLI agent that wraps local Ollama models and remote OpenAI-compatible providers in a tight ReAct (reason → act → observe) loop. Run agentic tasks — shell commands, file edits, scratchpad memory notes, web search/browsing, and inspection — against small local LLMs (0.6B-7B range) or remote endpoints without framework bloat or heavyweight dependencies.
 
 ## Core Value
 
 Stay fast and accurate on small local models. Minimal per-turn token overhead so 2-4B models on constrained hardware remain responsive and don't drift into wrong answers under a bloated context.
+
+## Current Milestone: v1.1 Tools Expansion & Interactive REPL
+
+**Goal:** Expand olla with web search, lightweight headless web browsing, safe read-only inspection tools, and an interactive REPL mode, while preserving strict small-model token budgets and low memory overhead.
+
+**Target features:**
+- Web Search Tool (`search_web`): DuckDuckGo/SearXNG snippet search.
+- Web Content Reader (`fetch_url`): Fast HTTP HTML-to-markdown reader.
+- Lightweight Headless Browser (`browse_web`): Resource-constrained Playwright runner with asset blocking and accessibility text snapshots.
+- Safe File Inspection Tools (`list_dir`, `grep_files`): Unprompted read-only filesystem discovery.
+- Interactive REPL Mode: Multi-turn conversational session with preserved tool context.
 
 ## Requirements
 
@@ -31,15 +42,16 @@ Stay fast and accurate on small local models. Minimal per-turn token overhead so
 
 ### Active
 
-- [ ] Interactive/REPL mode: multi-turn conversational session
-- [ ] Per-tool allowlist (`--tools`/`-t`) to restrict session to read-only tools
-- [ ] Token/context usage indicator (e.g., "~1.2k/4k tokens used this turn")
-- [ ] Context-compaction on `remember()`: prune redundant tool observations
+- [ ] **SEARCH-01**: Web search tool `search_web(query)` returning top snippets (title, URL, summary) with output truncation
+- [ ] **WEB-01**: Fast HTTP webpage reader `fetch_url(url)` converting HTML to clean markdown
+- [ ] **BROWSE-01**: Lightweight headless browser `browse_web(url, action)` using resource-constrained Playwright with asset blocking and accessibility snapshots
+- [ ] **INSPECT-01**: Read-only inspection tools `list_dir(path)` and `grep_files(pattern, path)` executing without safety confirm prompts
+- [ ] **REPL-01**: Interactive REPL mode `olla` (without task argument) supporting multi-turn conversation and session state
 
 ### Out of Scope
 
+- Heavy browser automation with full UI rendering / video / canvas — too resource-intensive for small-model local setup
 - Config file (`~/.olla/config.toml`) — CLI flags and env vars sufficient for now
-- Web search / browser automation — heavy dependency, large token cost; not core to local-first agent loop
 - Rich colored/decorative output — keep output minimal and clean; `rich` scoped to prompts and progress
 
 ## Context
@@ -53,11 +65,11 @@ Stay fast and accurate on small local models. Minimal per-turn token overhead so
 
 ## Constraints
 
-- **Hardware**: Must run well on resource-constrained hardware — minimize per-turn token overhead, avoid heavy framework dependencies.
+- **Hardware**: Must run well on resource-constrained hardware (e.g. 7.1GB RAM host) — keep extra RAM overhead below 150MB.
 - **Models**: Model-agnostic. Support both local Ollama models and remote OpenAI-compatible endpoints; no hardcoded default model.
-- **Dependencies**: Minimal — `ollama`, `rich`, `click`, `httpx`. No LangChain, Pydantic, or vector DBs.
+- **Dependencies**: Keep dependencies lightweight — avoid full framework overhead.
 - **Distribution**: pip install via `pyproject.toml`, single `olla` console-script entry point.
-- **Safety**: Agent executes arbitrary shell commands and writes files — blocklist, confirm-gating, read-derived overwrites, and dry-run are non-negotiable.
+- **Safety**: Unprompted tools must be strictly read-only; destructive operations continue to require confirmation.
 
 ## Key Decisions
 
@@ -71,5 +83,22 @@ Stay fast and accurate on small local models. Minimal per-turn token overhead so
 | Invocation-scoped scratchpad memory (`remember`/`recall`) | Allows intermediate state without context bloating or persistent database overhead | ✓ Good |
 | Pluggable provider abstraction (Ollama + OpenAI-compatible) | Seamless switching between local inference and remote models | ✓ Good |
 
+## Evolution
+
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition** (via `/gsd-transition`):
+1. Requirements invalidated? → Move to Out of Scope with reason
+2. Requirements validated? → Move to Validated with phase reference
+3. New requirements emerged? → Add to Active
+4. Decisions to log? → Add to Key Decisions
+5. "What This Is" still accurate? → Update if drifted
+
+**After each milestone** (via `/gsd-complete-milestone`):
+1. Full review of all sections
+2. Core Value check — still the right priority?
+3. Audit Out of Scope — reasons still valid?
+4. Update Context with current state
+
 ---
-*Last updated: 2026-09-07 after v1.0 milestone*
+*Last updated: 2026-09-07 for v1.1 milestone kickoff*

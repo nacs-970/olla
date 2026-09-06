@@ -1,20 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-status: Awaiting next milestone
-stopped_at: Phase 04 verified, all 19 milestone plans complete
-last_updated: "2026-09-06T20:58:14.892Z"
+milestone: v1.1
+milestone_name: Tools Expansion & Interactive REPL
+status: planning
+last_updated: "2026-09-06T21:05:57.623Z"
 last_activity: 2026-09-07
-last_activity_desc: Milestone v1.0 completed and archived
-state_head: 85cb0251084bd60df7783d6c5cb69cb678016a67
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 19
-  completed_plans: 19
-milestone_name: milestone
-current_phase: 04
-current_phase_name: Memory Tool
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 Total Phases: 5
@@ -30,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-09-07)
 
 ## Current Position
 
-Phase: Milestone v1.0 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-09-07 — Milestone v1.0 completed and archived
+Status: Defining requirements
+Last activity: 2026-09-07 — Milestone v1.1 started
 
 ## Performance Metrics
 
@@ -97,6 +93,7 @@ None yet.
 ### Blockers/Concerns
  
 None. All milestone v1.0 blockers and gap-closures resolved.
+
 - [Hardware]: `gemma4:e2b` (7.2GB) does not fit in this host's 7.1GB RAM (OOM-killed). Affects which local models are realistically usable for local dev/testing on this machine.
 
 ### Quick Tasks Completed
