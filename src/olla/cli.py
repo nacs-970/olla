@@ -2,6 +2,7 @@
 
 import click
 
+from olla.config import load_config
 from olla.loop import run_loop
 from olla.prompts import SYSTEM_PROMPT
 from olla.smoke import run_smoke_test
@@ -23,6 +24,11 @@ from olla.smoke import run_smoke_test
 @click.option("--base-url", required=False, default=None, help="Custom base URL for OpenAI-compatible API")
 def main(task, model, dry_run, max_steps, yes, smoke_test, api_key, base_url):
     """Run an agentic task against a local or remote model."""
+    cfg = load_config()
+    model = model or cfg.get("default_model") or cfg.get("model")
+    api_key = api_key or cfg.get("api_key")
+    base_url = base_url or cfg.get("base_url")
+
     if smoke_test:
         if not model:
             raise click.UsageError("--smoke-test requires --model")
