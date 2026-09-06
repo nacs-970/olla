@@ -791,7 +791,7 @@ def _execute_memory(
         {
             "tool": action.memory_request.tool,
             "signature": action.memory_request.signature,
-            "scratchpad_keys": list(scratchpad._data.keys()) if hasattr(scratchpad, "_data") else None,
+            "scratchpad_keys": list(scratchpad._values.keys()) if hasattr(scratchpad, "_values") else None,
         },
     )
     preview = truncate_output(
