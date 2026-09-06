@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A lightweight Python CLI agent that wraps local Ollama models and remote OpenAI-compatible providers in a tight ReAct (reason → act → observe) loop. Run agentic tasks — shell commands, file edits, scratchpad memory notes, web search/browsing, and inspection — against small local LLMs (0.6B-7B range) or remote endpoints without framework bloat or heavyweight dependencies.
+A lightweight Python CLI agent that wraps local Ollama models and remote OpenAI-compatible providers in a tight ReAct (reason → act → observe) loop. Run agentic tasks — shell commands, file edits, scratchpad memory notes, web search/reading via curl/httpx, and file inspection — against small local LLMs (0.6B-7B range) or remote endpoints without framework bloat or heavyweight dependencies.
 
 ## Core Value
 
@@ -10,12 +10,11 @@ Stay fast and accurate on small local models. Minimal per-turn token overhead so
 
 ## Current Milestone: v1.1 Tools Expansion & Interactive REPL
 
-**Goal:** Expand olla with web search, lightweight headless web browsing, safe read-only inspection tools, and an interactive REPL mode, while preserving strict small-model token budgets and low memory overhead.
+**Goal:** Expand olla with lightweight curl/httpx web search and page fetching, safe read-only inspection tools, and an interactive REPL mode, while preserving strict small-model token budgets and near-zero memory overhead.
 
 **Target features:**
-- Web Search Tool (`search_web`): DuckDuckGo/SearXNG snippet search.
-- Web Content Reader (`fetch_url`): Fast HTTP HTML-to-markdown reader.
-- Lightweight Headless Browser (`browse_web`): Resource-constrained Playwright runner with asset blocking and accessibility text snapshots.
+- Web Search Tool (`search_web`): DuckDuckGo Lite snippet search via curl/httpx.
+- Web Content Reader (`fetch_url`): Lightweight HTTP/curl HTML text extractor.
 - Safe File Inspection Tools (`list_dir`, `grep_files`): Unprompted read-only filesystem discovery.
 - Interactive REPL Mode: Multi-turn conversational session with preserved tool context.
 
@@ -42,15 +41,19 @@ Stay fast and accurate on small local models. Minimal per-turn token overhead so
 
 ### Active
 
-- [ ] **SEARCH-01**: Web search tool `search_web(query)` returning top snippets (title, URL, summary) with output truncation
-- [ ] **WEB-01**: Fast HTTP webpage reader `fetch_url(url)` converting HTML to clean markdown
-- [ ] **BROWSE-01**: Lightweight headless browser `browse_web(url, action)` using resource-constrained Playwright with asset blocking and accessibility snapshots
-- [ ] **INSPECT-01**: Read-only inspection tools `list_dir(path)` and `grep_files(pattern, path)` executing without safety confirm prompts
-- [ ] **REPL-01**: Interactive REPL mode `olla` (without task argument) supporting multi-turn conversation and session state
+- [ ] **SEARCH-01**: Web search tool `search_web(query)` using curl/httpx against DuckDuckGo Lite returning top 3-5 snippets
+- [ ] **WEB-01**: Webpage text reader `fetch_url(url)` using curl/httpx with boilerplate stripping and 3,000-char truncation
+- [ ] **WEB-02**: Untrusted observation tagging for web results revoking `--yes` auto-bypass on subsequent destructive actions
+- [ ] **INSPECT-01**: Read-only directory listing tool `list_dir(path)` with type/size info, capped at 50 entries
+- [ ] **INSPECT-02**: Read-only regex search tool `grep_files(pattern, path)` capped at 25 matches
+- [ ] **INSPECT-03**: Unprompted execution for inspection tools under `safety.check()`
+- [ ] **REPL-01**: Interactive REPL mode `olla` (without task argument) supporting multiline editing via `prompt_toolkit`
+- [ ] **REPL-02**: Multi-turn session state preserving Scratchpad memory across turns
+- [ ] **REPL-03**: Rolling conversation context truncation to fit within model `num_ctx`
 
 ### Out of Scope
 
-- Heavy browser automation with full UI rendering / video / canvas — too resource-intensive for small-model local setup
+- Heavy browser automation (Playwright/Chromium) — rejected to preserve host RAM and avoid binary dependencies
 - Config file (`~/.olla/config.toml`) — CLI flags and env vars sufficient for now
 - Rich colored/decorative output — keep output minimal and clean; `rich` scoped to prompts and progress
 
@@ -65,9 +68,9 @@ Stay fast and accurate on small local models. Minimal per-turn token overhead so
 
 ## Constraints
 
-- **Hardware**: Must run well on resource-constrained hardware (e.g. 7.1GB RAM host) — keep extra RAM overhead below 150MB.
+- **Hardware**: Must run well on resource-constrained hardware (e.g. 7.1GB RAM host) — near-zero memory footprint for web tools.
 - **Models**: Model-agnostic. Support both local Ollama models and remote OpenAI-compatible endpoints; no hardcoded default model.
-- **Dependencies**: Keep dependencies lightweight — avoid full framework overhead.
+- **Dependencies**: Zero new heavy dependencies — use system `curl` / `httpx` for web queries.
 - **Distribution**: pip install via `pyproject.toml`, single `olla` console-script entry point.
 - **Safety**: Unprompted tools must be strictly read-only; destructive operations continue to require confirmation.
 
@@ -82,6 +85,7 @@ Stay fast and accurate on small local models. Minimal per-turn token overhead so
 | Read-derived overwrite prerequisite for file editing | Prevents small models from hallucinating file replacements without inspecting contents | ✓ Good |
 | Invocation-scoped scratchpad memory (`remember`/`recall`) | Allows intermediate state without context bloating or persistent database overhead | ✓ Good |
 | Pluggable provider abstraction (Ollama + OpenAI-compatible) | Seamless switching between local inference and remote models | ✓ Good |
+| Lightweight curl/httpx web search over heavy browser | Eliminates 300-500MB browser RAM bloat and extra binary dependencies on 7.1GB RAM host | ✓ Good |
 
 ## Evolution
 

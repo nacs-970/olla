@@ -1,0 +1,64 @@
+# Requirements: olla
+
+**Defined:** 2026-09-07  
+**Core Value:** Stay fast and accurate on small local models. Minimal per-turn token overhead so 2-4B models on constrained hardware remain responsive and don't drift into wrong answers under a bloated context.
+
+## v1 Requirements
+
+### Inspection Tools
+
+- [ ] **INSPECT-01**: `list_dir(path)` tool lists directory entries with `[d]`/`[f]` indicator, names, and sizes, capped at 50 entries
+- [ ] **INSPECT-02**: `grep_files(pattern, path)` tool performs regex search across text files (ignoring `.git` and binary files), returning up to 25 matches with file:line
+- [ ] **INSPECT-03**: `safety.check()` classifies inspection tools as `ALLOW`, executing without interactive confirmation prompts
+
+### Web Tools
+
+- [ ] **WEB-01**: `search_web(query)` tool queries DuckDuckGo Lite via curl/httpx, returning top 3-5 snippet cards with titles and links without extra pip dependencies
+- [ ] **WEB-02**: `fetch_url(url)` tool fetches webpage content via curl/httpx, extracting readable text and stripping HTML markup
+- [ ] **WEB-03**: Hard output truncation limits web tool observations to <= 3,000 characters before appending to conversation context
+- [ ] **WEB-04**: Observations from web tools tag state as untrusted, revoking `--yes` auto-bypass on subsequent destructive actions
+
+### Interactive REPL
+
+- [ ] **REPL-01**: Launching `olla` with no arguments starts an interactive terminal REPL with multiline editing and history via `prompt_toolkit`
+- [ ] **REPL-02**: Multi-turn conversational session preserves Scratchpad memory across turns within the session
+- [ ] **REPL-03**: Rolling conversation context management truncates older turns to remain within model `num_ctx`
+
+## Future Requirements
+
+### Memory
+
+- **MEM-02**: Context-compaction on `remember()`: prune redundant tool observations
+
+### CLI
+
+- **CLI-04**: Per-tool allowlist (`--tools`/`-t`) to restrict a session to read-only tools
+- **CLI-05**: Token/context usage indicator (e.g. "~1.2k/4k tokens used this turn")
+
+## Out of Scope
+
+| Feature | Reason |
+|---------|--------|
+| Playwright / Chromium headless browser | Heavy RAM usage (~300-500MB) and binary downloads; curl/httpx is fast and fits 7.1GB host RAM |
+| Config file (`~/.olla/config.toml`) | CLI flags and env vars sufficient for current scope |
+| Rich colored terminal output | Keep output minimal and clean; `rich` scoped to prompts and progress |
+
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| INSPECT-01 | Phase 5 | Pending |
+| INSPECT-02 | Phase 5 | Pending |
+| INSPECT-03 | Phase 5 | Pending |
+| WEB-01 | Phase 6 | Pending |
+| WEB-02 | Phase 6 | Pending |
+| WEB-03 | Phase 6 | Pending |
+| WEB-04 | Phase 6 | Pending |
+| REPL-01 | Phase 7 | Pending |
+| REPL-02 | Phase 7 | Pending |
+| REPL-03 | Phase 7 | Pending |
+
+**Coverage:**
+- v1 requirements: 10 total
+- Mapped to phases: 10
+- Unmapped: 0
