@@ -22,7 +22,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 ### Phase 1: Core Loop + Shell Tool + CLI
 
-**Goal**: A user can run `olla "task"` against any local Ollama model and watch a reason-act-observe loop drive a shell command to completion, with the tag-format bet validated against the actual target models.
+**Goal**: As a user running an agentic task with olla, I want to drive shell commands to completion with local Ollama models in a ReAct loop, so that the tag-format contract is validated against target models.
 **Mode:** mvp
 **Depends on**: Nothing (first phase)
 **Requirements**: LOOP-01, LOOP-02, LOOP-03, LOOP-05, SHELL-01, CLI-01, CLI-02, CLI-03
