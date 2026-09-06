@@ -1,8 +1,8 @@
 ---
-status: diagnosed
+status: resolved
 trigger: "Phase 03 UAT gap G-03-4: file edit wrote unrelated model-generated content before reading the target; diagnose model-capacity limitations versus application contract gaps without fixing."
 created: 2026-07-28T14:16:15+07:00
-updated: 2026-07-28T14:27:21+07:00
+updated: 2026-09-07T03:57:00+07:00
 ---
 
 ## Current Focus
@@ -95,7 +95,12 @@ started: Discovered during Phase 03 UAT; evidence does not establish whether ear
 ## Resolution
 
 root_cause: "AND-gated failure: (1) qwen3.5:2b-256k produced a semantically invalid plan — premature write_file with hallucinated content and later misuse of recall — consistent with weak small-model instruction/tool adherence; and (2) the application treats model output as authoritative: SYSTEM_PROMPT lacks an explicit existing-file edit protocol and demonstrates standalone writing, while run_loop executes any syntactically valid full-file payload after confirming only the path, with no prior same-target read, snapshot/version, content preview, or provenance guard. Model size is an incident trigger/amplifier; the actionable data-loss root cause is the missing prompt/runtime edit contract."
-fix: "Not applied. Suggested direction: teach one compact same-file read -> Observation -> write edit transcript; state that scratchpad is never a substitute for file contents; deterministically require a successful read of an existing resolved target before overwrite and reject stale snapshots; show create-vs-overwrite plus a locally computed diff/content preview at confirmation. For simple substitutions, consider a guarded exact-replace tool (old text must match) so correctness does not depend on a small model reproducing the entire file. Add model-independent regressions for premature same-target writes, stale reads, and exact preservation of unrequested content."
-verification: "Diagnosis verified without Ollama or filesystem mutation: isolated mocked probe reproduced unsafe dispatch (0 reads, 1 write, path-only confirmation); 36 relevant existing tests passed, demonstrating the missing invariant is not currently covered. No fix was applied."
+fix: "Resolved by Phase 03 Plan 05 (03-05-PLAN.md): implemented read-derived overwrite prerequisite, bounded diff preview, and freshness check."
+verification: "All 375 tests in test suite pass, including test_loop.py existing-file prerequisite, stale snapshot, confirmation race, and alias regressions."
 files_changed:
+  - src/olla/loop.py
+  - src/olla/prompts.py
+  - tests/test_loop.py
+  - tests/test_prompts.py
   - .planning/debug/file-edit-wrong-content.md
+

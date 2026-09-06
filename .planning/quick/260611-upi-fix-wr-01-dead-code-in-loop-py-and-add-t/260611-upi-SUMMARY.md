@@ -1,4 +1,5 @@
 ---
+status: complete
 phase: 01-core-loop-shell-tool-cli
 plan: quick-260611-upi
 subsystem: core-loop

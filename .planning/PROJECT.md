@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A lightweight Python CLI agent that wraps local Ollama models in a tight ReAct (reason → act → observe) loop. Run agentic tasks — shell commands, file edits — against small local LLMs (0.6B-7B range) without the overhead of frameworks like LangChain or heavyweight agent CLIs.
+A lightweight Python CLI agent that wraps local Ollama models and remote OpenAI-compatible providers in a tight ReAct (reason → act → observe) loop. Run agentic tasks — shell commands, file edits, scratchpad memory notes — against small local LLMs (0.6B-7B range) or remote endpoints without framework bloat or heavyweight dependencies.
 
 ## Core Value
 
@@ -12,73 +12,64 @@ Stay fast and accurate on small local models. Minimal per-turn token overhead so
 
 ### Validated
 
-- [x] Repetition guard: abort the loop with a diagnostic if the same tool+args is called 2-3 times in a row — Validated in Phase 2: Safety Gate + Loop Control
-- [x] `--dry-run` flag: single-step preview — show the next planned tool call without executing it or any side effects, then stop — Validated in Phase 2: Safety Gate + Loop Control
-- [x] Safety: shell command blocklist (`rm -rf /`, `sudo`, `dd`, etc.) — speed-bump layer, not the primary boundary — Validated in Phase 2: Safety Gate + Loop Control
-- [x] Safety: `--max-steps` cap (default 15) to prevent infinite loops — Validated in Phase 2: Safety Gate + Loop Control
-- [x] Safety: confirm prompt (via `rich.Confirm.ask`) before shell/write_file execution, overridable with `--yes` — Validated in Phase 2: Safety Gate + Loop Control
-- [x] File tools: `read_file(path)`, `write_file(path, content)` — with null-byte safety (CR-01) and empty-write disclosure (CR-03) — Validated in Phase 3: File Tools
+- ✓ ReAct loop core: think → act → observe cycle, tolerant XML-tag parsing (`<tool>`, `<args>`, `<final>`) — v1.0
+- ✓ Stop-sequences passed to chat client to prevent hallucinated observations — v1.0
+- ✓ Explicit context sizing (`num_ctx`) and tool output truncation — v1.0
+- ✓ Repetition guard: aborts loop on 2-3 repeated identical calls — v1.0
+- ✓ Visible step-by-step progress output ("Step N: running `<cmd>`...") — v1.0
+- ✓ Shell tool: `subprocess.run(shlex.split(cmd), shell=False)` — v1.0
+- ✓ Safety: `--dry-run` single-step preview — v1.0
+- ✓ Safety: shell command blocklist speed bump with recursive unwrapping — v1.0
+- ✓ Safety: `--max-steps` cap (default 15) to prevent infinite loops — v1.0
+- ✓ Safety: confirm prompt (`rich.Confirm.ask`) before shell/write_file execution, overridable with `--yes` — v1.0
+- ✓ File tools: `read_file(path)` and atomic `write_file(path, content)` with read-derived overwrite checks and diff preview — v1.0
+- ✓ Scratchpad memory tool: `remember`/`recall` for cross-turn notes — v1.0
+- ✓ CLI: `--model` flag targeting any local or remote model without hardcoded default — v1.0
+- ✓ CLI: One-shot mode `olla "task description"` — v1.0
+- ✓ CLI: Pip-installable via `pyproject.toml` console-script entry point — v1.0
+- ✓ Provider: Remote OpenAI-compatible API support (`--api-base`, `--api-key`, OpenRouter) — v1.0
 
 ### Active
 
-- [ ] ReAct loop core: think → act → observe cycle, parse `<tool>`/`<args>`/`<final>` XML-style tags from model output, tolerant of markdown fences/whitespace/minor formatting drift
-- [ ] Stop-sequences passed to `ollama.chat()` so the model can't keep generating past a tool call and hallucinate its own observation/final
-- [ ] Explicit `num_ctx` set on every Ollama request; large tool outputs truncated before being appended to history (prevents silent context-window truncation dropping the system prompt)
-- [ ] Visible step-by-step progress output ("Step N: running `<cmd>`...") as the loop executes
-- [ ] Shell tool: `subprocess.run(shlex.split(cmd), shell=False)` — captures stdout/stderr, returned to model. No pipes/redirects/chaining in v1 (shell=False)
-- [ ] Scratchpad memory tool: `remember(key, value)` for cross-turn notes
-- [ ] `--model` flag: target any local Ollama model, no hardcoded default
-- [ ] One-shot mode: `olla "task description"` runs loop to completion
-- [ ] pip-installable via `pyproject.toml` (hatchling, src layout), `olla` console-script entry point
+- [ ] Interactive/REPL mode: multi-turn conversational session
+- [ ] Per-tool allowlist (`--tools`/`-t`) to restrict session to read-only tools
+- [ ] Token/context usage indicator (e.g., "~1.2k/4k tokens used this turn")
+- [ ] Context-compaction on `remember()`: prune redundant tool observations
 
 ### Out of Scope
 
-- Interactive/REPL mode — adds complexity, deferred to v2 (v0.3 in original roadmap)
-- Config file (`~/.olla/config.toml`) — CLI flags sufficient for v1
-- Web search (SearXNG tool) — not core to local-first agent loop, defer to v2
-- Rich colored terminal output — nice-to-have polish, not core functionality
-- Per-project tool toggles — defer until config file lands
+- Config file (`~/.olla/config.toml`) — CLI flags and env vars sufficient for now
+- Web search / browser automation — heavy dependency, large token cost; not core to local-first agent loop
+- Rich colored/decorative output — keep output minimal and clean; `rich` scoped to prompts and progress
 
 ## Context
 
-- User runs Arch Linux laptop with constrained hardware.
-- Local Ollama models available: `JOSIEFIED-Qwen3` (0.6b/1.7b/4b), `gemma4:e2b` (7.2GB), `gemma4-uncensored-aggressive` (3GB).
-- Prior experience: Ollama + Claude Code combo was too slow and gave wrong answers on this hardware — motivated building something purpose-built for small models.
-- Prompt format uses XML-style tags (`<tool>`, `<args>`, `<final>`) rather than JSON function-calling schemas, since small instruction-tuned models (0.6B-4B) are unreliable at structured JSON tool calls but handle simple tag-based output well.
+- Shipped v1.0 with ~8,500 LOC Python (3,260 LOC src, 5,249 LOC tests).
+- 375 automated unit and integration tests passing.
+- Tech stack: Python 3.10+, `ollama`, `rich`, `click`, `httpx`.
+- Local Ollama models tested: `JOSIEFIED-Qwen3` (0.6b/1.7b/4b), `gemma4:e2b`, `gemma4-uncensored-aggressive`.
+- Remote providers: OpenAI-compatible endpoints including OpenRouter with automated retry and backoff.
+- Prompt format uses XML-style tags (`<tool>`, `<args>`, `<final>`) rather than JSON function-calling schemas, keeping token overhead minimal.
 
 ## Constraints
 
-- **Hardware**: Must run well on a resource-constrained laptop — minimize per-turn token overhead, avoid heavy framework dependencies.
-- **Models**: Model-agnostic. User switches between multiple local Ollama models (0.6B-7B range); no hardcoded default model.
-- **Dependencies**: Minimal — `ollama` (Python client), `rich`, `click` only. No LangChain, Pydantic, or vector DBs.
+- **Hardware**: Must run well on resource-constrained hardware — minimize per-turn token overhead, avoid heavy framework dependencies.
+- **Models**: Model-agnostic. Support both local Ollama models and remote OpenAI-compatible endpoints; no hardcoded default model.
+- **Dependencies**: Minimal — `ollama`, `rich`, `click`, `httpx`. No LangChain, Pydantic, or vector DBs.
 - **Distribution**: pip install via `pyproject.toml`, single `olla` console-script entry point.
-- **Safety**: Agent executes arbitrary shell commands and writes files — blocklist, confirm-gating, and dry-run are non-negotiable from v1.
+- **Safety**: Agent executes arbitrary shell commands and writes files — blocklist, confirm-gating, read-derived overwrites, and dry-run are non-negotiable.
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| ReAct loop with XML-style tags, no JSON tool schema | Small models (0.6-4B) are unreliable at JSON function calling; tag-based output parses reliably and keeps prompts short | — Pending |
-| No hardcoded default model | User runs multiple local models day-to-day, needs flexibility via `--model` | — Pending |
-| pip/pyproject distribution with console-script entry point | Standard CLI install pattern, clean `olla` command on PATH | — Pending |
-| v1 scope = core loop + shell/file tools + memory + dry-run (v0.1-v0.2 of original sketch) | Ship a minimal working agent first, validate the loop before layering interactive mode, config, or web search | — Pending |
-
-## Evolution
-
-This document evolves at phase transitions and milestone boundaries.
-
-**After each phase transition** (via `/gsd-transition`):
-1. Requirements invalidated? → Move to Out of Scope with reason
-2. Requirements validated? → Move to Validated with phase reference
-3. New requirements emerged? → Add to Active
-4. Decisions to log? → Add to Key Decisions
-5. "What This Is" still accurate? → Update if drifted
-
-**After each milestone** (via `/gsd-complete-milestone`):
-1. Full review of all sections
-2. Core Value check — still the right priority?
-3. Audit Out of Scope — reasons still valid?
-4. Update Context with current state
+| ReAct loop with XML-style tags, no JSON tool schema | Small models (0.6-4B) are unreliable at JSON function calling; tag-based output parses reliably and keeps prompts short | ✓ Good |
+| No hardcoded default model | User runs multiple models day-to-day, needs flexibility via `--model` | ✓ Good |
+| pip/pyproject distribution with console-script entry point | Standard CLI install pattern, clean `olla` command on PATH | ✓ Good |
+| Multi-layer safety gate (blocklist + confirm prompt + dry-run) | Defense-in-depth against prompt injection and accidental destructive actions | ✓ Good |
+| Read-derived overwrite prerequisite for file editing | Prevents small models from hallucinating file replacements without inspecting contents | ✓ Good |
+| Invocation-scoped scratchpad memory (`remember`/`recall`) | Allows intermediate state without context bloating or persistent database overhead | ✓ Good |
+| Pluggable provider abstraction (Ollama + OpenAI-compatible) | Seamless switching between local inference and remote models | ✓ Good |
 
 ---
-*Last updated: 2026-06-16 after Phase 3 completion — file tools (read_file, write_file) validated with null-byte safety and empty-write disclosure*
+*Last updated: 2026-09-07 after v1.0 milestone*
