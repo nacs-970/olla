@@ -39,7 +39,7 @@
 **Success Criteria**:
 1. `list_dir(path)` tool returns directory tree with file types (`[d]`/`[f]`), names, and sizes, capped at 50 items.
 2. `grep_files(pattern, path)` tool performs regex search over text files, ignoring `.git` and binary files, capped at 25 matching lines.
-3. `safety.check()` classifies both inspection tools as `ALLOW`, permitting unprompted execution.
+3. Both tools execute with no interactive confirmation prompt: `run_loop()` dispatches `list_dir`/`grep_files` straight to their tool adapters, bypassing `safety.check()` entirely (D-09) — `safety.py` is not modified or given a tool-name branch.
 
 ### Phase 6: Lightweight Web Search & Fetch
 **Goal**: As a user running tasks requiring online information, I want olla to query DuckDuckGo and fetch webpage text using curl/httpx, so that the model can research topics without heavy browser dependencies.
