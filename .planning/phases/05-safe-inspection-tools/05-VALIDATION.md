@@ -40,9 +40,9 @@ created: "2026-09-08"
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| pending — set by planner | — | — | INSPECT-01 | — | `list_dir` returns `[d]`/`[f]`/`[l]` entries, sizes, sorted dirs-first-alpha, capped at 50, `.git` shown | unit | `pytest tests/test_tools/test_inspect.py -k list_dir -x` | ❌ W0 | ⬜ pending |
-| pending — set by planner | — | — | INSPECT-02 | — | `grep_files` regex-matches text files, skips `.git`/binary, caps at 25 lines, `file:line` output, `recursive` flag toggles traversal depth | unit | `pytest tests/test_tools/test_inspect.py -k grep_files -x` | ❌ W0 | ⬜ pending |
-| pending — set by planner | — | — | INSPECT-03 | — | `list_dir`/`grep_files` dispatch executes without a confirmation prompt (loop-level, not safety.py) | unit/integration | `pytest tests/test_loop.py -k "list_dir or grep_files" -x` | ❌ W0 | ⬜ pending |
+| Task 1 | 05-01 | 1 | INSPECT-01 | T-05-03 | `list_dir` returns `[d]`/`[f]`/`[l]` entries, sizes, sorted dirs-first-alpha, capped at 50, `.git` shown | unit | `pytest tests/test_tools/test_inspect.py -k list_dir -x` | ❌ W0 | ⬜ pending |
+| Task 2 | 05-01 | 1 | INSPECT-02 | T-05-01, T-05-02, T-05-05 | `grep_files` regex-matches text files, skips `.git`/binary, caps at 25 lines, `file:line` output, `recursive` flag toggles traversal depth | unit | `pytest tests/test_tools/test_inspect.py -k grep_files -x` | ❌ W0 | ⬜ pending |
+| Task 1 + Task 2 | 05-01 | 1 | INSPECT-03 | T-05-04 | `list_dir`/`grep_files` dispatch executes without a confirmation prompt (loop-level, not safety.py), and output tagging observably gates the next destructive action via a two-turn test | unit/integration | `pytest tests/test_loop.py -k "list_dir or grep_files" -x` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
