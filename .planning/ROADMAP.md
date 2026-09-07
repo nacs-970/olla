@@ -20,6 +20,9 @@
 
 ### Phase 5: Safe Inspection Tools
 - [ ] **Phase 5: Safe Inspection Tools** - Read-only `list_dir` and `grep_files` tools executing without confirmation prompts
+  - **Plans:** 1 plan
+  - Plans:
+    - [ ] 05-01-PLAN.md — list_dir + grep_files end-to-end, unconfirmed dispatch, untrusted tagging
 
 ### Phase 6: Lightweight Web Search & Fetch
 - [ ] **Phase 6: Lightweight Web Search & Fetch** - DuckDuckGo Lite search and HTML webpage reading via curl/httpx with truncation and untrusted tagging
