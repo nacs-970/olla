@@ -1,12 +1,28 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v1.1",
-  "phases": [],
+  "milestone": "v1.1 — Tools Expansion & Interactive REPL",
+  "phases": [
+    {
+      "number": "5",
+      "name": "Safe Inspection Tools",
+      "status": "pending"
+    },
+    {
+      "number": "6",
+      "name": "Lightweight Web Search & Fetch",
+      "status": "pending"
+    },
+    {
+      "number": "7",
+      "name": "Interactive REPL Mode",
+      "status": "pending"
+    }
+  ],
   "next": {
-    "command": "/gsd-discuss-phase",
-    "label": "Discuss the first phase",
-    "reason": "Project initialized — plan your first phase"
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 05 of 6 · executing"
   },
-  "updated_at": "2026-09-06T21:05:57.629Z"
+  "updated_at": "2026-09-07T19:38:54.567Z"
 }
