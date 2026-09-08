@@ -1,6 +1,14 @@
 """Tests for the fetch_url web tool."""
 
-from olla.tools.web import _HEADERS, _TextExtractor, _truncate_to_sentence, fetch_url
+import httpx
+
+from olla.tools.web import (
+    _HEADERS,
+    _MAX_RESPONSE_BYTES,
+    _TextExtractor,
+    _truncate_to_sentence,
+    fetch_url,
+)
 
 _SAMPLE_HTML = """
 <html>
@@ -107,3 +115,64 @@ def test_fetch_url_small_page_returns_cleaned_content(mocker):
     _, kwargs = mock_client_cls.call_args
     assert kwargs["follow_redirects"] is True
     assert kwargs["headers"] == _HEADERS
+
+
+def test_truncate_to_sentence_hard_cuts_at_limit_when_no_punctuation():
+    text = "a" * 4000
+    result = _truncate_to_sentence(text, limit=3000)
+
+    body, _, note = result.partition("\n")
+    assert len(body) == 3000
+    assert note != ""
+    assert len(result) > 3000
+
+
+def test_truncate_to_sentence_counts_code_points_not_utf8_bytes():
+    # Each "🎉" is one Python character but 4 UTF-8 bytes; a byte-based
+    # implementation would cut around 750 characters instead of 3000.
+    text = "🎉" * 4000
+    result = _truncate_to_sentence(text, limit=3000)
+
+    body, _, note = result.partition("\n")
+    assert len(body) == 3000
+    assert note != ""
+
+
+def test_fetch_url_stops_reading_once_byte_cap_exceeded(mocker):
+    chunk = b"x" * 1_000_000
+    total_chunks = (_MAX_RESPONSE_BYTES // len(chunk)) + 20
+    drained_count = 0
+
+    def chunk_generator():
+        nonlocal drained_count
+        for _ in range(total_chunks):
+            drained_count += 1
+            yield chunk
+
+    mock_client_cls = mocker.patch("olla.tools.web.httpx.Client")
+    client_instance = mock_client_cls.return_value.__enter__.return_value
+    stream_cm = client_instance.stream.return_value
+    stream_cm.__enter__.return_value.iter_bytes.return_value = chunk_generator()
+
+    result = fetch_url("https://example.com/big")
+
+    assert "content" in result
+    assert drained_count < total_chunks
+
+
+def test_fetch_url_timeout_returns_error(mocker):
+    mock_client_cls = mocker.patch("olla.tools.web.httpx.Client")
+    mock_client_cls.side_effect = httpx.TimeoutException("timed out")
+
+    result = fetch_url("https://example.com/slow")
+
+    assert "error" in result
+
+
+def test_fetch_url_transport_error_returns_error(mocker):
+    mock_client_cls = mocker.patch("olla.tools.web.httpx.Client")
+    mock_client_cls.side_effect = httpx.TransportError("connection refused")
+
+    result = fetch_url("https://example.com/down")
+
+    assert "error" in result

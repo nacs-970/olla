@@ -2767,3 +2767,57 @@ def test_fetch_url_wraps_untrusted_content_and_forces_reconfirmation(mocker):
         for message in last_call_messages
     )
     mock_confirm.assert_called_once()
+
+
+def test_fetch_url_error_does_not_force_reconfirmation(mocker):
+    mocker.patch(
+        "olla.loop.fetch_url",
+        return_value={"error": "fetch_url request failed: timed out"},
+    )
+    mocker.patch("olla.loop.check", return_value={"kind": "CONFIRM"})
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask", return_value=True)
+    mocker.patch("olla.loop.run_shell", return_value={"stdout": "ok", "stderr": ""})
+    mock_chat = mocker.patch(
+        "olla.loop.ollama.chat",
+        side_effect=[
+            {
+                "message": {
+                    "content": "<tool>fetch_url</tool><args>https://example.com</args>"
+                }
+            },
+            {"message": {"content": "<tool>shell</tool><args>echo ok</args>"}},
+            {"message": {"content": "<final>done</final>"}},
+        ],
+    )
+
+    run_loop("summarize the page", "test-model", 3, "system prompt", yes=True)
+
+    mock_confirm.assert_not_called()
+    last_call_messages = mock_chat.call_args_list[-1].kwargs["messages"]
+    assert not any(
+        "<untrusted_web_content>" in message["content"]
+        for message in last_call_messages
+    )
+
+
+def test_fetch_url_dry_run_shows_fetch_preview(mocker, capsys):
+    mocker.patch(
+        "olla.loop.ollama.chat",
+        return_value={
+            "message": {
+                "content": "<tool>fetch_url</tool><args>https://example.com/page</args>"
+            }
+        },
+    )
+
+    run_loop(
+        task="read the page",
+        model="test-model",
+        max_steps=15,
+        system_prompt="sys",
+        dry_run=True,
+    )
+
+    captured = capsys.readouterr()
+    assert "Step 1 would fetch:" in captured.out
+    assert "https://example.com/page" in captured.out
