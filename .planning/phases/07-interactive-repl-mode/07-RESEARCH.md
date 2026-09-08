@@ -407,7 +407,12 @@ budget = provider.get_context_length()  # existing, unused method — do not har
 
 **If this table is empty:** N/A — see entries above.
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All three questions below carry an explicit "Recommendation" this research resolves to an operative
+interpretation; 07-01/07-02/07-03's plans implement exactly these recommendations (broad D-10 reading,
+`<untrusted_summary_digest>` tagging, `cl100k_base`/0.85 threshold defaults) — none is left open for the
+planner to re-litigate.
 
 1. **Does D-10's "before every `provider.chat()` call in the REPL loop" mean the outer per-turn REPL loop, or every model call inside `run_loop()`'s step loop (including multi-step tool-use turns)? — Operative interpretation: the broad one.**
    - What we know: `run_loop()`'s step loop can call `_stream_model_turn()` (which calls `provider.chat()`/`provider.stream_chat()`) multiple times within a single REPL turn, once per ReAct step, before reaching a `<final>` answer.
