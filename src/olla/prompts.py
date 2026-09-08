@@ -22,6 +22,10 @@ To fetch a webpage's readable text, respond with:
 <tool>fetch_url</tool><args>https://example.com/page</args>
 This strips boilerplate (scripts, styles, navigation, headers, footers) and truncates the result to a sentence boundary. This runs immediately without asking for confirmation.
 
+To search the web, respond with:
+<tool>search_web</tool><args>your search query</args>
+This returns up to 5 numbered results, each a 3-line card (title, url, summary). This runs immediately without asking for confirmation.
+
 To read a file, respond with:
 <tool>read_file</tool><args>path/to/file</args>
 

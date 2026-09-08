@@ -32,7 +32,7 @@ from olla.tools.memory import (
     parse_remember_args,
 )
 from olla.tools.shell import run_shell
-from olla.tools.web import fetch_url
+from olla.tools.web import fetch_url, search_web
 
 MAX_OBSERVATION_CHARS = 2000
 
@@ -340,6 +340,14 @@ def _prepare_action(content: str) -> _Action:
             args_raw=args_raw,
         )
 
+    if tool == "search_web":
+        return _Action(
+            "search_web",
+            tool,
+            ("search_web", args_raw),
+            args_raw=args_raw,
+        )
+
     if tool in {"remember", "recall"}:
         request = _prepare_memory_request(tool, args_raw)
         return _Action(
@@ -621,6 +629,8 @@ def _preview_action(action: _Action, *, yes: bool) -> None:
         _display(f"Step 1 would grep files for {action.pattern!r} in: {_metadata_safe(action.resolved)}")
     elif action.kind == "fetch_url":
         _display(f"Step 1 would fetch: {_metadata_safe(action.args_raw)}")
+    elif action.kind == "search_web":
+        _display(f"Step 1 would search: {_metadata_safe(action.args_raw)}")
     elif action.kind == "memory":
         assert action.memory_request is not None
         _display(
@@ -930,6 +940,26 @@ def _execute_fetch_url(
     return True
 
 
+def _execute_search_web(
+    action: _Action,
+    *,
+    step: int,
+    messages: list[dict],
+) -> bool:
+    if action.error is not None:
+        _record_observation(messages, action.error)
+        return False
+    _display(f"Step {step}: searching {_metadata_safe(action.args_raw)}...")
+    result = search_web(action.args_raw)
+    debug_log(f"Step {step} - Search web result", {"query": action.args_raw, "error": result.get("error")})
+    if "error" in result:
+        _record_observation(messages, truncate_output(result["error"]))
+        return False
+
+    _record_web_observation(messages, result.get("content", ""))
+    return True
+
+
 def _execute_memory(
     action: _Action,
     *,
@@ -1114,6 +1144,11 @@ def run_loop(
         elif action.kind == "fetch_url":
             untrusted_observation_seen = (
                 _execute_fetch_url(action, step=step, messages=messages)
+                or untrusted_observation_seen
+            )
+        elif action.kind == "search_web":
+            untrusted_observation_seen = (
+                _execute_search_web(action, step=step, messages=messages)
                 or untrusted_observation_seen
             )
         elif action.kind == "memory":
