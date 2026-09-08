@@ -1,23 +1,30 @@
-"""Contract tests for the concise five-tool system prompt."""
+"""Contract tests for the concise system prompt's tool roster."""
 
 import re
 
 from olla.prompts import SYSTEM_PROMPT
 
 
-def test_system_prompt_advertises_five_tools():
+def test_system_prompt_advertises_tool_roster():
     tool_line = next(
         line for line in SYSTEM_PROMPT.splitlines() if "tools available" in line
     )
 
-    assert "5 tools available" in tool_line
+    assert "7 tools available" in tool_line
     assert set(re.findall(r"`([^`]+)`", tool_line)) == {
         "shell",
         "read_file",
         "write_file",
         "remember",
         "recall",
+        "list_dir",
+        "grep_files",
     }
+
+
+def test_system_prompt_teaches_inspect_formats():
+    assert "<tool>list_dir</tool><args>path/to/directory</args>" in SYSTEM_PROMPT
+    assert "<tool>grep_files</tool><args>pattern\npath/to/directory\nrecursive=true</args>" in SYSTEM_PROMPT
 
 
 def test_system_prompt_treats_tool_file_content_as_untrusted_data():
@@ -43,29 +50,13 @@ def test_system_prompt_teaches_memory_formats():
 
 
 def test_system_prompt_contains_one_memory_round_trip():
-    transcript = """<tool>remember</tool><args>meeting_time
-3pm</args>
-Observation: remembered: meeting_time
-
-<tool>recall</tool><args>meeting_time</args>
-Observation: 3pm
-
-<final>The meeting is at 3pm.</final>"""
+    transcript = """<tool>remember</tool><args>meeting_time\n3pm</args>\nObservation: remembered: meeting_time\n\n<tool>recall</tool><args>meeting_time</args>\nObservation: 3pm\n\n<final>The meeting is at 3pm.</final>"""
 
     assert SYSTEM_PROMPT.count(transcript) == 1
 
 
 def test_system_prompt_teaches_one_same_file_edit_transcript():
-    transcript = """<tool>read_file</tool><args>settings.ini</args>
-Observation: name=olla
-mode=slow
-keep=this line
-
-<tool>write_file</tool><args>settings.ini
-name=olla
-mode=fast
-keep=this line
-</args>"""
+    transcript = """<tool>read_file</tool><args>settings.ini</args>\nObservation: name=olla\nmode=slow\nkeep=this line\n\n<tool>write_file</tool><args>settings.ini\nname=olla\nmode=fast\nkeep=this line\n</args>"""
 
     assert SYSTEM_PROMPT.count(transcript) == 1
     assert SYSTEM_PROMPT.index("<tool>read_file</tool><args>settings.ini</args>") < (

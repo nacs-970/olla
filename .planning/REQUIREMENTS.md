@@ -47,9 +47,9 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INSPECT-01 | Phase 5 | Pending |
-| INSPECT-02 | Phase 5 | Pending |
-| INSPECT-03 | Phase 5 | Pending |
+| INSPECT-01 | Phase 5 | Done |
+| INSPECT-02 | Phase 5 | Done |
+| INSPECT-03 | Phase 5 | Done |
 | WEB-01 | Phase 6 | Pending |
 | WEB-02 | Phase 6 | Pending |
 | WEB-03 | Phase 6 | Pending |

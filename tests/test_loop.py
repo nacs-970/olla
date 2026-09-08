@@ -2616,3 +2616,123 @@ def test_run_loop_passes_api_key_and_base_url_to_provider(mocker):
     mock_get_provider.assert_called_once_with(
         model="openrouter/llama-3.1", api_key="sk-123", base_url="https://api.test/v1"
     )
+
+def test_run_loop_list_dir_dispatch_no_prompt(mocker, tmp_path):
+    f = tmp_path / "hello.txt"
+    f.write_text("world")
+    mocker.patch("olla.loop.ollama.chat", side_effect=[
+        {"message": {"content": f"<tool>list_dir</tool><args>{tmp_path}</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ])
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+    from olla.loop import run_loop
+    run_loop("test", "test-model", 2, "system prompt")
+    mock_confirm.assert_not_called()
+
+def test_run_loop_list_dir_untrusted_observation(mocker, tmp_path):
+    f = tmp_path / "hello.txt"
+    f.write_text("world")
+    mock_chat = mocker.patch("olla.loop.ollama.chat", side_effect=[
+        {"message": {"content": f"<tool>list_dir</tool><args>{tmp_path}</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ])
+    from olla.loop import run_loop
+    run_loop("test", "test-model", 2, "system prompt")
+
+    # Check messages for untrusted file content tag
+    call_args = mock_chat.call_args_list[1]
+    messages = call_args.kwargs["messages"]
+    obs_messages = [m for m in messages if m["role"] == "tool"]
+    assert len(obs_messages) == 1
+    assert "<untrusted_file_content>" in obs_messages[0]["content"]
+
+def test_list_dir_gate_consequence_shell(mocker, tmp_path):
+    f = tmp_path / "hello.txt"
+    f.write_text("world")
+    mocker.patch("olla.loop.ollama.chat", side_effect=[
+        {"message": {"content": f"<tool>list_dir</tool><args>{tmp_path}</args>"}},
+        {"message": {"content": "<tool>shell</tool><args>git status</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ])
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask", return_value=True)
+    mock_run_shell = mocker.patch("olla.loop.run_shell", return_value={"stdout": "clean"})
+    import builtins
+
+    from olla.loop import run_loop
+    print_calls = []
+    original_print = builtins.print
+    def mock_print(*args, **kwargs):
+        print_calls.append(" ".join(str(a) for a in args))
+        original_print(*args, **kwargs)
+    
+    mocker.patch("builtins.print", side_effect=mock_print)
+    
+    run_loop("test", "test-model", 3, "system prompt", yes=True)
+    mock_confirm.assert_called_once()
+    mock_run_shell.assert_called_once()
+    assert any("Confirmation required: this action follows untrusted tool output" in out for out in print_calls)
+
+def test_run_loop_grep_files_dispatch_no_prompt(mocker, tmp_path):
+    f = tmp_path / "hello.txt"
+    f.write_text("world")
+    mocker.patch("olla.loop.ollama.chat", side_effect=[
+        {"message": {"content": f"<tool>grep_files</tool><args>world\n{tmp_path}</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ])
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+    from olla.loop import run_loop
+    run_loop("test", "test-model", 2, "system prompt")
+    mock_confirm.assert_not_called()
+
+def test_grep_files_gate_consequence_shell(mocker, tmp_path):
+    f = tmp_path / "hello.txt"
+    f.write_text("world")
+    mocker.patch("olla.loop.ollama.chat", side_effect=[
+        {"message": {"content": f"<tool>grep_files</tool><args>world\n{tmp_path}</args>"}},
+        {"message": {"content": "<tool>shell</tool><args>git status</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ])
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask", return_value=True)
+    mock_run_shell = mocker.patch("olla.loop.run_shell", return_value={"stdout": "clean"})
+    import builtins
+
+    from olla.loop import run_loop
+    print_calls = []
+    original_print = builtins.print
+    def mock_print(*args, **kwargs):
+        print_calls.append(" ".join(str(a) for a in args))
+        original_print(*args, **kwargs)
+    
+    mocker.patch("builtins.print", side_effect=mock_print)
+    
+    run_loop("test", "test-model", 3, "system prompt", yes=True)
+    mock_confirm.assert_called_once()
+    mock_run_shell.assert_called_once()
+    assert any("Confirmation required: this action follows untrusted tool output" in out for out in print_calls)
+
+def test_grep_files_malformed_args(mocker, tmp_path):
+    mock_chat = mocker.patch("olla.loop.ollama.chat", side_effect=[
+        {"message": {"content": "<tool>grep_files</tool><args>singleline</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ])
+    from olla.loop import run_loop
+    run_loop("test", "test-model", 2, "system prompt")
+    call_args = mock_chat.call_args_list[1]
+    messages = call_args.kwargs["messages"]
+    obs_messages = [m for m in messages if m["role"] == "user" and m["content"].startswith("Observation:")]
+    assert len(obs_messages) == 1
+    assert "refused: grep_files requires pattern and path on separate lines" in obs_messages[0]["content"]
+
+def test_run_loop_list_dir_error_observation(mocker, tmp_path):
+    mock_chat = mocker.patch("olla.loop.ollama.chat", side_effect=[
+        {"message": {"content": "<tool>list_dir</tool><args>/does/not/exist/ever</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ])
+    from olla.loop import run_loop
+    run_loop("test", "test-model", 2, "system prompt")
+    call_args = mock_chat.call_args_list[1]
+    messages = call_args.kwargs["messages"]
+    obs_messages = [m for m in messages if m["role"] == "user" and m["content"].startswith("Observation:")]
+    assert len(obs_messages) == 1
+    assert "directory not found" in obs_messages[0]["content"]
+    assert "<untrusted_file_content>" not in obs_messages[0]["content"]

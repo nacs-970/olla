@@ -24,6 +24,7 @@ from olla.tools.files import (
     read_file,
     write_file,
 )
+from olla.tools.inspect import grep_files, list_dir
 from olla.tools.memory import (
     RememberCall,
     Scratchpad,
@@ -105,6 +106,8 @@ class _Action:
     file_content: str | None = None
     resolved: Path | None = None
     memory_request: _MemoryRequest | None = None
+    pattern: str | None = None
+    recursive: bool = False
     error: str | None = None
 
 
@@ -283,6 +286,48 @@ def _prepare_action(content: str) -> _Action:
             path=path,
             file_content=file_content,
             resolved=resolved,
+            error=error,
+        )
+
+    if tool == "list_dir":
+        resolved, error = _resolve_file_path(args_raw)
+        normalized = str(resolved) if resolved is not None else args_raw
+        return _Action(
+            "list_dir",
+            tool,
+            ("list_dir", normalized),
+            args_raw=args_raw,
+            resolved=resolved,
+            error=error,
+        )
+
+    if tool == "grep_files":
+        lines = args_raw.split("\n")
+        if len(lines) < 2:
+            return _Action(
+                "grep_files",
+                tool,
+                ("grep_files", "invalid", args_raw),
+                args_raw=args_raw,
+                error="refused: grep_files requires pattern and path on separate lines",
+            )
+        pattern = lines[0]
+        path = lines[1].strip()
+        recursive = False
+        if len(lines) >= 3 and lines[2].strip().lower() == "recursive=true":
+            recursive = True
+        
+        resolved, error = _resolve_file_path(path)
+        normalized = str(resolved) if resolved is not None else path
+        return _Action(
+            "grep_files",
+            tool,
+            ("grep_files", pattern, normalized, recursive),
+            args_raw=args_raw,
+            path=path,
+            resolved=resolved,
+            pattern=pattern,
+            recursive=recursive,
             error=error,
         )
 
@@ -536,6 +581,19 @@ def _preview_action(action: _Action, *, yes: bool) -> None:
             "Step 1 would write by creating new file: "
             f"{_metadata_safe(action.resolved)} — {verdict}"
         )
+    elif action.kind == "list_dir":
+        if action.error is not None:
+            _display(action.error)
+            return
+        assert action.resolved is not None
+        _display(f"Step 1 would list directory: {_metadata_safe(action.resolved)}")
+    elif action.kind == "grep_files":
+        if action.error is not None:
+            _display(action.error)
+            return
+        assert action.resolved is not None
+        assert action.pattern is not None
+        _display(f"Step 1 would grep files for {action.pattern!r} in: {_metadata_safe(action.resolved)}")
     elif action.kind == "memory":
         assert action.memory_request is not None
         _display(
@@ -778,6 +836,53 @@ def _execute_write_file(
             pass
 
 
+def _execute_list_dir(
+    action: _Action,
+    *,
+    step: int,
+    messages: list[dict],
+) -> bool:
+    if action.error is not None:
+        _record_observation(messages, action.error)
+        return False
+    assert action.resolved is not None
+    resolved = action.resolved
+    _display(f"Step {step}: listing {_metadata_safe(resolved)}...")
+    result = list_dir(str(resolved))
+    debug_log(f"Step {step} - List dir result", {"path": str(resolved), "error": result.get("error")})
+    if "error" in result:
+        _record_observation(messages, truncate_output(result["error"]))
+        return False
+
+    raw_content = result.get("content", "")
+    _record_file_observation(messages, truncate_output(raw_content))
+    return True
+
+
+def _execute_grep_files(
+    action: _Action,
+    *,
+    step: int,
+    messages: list[dict],
+) -> bool:
+    if action.error is not None:
+        _record_observation(messages, action.error)
+        return False
+    assert action.resolved is not None
+    assert action.pattern is not None
+    resolved = action.resolved
+    _display(f"Step {step}: grepping in {_metadata_safe(resolved)}...")
+    result = grep_files(action.pattern, str(resolved), action.recursive)
+    debug_log(f"Step {step} - Grep result", {"path": str(resolved), "error": result.get("error")})
+    if "error" in result:
+        _record_observation(messages, truncate_output(result["error"]))
+        return False
+
+    raw_content = result.get("content", "")
+    _record_file_observation(messages, truncate_output(raw_content))
+    return True
+
+
 def _execute_memory(
     action: _Action,
     *,
@@ -948,6 +1053,16 @@ def run_loop(
                 read_snapshots=read_snapshots,
                 yes=yes,
                 untrusted_observation_seen=untrusted_observation_seen,
+            )
+        elif action.kind == "list_dir":
+            untrusted_observation_seen = (
+                _execute_list_dir(action, step=step, messages=messages)
+                or untrusted_observation_seen
+            )
+        elif action.kind == "grep_files":
+            untrusted_observation_seen = (
+                _execute_grep_files(action, step=step, messages=messages)
+                or untrusted_observation_seen
             )
         elif action.kind == "memory":
             untrusted_observation_seen = (

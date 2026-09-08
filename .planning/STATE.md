@@ -4,17 +4,17 @@ milestone: v1.1
 milestone_name: Tools Expansion & Interactive REPL
 current_phase: 05
 current_phase_name: Safe Inspection Tools
-status: executing
-stopped_at: Phase 05 context gathered
-last_updated: "2026-09-07T19:38:54.539Z"
-last_activity: 2026-09-07
-last_activity_desc: Milestone v1.1 roadmap created
+status: plan_complete
+stopped_at: Phase 05 plan 01 executed and verified
+last_updated: "2026-09-08T00:00:00.000Z"
+last_activity: 2026-09-08
+last_activity_desc: Phase 05 plan 01 (list_dir/grep_files) executed, verified, and closed
 state_head: 7b412dc43b3ca073f6c5c9a57ce1c2dbb6d34e1d
 progress:
   total_phases: 6
   completed_phases: 0
-  total_plans: 1
-  completed_plans: 0
+  total_plans: 2
+  completed_plans: 1
 ---
 
 Total Phases: 3
@@ -30,10 +30,10 @@ See: .planning/PROJECT.md (updated 2026-09-07)
 
 ## Current Position
 
-Phase: 05 (Safe Inspection Tools) — READY TO EXECUTE
-Plan: —
-Status: Ready to execute
-Last activity: 2026-09-07 — Milestone v1.1 roadmap created
+Phase: 05 (Safe Inspection Tools) — PLAN 01 COMPLETE
+Plan: 05-01 — done (list_dir, grep_files)
+Status: Ready for next phase (06) or additional phase-05 plans
+Last activity: 2026-09-08 — Phase 05 plan 01 executed and verified (397 tests passing, ruff clean)
 
 ## Performance Metrics
 
@@ -89,6 +89,7 @@ Recent decisions affecting current work:
 - [Phase 03]: Require a successful, completely observed same-resolved-path read before overwriting an existing file.
 - [Phase 03]: Make --yes bypass only confirmation; path resolution, previews, and freshness validation always run.
 - [Phase 03]: Keep write_file as full replacement and enforce edit safety in run_loop orchestration and the model prompt.
+- [Phase 05]: D-09 supersedes earlier "ALLOW in safety.check()" idea — list_dir/grep_files bypass safety.check() entirely (unconfirmed dispatch straight from run_loop, matching read_file's precedent) rather than growing safety.py a tool-name-aware branch.
 
 ### Pending Todos
 
@@ -116,10 +117,10 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-07T18:46:45.061Z
-Stopped at: Phase 05 context gathered
-Resume file: .planning/phases/05-safe-inspection-tools/05-CONTEXT.md
+Last session: 2026-09-08T00:00:00.000Z
+Stopped at: Phase 05 plan 01 closed (SUMMARY written, requirements marked Done)
+Resume file: none — no HANDOFF.json or .continue-here.md pending
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Continue Phase 05 (additional plans if scoped) or advance to Phase 06 (Lightweight Web Search & Fetch) via /gsd-plan-phase 6
