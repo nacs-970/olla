@@ -2736,3 +2736,34 @@ def test_run_loop_list_dir_error_observation(mocker, tmp_path):
     assert len(obs_messages) == 1
     assert "directory not found" in obs_messages[0]["content"]
     assert "<untrusted_file_content>" not in obs_messages[0]["content"]
+
+
+def test_fetch_url_wraps_untrusted_content_and_forces_reconfirmation(mocker):
+    mocker.patch("olla.loop.fetch_url", return_value={"content": "hello world"})
+    mocker.patch("olla.loop.check", return_value={"kind": "CONFIRM"})
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask", return_value=True)
+    mocker.patch("olla.loop.run_shell", return_value={"stdout": "ok", "stderr": ""})
+    mock_chat = mocker.patch(
+        "olla.loop.ollama.chat",
+        side_effect=[
+            {
+                "message": {
+                    "content": "<tool>fetch_url</tool><args>https://example.com</args>"
+                }
+            },
+            {"message": {"content": "<tool>shell</tool><args>echo ok</args>"}},
+            {"message": {"content": "<final>done</final>"}},
+        ],
+    )
+
+    run_loop("summarize the page", "test-model", 3, "system prompt", yes=True)
+
+    assert mock_chat.call_count == 3
+    last_call_messages = mock_chat.call_args_list[-1].kwargs["messages"]
+    assert any(
+        message["role"] == "tool"
+        and "<untrusted_web_content>" in message["content"]
+        and "hello world" in message["content"]
+        for message in last_call_messages
+    )
+    mock_confirm.assert_called_once()

@@ -32,6 +32,7 @@ from olla.tools.memory import (
     parse_remember_args,
 )
 from olla.tools.shell import run_shell
+from olla.tools.web import fetch_url
 
 MAX_OBSERVATION_CHARS = 2000
 
@@ -331,6 +332,14 @@ def _prepare_action(content: str) -> _Action:
             error=error,
         )
 
+    if tool == "fetch_url":
+        return _Action(
+            "fetch_url",
+            tool,
+            ("fetch_url", args_raw),
+            args_raw=args_raw,
+        )
+
     if tool in {"remember", "recall"}:
         request = _prepare_memory_request(tool, args_raw)
         return _Action(
@@ -444,6 +453,22 @@ def _record_shell_observation(messages: list[dict], preview: str) -> None:
                 "Observation: <untrusted_shell_output>\n"
                 f"{preview}\n"
                 "</untrusted_shell_output>"
+            ),
+        }
+    )
+
+
+def _record_web_observation(messages: list[dict], preview: str) -> None:
+    """Record fetched/searched web content as explicitly untrusted tool data."""
+    debug_log("Web observation recorded", preview)
+    _display(preview)
+    messages.append(
+        {
+            "role": "tool",
+            "content": (
+                "Observation: <untrusted_web_content>\n"
+                f"{preview}\n"
+                "</untrusted_web_content>"
             ),
         }
     )
@@ -594,6 +619,8 @@ def _preview_action(action: _Action, *, yes: bool) -> None:
         assert action.resolved is not None
         assert action.pattern is not None
         _display(f"Step 1 would grep files for {action.pattern!r} in: {_metadata_safe(action.resolved)}")
+    elif action.kind == "fetch_url":
+        _display(f"Step 1 would fetch: {_metadata_safe(action.args_raw)}")
     elif action.kind == "memory":
         assert action.memory_request is not None
         _display(
@@ -883,6 +910,26 @@ def _execute_grep_files(
     return True
 
 
+def _execute_fetch_url(
+    action: _Action,
+    *,
+    step: int,
+    messages: list[dict],
+) -> bool:
+    if action.error is not None:
+        _record_observation(messages, action.error)
+        return False
+    _display(f"Step {step}: fetching {_metadata_safe(action.args_raw)}...")
+    result = fetch_url(action.args_raw)
+    debug_log(f"Step {step} - Fetch url result", {"url": action.args_raw, "error": result.get("error")})
+    if "error" in result:
+        _record_observation(messages, truncate_output(result["error"]))
+        return False
+
+    _record_web_observation(messages, result.get("content", ""))
+    return True
+
+
 def _execute_memory(
     action: _Action,
     *,
@@ -1062,6 +1109,11 @@ def run_loop(
         elif action.kind == "grep_files":
             untrusted_observation_seen = (
                 _execute_grep_files(action, step=step, messages=messages)
+                or untrusted_observation_seen
+            )
+        elif action.kind == "fetch_url":
+            untrusted_observation_seen = (
+                _execute_fetch_url(action, step=step, messages=messages)
                 or untrusted_observation_seen
             )
         elif action.kind == "memory":

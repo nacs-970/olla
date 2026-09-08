@@ -106,6 +106,11 @@ def test_system_prompt_does_not_teach_automatic_memory_or_compaction():
     assert "compact" not in lowered
 
 
+def test_system_prompt_teaches_fetch_url_format():
+    assert "<tool>fetch_url</tool><args>https://example.com/page</args>" in SYSTEM_PROMPT
+    assert "This runs immediately without asking for confirmation." in SYSTEM_PROMPT
+
+
 def test_system_prompt_teaches_planning_checklist_guidance():
     lowered = SYSTEM_PROMPT.lower()
 

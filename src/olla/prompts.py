@@ -18,6 +18,10 @@ path/to/directory
 recursive=true</args>
 The third line is optional; omit it to search only the top-level directory. This tool is case-sensitive, automatically skips `.git` and binary files, and runs immediately without asking for confirmation.
 
+To fetch a webpage's readable text, respond with:
+<tool>fetch_url</tool><args>https://example.com/page</args>
+This strips boilerplate (scripts, styles, navigation, headers, footers) and truncates the result to a sentence boundary. This runs immediately without asking for confirmation.
+
 To read a file, respond with:
 <tool>read_file</tool><args>path/to/file</args>
 
