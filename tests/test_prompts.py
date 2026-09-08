@@ -10,7 +10,7 @@ def test_system_prompt_advertises_tool_roster():
         line for line in SYSTEM_PROMPT.splitlines() if "tools available" in line
     )
 
-    assert "7 tools available" in tool_line
+    assert "9 tools available" in tool_line
     assert set(re.findall(r"`([^`]+)`", tool_line)) == {
         "shell",
         "read_file",
@@ -19,6 +19,8 @@ def test_system_prompt_advertises_tool_roster():
         "recall",
         "list_dir",
         "grep_files",
+        "search_web",
+        "fetch_url",
     }
 
 
@@ -108,6 +110,11 @@ def test_system_prompt_does_not_teach_automatic_memory_or_compaction():
 
 def test_system_prompt_teaches_fetch_url_format():
     assert "<tool>fetch_url</tool><args>https://example.com/page</args>" in SYSTEM_PROMPT
+    assert "This runs immediately without asking for confirmation." in SYSTEM_PROMPT
+
+
+def test_system_prompt_teaches_search_web_format():
+    assert "<tool>search_web</tool><args>your search query</args>" in SYSTEM_PROMPT
     assert "This runs immediately without asking for confirmation." in SYSTEM_PROMPT
 
 

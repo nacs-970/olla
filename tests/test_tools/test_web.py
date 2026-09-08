@@ -336,6 +336,26 @@ def test_search_web_transport_error_returns_error(mocker):
     assert "error" in result
 
 
+def test_search_web_stream_timeout_returns_error(mocker):
+    mock_client_cls = mocker.patch("olla.tools.web.httpx.Client")
+    client_instance = mock_client_cls.return_value.__enter__.return_value
+    client_instance.stream.side_effect = httpx.TimeoutException("timed out")
+
+    result = search_web("python html.parser")
+
+    assert "error" in result
+
+
+def test_search_web_stream_transport_error_returns_error(mocker):
+    mock_client_cls = mocker.patch("olla.tools.web.httpx.Client")
+    client_instance = mock_client_cls.return_value.__enter__.return_value
+    client_instance.stream.side_effect = httpx.TransportError("connection refused")
+
+    result = search_web("python html.parser")
+
+    assert "error" in result
+
+
 def test_search_web_truncates_long_formatted_output(mocker):
     long_snippet = "x" * 4000
     html = f"""

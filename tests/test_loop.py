@@ -2855,3 +2855,59 @@ def test_search_web_wraps_untrusted_content_and_forces_reconfirmation(mocker):
         for message in last_call_messages
     )
     mock_confirm.assert_called_once()
+
+
+def test_search_web_error_does_not_force_reconfirmation(mocker):
+    mocker.patch(
+        "olla.loop.search_web",
+        return_value={
+            "error": "search_web: DuckDuckGo Lite returned a bot-challenge page instead of results"
+        },
+    )
+    mocker.patch("olla.loop.check", return_value={"kind": "CONFIRM"})
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask", return_value=True)
+    mocker.patch("olla.loop.run_shell", return_value={"stdout": "ok", "stderr": ""})
+    mock_chat = mocker.patch(
+        "olla.loop.ollama.chat",
+        side_effect=[
+            {
+                "message": {
+                    "content": "<tool>search_web</tool><args>python html.parser</args>"
+                }
+            },
+            {"message": {"content": "<tool>shell</tool><args>echo ok</args>"}},
+            {"message": {"content": "<final>done</final>"}},
+        ],
+    )
+
+    run_loop("research the topic", "test-model", 3, "system prompt", yes=True)
+
+    mock_confirm.assert_not_called()
+    last_call_messages = mock_chat.call_args_list[-1].kwargs["messages"]
+    assert not any(
+        "<untrusted_web_content>" in message["content"]
+        for message in last_call_messages
+    )
+
+
+def test_search_web_dry_run_shows_search_preview(mocker, capsys):
+    mocker.patch(
+        "olla.loop.ollama.chat",
+        return_value={
+            "message": {
+                "content": "<tool>search_web</tool><args>python html.parser</args>"
+            }
+        },
+    )
+
+    run_loop(
+        task="research the topic",
+        model="test-model",
+        max_steps=15,
+        system_prompt="sys",
+        dry_run=True,
+    )
+
+    captured = capsys.readouterr()
+    assert "Step 1 would search:" in captured.out
+    assert "python html.parser" in captured.out
