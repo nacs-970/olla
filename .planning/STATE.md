@@ -4,17 +4,17 @@ milestone: v1.1
 milestone_name: Tools Expansion & Interactive REPL
 current_phase: 06
 current_phase_name: Lightweight Web Search & Fetch
-status: plan_complete
-stopped_at: Phase 6 context gathered
-last_updated: "2026-09-08T18:36:37.021Z"
-last_activity: 2026-09-08
-last_activity_desc: Phase 05 plan 01 (list_dir/grep_files) executed, verified, and closed
-state_head: 3a80525f3c478275c75118d44cbceca7d2c3dc6f
+status: executing
+stopped_at: Completed 06-01-PLAN.md
+last_updated: "2026-09-08T18:50:38.757Z"
+last_activity: 2026-09-09
+last_activity_desc: Phase 06 execution started
+state_head: 5ee8a33621fca65db20321e4513ce7b2f40d3acb
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 Total Phases: 3
@@ -26,14 +26,14 @@ Total Phases: 3
 See: .planning/PROJECT.md (updated 2026-09-07)
 
 **Core value:** Stay fast and accurate on small local models. Minimal per-turn token overhead so 2-4B models on constrained hardware remain responsive and don't drift into wrong answers under a bloated context.
-**Current focus:** Phase 5 — Safe Inspection Tools
+**Current focus:** Phase 06 — Lightweight Web Search & Fetch
 
 ## Current Position
 
-Phase: 06 (Lightweight Web Search & Fetch) — READY TO EXECUTE
-Plan: 05-01 — done (list_dir, grep_files)
-Status: Ready for next phase (06) or additional phase-05 plans
-Last activity: 2026-09-08 — Phase 05 plan 01 executed and verified (397 tests passing, ruff clean)
+Phase: 06 (Lightweight Web Search & Fetch) — EXECUTING
+Plan: 2 of 2
+Status: Ready to execute
+Last activity: 2026-09-09 — Phase 06 execution started
 
 ## Performance Metrics
 
@@ -65,6 +65,7 @@ Last activity: 2026-09-08 — Phase 05 plan 01 executed and verified (397 tests 
 | Phase 04 P01 | 13min | 2 tasks | 6 files |
 | Phase 04 P02 | 7min | 2 tasks | 5 files |
 | Phase 03 P05 | 10 min | 2 tasks | 4 files |
+| Phase 06 P01 | 15min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -90,6 +91,8 @@ Recent decisions affecting current work:
 - [Phase 03]: Make --yes bypass only confirmation; path resolution, previews, and freshness validation always run.
 - [Phase 03]: Keep write_file as full replacement and enforce edit safety in run_loop orchestration and the model prompt.
 - [Phase 05]: D-09 supersedes earlier "ALLOW in safety.check()" idea — list_dir/grep_files bypass safety.check() entirely (unconfirmed dispatch straight from run_loop, matching read_file's precedent) rather than growing safety.py a tool-name-aware branch.
+- [Phase 06]: [Phase 06]: fetch_url success path records via _record_web_observation only, bypassing truncate_output()/_record_observation, since fetch_url content is already capped at 3,000 chars and MAX_OBSERVATION_CHARS (2,000) would silently re-truncate it
+- [Phase 06]: [Phase 06]: _read_capped is a standalone shared helper reused by plan 06-02's search_web for the same 5MB byte-cap streaming read
 
 ### Pending Todos
 
@@ -117,9 +120,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-08T17:30:06.257Z
-Stopped at: Phase 6 context gathered
-Resume file: .planning/phases/06-lightweight-web-search-fetch/06-CONTEXT.md
+Last session: 2026-09-08T18:50:38.704Z
+Stopped at: Completed 06-01-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 
