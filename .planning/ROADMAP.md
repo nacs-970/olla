@@ -20,10 +20,10 @@
 
 ### Phase 5: Safe Inspection Tools
 
-- [ ] **Phase 5: Safe Inspection Tools** - Read-only `list_dir` and `grep_files` tools executing without confirmation prompts
-  - **Plans:** 1 plan
+- [x] **Phase 5: Safe Inspection Tools** - Read-only `list_dir` and `grep_files` tools executing without confirmation prompts (completed 2026-09-08)
+  - **Plans:** 1/1 plans complete
   - Plans:
-    - [ ] 05-01-PLAN.md — list_dir + grep_files end-to-end, unconfirmed dispatch, untrusted tagging
+    - [x] 05-01-PLAN.md — list_dir + grep_files end-to-end, unconfirmed dispatch, untrusted tagging
 
 ### Phase 6: Lightweight Web Search & Fetch
 
@@ -36,6 +36,11 @@
 ### Phase 7: Interactive REPL Mode
 
 - [ ] **Phase 7: Interactive REPL Mode** - Multi-turn terminal REPL with prompt_toolkit, persistent scratchpad memory, and rolling context management
+  - **Plans:** 3 plans
+  - Plans:
+    - [ ] 07-01-PLAN.md — SessionState refactor + minimal REPL tracer (run_loop() session injection, cli.py dispatch, dependency checkpoint)
+    - [ ] 07-02-PLAN.md — Full REPL UX (FileHistory, multiline, double-Ctrl+C, /model /exit /quit /clear)
+    - [ ] 07-03-PLAN.md — Rolling context trimming (tiktoken counting, summarization digest, untrusted tagging)
 
 ## Phase Details
 
