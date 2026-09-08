@@ -2,17 +2,17 @@
 gsd_state_version: "1.0"
 milestone: v1.1
 milestone_name: Tools Expansion & Interactive REPL
-current_phase: 5
-current_phase_name: Safe Inspection Tools
+current_phase: 7
+current_phase_name: Interactive REPL Mode
 status: planning
-stopped_at: Phase 06 complete, ready to plan Phase 5
-last_updated: "2026-09-08T19:22:08.639Z"
+stopped_at: Phase 7 context gathered
+last_updated: "2026-09-08T20:08:10.725Z"
 last_activity: 2026-09-09
-last_activity_desc: Phase 06 complete, transitioned to Phase 5
-state_head: fb7de052a991361cef4dcb7d1740e48447cffdcc
+last_activity_desc: Corrected stale tracking (Phase 05 was executed 2026-09-08 but never marked complete in ROADMAP/STATE); ready to plan Phase 7
+state_head: 9119879a7847b8ade60f60d5736a707fb3a5d7ee
 progress:
   total_phases: 6
-  completed_phases: 1
+  completed_phases: 0
   total_plans: 3
   completed_plans: 3
 ---
@@ -26,14 +26,14 @@ Total Phases: 3
 See: .planning/PROJECT.md (updated 2026-09-07)
 
 **Core value:** Stay fast and accurate on small local models. Minimal per-turn token overhead so 2-4B models on constrained hardware remain responsive and don't drift into wrong answers under a bloated context.
-**Current focus:** Phase 06 — Lightweight Web Search & Fetch
+**Current focus:** Phase 07 — Interactive REPL Mode
 
 ## Current Position
 
-Phase: 5 — Safe Inspection Tools
+Phase: 7 — Interactive REPL Mode
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-09-09 — Phase 06 complete, transitioned to Phase 5
+Last activity: 2026-09-09 — Phase 05 and Phase 06 both confirmed complete, transitioned to Phase 7
 
 ## Performance Metrics
 
@@ -96,6 +96,7 @@ Recent decisions affecting current work:
 - [Phase 06]: [Phase 06]: fetch_url success path records via _record_web_observation only, bypassing truncate_output()/_record_observation, since fetch_url content is already capped at 3,000 chars and MAX_OBSERVATION_CHARS (2,000) would silently re-truncate it
 - [Phase 06]: [Phase 06]: _read_capped is a standalone shared helper reused by plan 06-02's search_web for the same 5MB byte-cap streaming read
 - [Phase 06]: [Phase 06]: search_web reuses fetch_url's shared _read_capped/_truncate_to_sentence/_record_web_observation chokepoints; bot-challenge detection uses literal substring 'anomaly-modal' (not bare 'anomaly') to avoid false-positiving on genuine zero-result pages
+- [2026-09-09]: STATE.md/ROADMAP.md tracking correction — Phase 5 (05-01-PLAN.md) was fully executed and verified on 2026-09-08 (commit 7368da1) but never marked complete in either file; both now reflect Phase 5 and 6 done, Phase 7 next.
 
 ### Pending Todos
 
@@ -123,10 +124,10 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-08T18:59:12.405Z
-Stopped at: Phase 06 complete, ready to plan Phase 5
-Resume file: None
+Last session: 2026-09-08T20:08:10.678Z
+Stopped at: Phase 7 context gathered
+Resume file: .planning/phases/07-interactive-repl-mode/07-CONTEXT.md
 
 ## Operator Next Steps
 
-- Continue Phase 05 (additional plans if scoped) or advance to Phase 06 (Lightweight Web Search & Fetch) via /gsd-plan-phase 6
+- Plan Phase 7 (Interactive REPL Mode) via /gsd-plan-phase 7
