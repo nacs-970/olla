@@ -165,7 +165,12 @@ def search_web(query: str) -> ToolResult:
             raw_bytes = _read_capped(
                 client, "GET", _DDG_URL, params={"q": query}
             )
-    except (httpx.TimeoutException, httpx.TransportError, httpx.HTTPError) as error:
+    except (
+        httpx.TimeoutException,
+        httpx.TransportError,
+        httpx.HTTPError,
+        httpx.InvalidURL,
+    ) as error:
         return {"error": f"search_web request failed: {error}"}
 
     decoded = raw_bytes.decode("utf-8", errors="replace")
@@ -191,7 +196,12 @@ def fetch_url(url: str) -> ToolResult:
             timeout=_TIMEOUT, follow_redirects=True, headers=_HEADERS
         ) as client:
             raw_bytes = _read_capped(client, "GET", url)
-    except (httpx.TimeoutException, httpx.TransportError, httpx.HTTPError) as error:
+    except (
+        httpx.TimeoutException,
+        httpx.TransportError,
+        httpx.HTTPError,
+        httpx.InvalidURL,
+    ) as error:
         return {"error": f"fetch_url request failed: {error}"}
 
     decoded = raw_bytes.decode("utf-8", errors="replace")
