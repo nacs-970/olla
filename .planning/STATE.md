@@ -4,17 +4,17 @@ milestone: v1.1
 milestone_name: Tools Expansion & Interactive REPL
 current_phase: 06
 current_phase_name: Lightweight Web Search & Fetch
-status: executing
-stopped_at: Completed 06-01-PLAN.md
-last_updated: "2026-09-08T18:50:38.757Z"
+status: verifying
+stopped_at: Completed 06-02-PLAN.md
+last_updated: "2026-09-08T18:59:12.492Z"
 last_activity: 2026-09-09
 last_activity_desc: Phase 06 execution started
-state_head: 5ee8a33621fca65db20321e4513ce7b2f40d3acb
+state_head: 4130f27e7a1eff2d4807a393b14f70cfc90a9011
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 3
-  completed_plans: 2
+  completed_plans: 3
 ---
 
 Total Phases: 3
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md (updated 2026-09-07)
 
 Phase: 06 (Lightweight Web Search & Fetch) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-09 — Phase 06 execution started
 
 ## Performance Metrics
@@ -66,6 +66,7 @@ Last activity: 2026-09-09 — Phase 06 execution started
 | Phase 04 P02 | 7min | 2 tasks | 5 files |
 | Phase 03 P05 | 10 min | 2 tasks | 4 files |
 | Phase 06 P01 | 15min | 2 tasks | 6 files |
+| Phase 06 P02 | 6min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -93,6 +94,7 @@ Recent decisions affecting current work:
 - [Phase 05]: D-09 supersedes earlier "ALLOW in safety.check()" idea — list_dir/grep_files bypass safety.check() entirely (unconfirmed dispatch straight from run_loop, matching read_file's precedent) rather than growing safety.py a tool-name-aware branch.
 - [Phase 06]: [Phase 06]: fetch_url success path records via _record_web_observation only, bypassing truncate_output()/_record_observation, since fetch_url content is already capped at 3,000 chars and MAX_OBSERVATION_CHARS (2,000) would silently re-truncate it
 - [Phase 06]: [Phase 06]: _read_capped is a standalone shared helper reused by plan 06-02's search_web for the same 5MB byte-cap streaming read
+- [Phase 06]: [Phase 06]: search_web reuses fetch_url's shared _read_capped/_truncate_to_sentence/_record_web_observation chokepoints; bot-challenge detection uses literal substring 'anomaly-modal' (not bare 'anomaly') to avoid false-positiving on genuine zero-result pages
 
 ### Pending Todos
 
@@ -120,8 +122,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-08T18:50:38.704Z
-Stopped at: Completed 06-01-PLAN.md
+Last session: 2026-09-08T18:59:12.405Z
+Stopped at: Completed 06-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

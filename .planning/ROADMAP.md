@@ -28,10 +28,10 @@
 ### Phase 6: Lightweight Web Search & Fetch
 
 - [ ] **Phase 6: Lightweight Web Search & Fetch** - DuckDuckGo Lite search and HTML webpage reading via curl/httpx with truncation and untrusted tagging
-  - **Plans:** 1/2 plans executed
+  - **Plans:** 2/2 plans executed
   - Plans:
     - [x] 06-01-PLAN.md — fetch_url end-to-end (web.py adapter, loop.py wiring, untrusted tagging, truncation)
-    - [ ] 06-02-PLAN.md — search_web end-to-end (DDG Lite parsing, loop.py wiring, prompt roster finalization)
+    - [x] 06-02-PLAN.md — search_web end-to-end (DDG Lite parsing, loop.py wiring, prompt roster finalization)
 
 ### Phase 7: Interactive REPL Mode
 

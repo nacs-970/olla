@@ -13,7 +13,7 @@
 
 ### Web Tools
 
-- [ ] **WEB-01**: `search_web(query)` tool queries DuckDuckGo Lite via curl/httpx, returning top 3-5 snippet cards with titles and links without extra pip dependencies
+- [x] **WEB-01**: `search_web(query)` tool queries DuckDuckGo Lite via curl/httpx, returning top 3-5 snippet cards with titles and links without extra pip dependencies
 - [x] **WEB-02**: `fetch_url(url)` tool fetches webpage content via curl/httpx, extracting readable text and stripping HTML markup
 - [x] **WEB-03**: Hard output truncation limits web tool observations to <= 3,000 characters before appending to conversation context
 - [x] **WEB-04**: Observations from web tools tag state as untrusted, revoking `--yes` auto-bypass on subsequent destructive actions
@@ -50,7 +50,7 @@
 | INSPECT-01 | Phase 5 | Done |
 | INSPECT-02 | Phase 5 | Done |
 | INSPECT-03 | Phase 5 | Done |
-| WEB-01 | Phase 6 | Pending |
+| WEB-01 | Phase 6 | Complete |
 | WEB-02 | Phase 6 | Complete |
 | WEB-03 | Phase 6 | Complete |
 | WEB-04 | Phase 6 | Complete |
