@@ -1,6 +1,15 @@
 ---
 phase: "06"
 slug: "lightweight-web-search-fetch"
+# status lifecycle: draft (seeded by plan-phase) -> validated (set by validate-phase §6)
+# draft/false here is the correct planner-emitted state, matching phase 05's precedent
+# (.planning/phases/05-safe-inspection-tools/05-VALIDATION.md remains draft/false even
+# post-execution) -- plan-phase does not self-attest to Nyquist compliance or execution
+# completion; /gsd-validate-phase owns that flip after the plans are actually run.
+# Sign-off boxes below are checked there, not here. The design-time review that produced
+# this file DID confirm every automated-verify/sampling/latency criterion holds against
+# the finalized 06-01/06-02 two-plan structure (see Per-Task Verification Map) -- what
+# remains genuinely false is whether execution has happened, which it has not yet.
 status: draft
 nyquist_compliant: false
 wave_0_complete: false
@@ -27,7 +36,7 @@ created: "2026-09-09"
 
 ## Sampling Rate
 
-- **After every task commit:** Run `python -m pytest tests/test_tools/test_web.py tests/test_loop.py -k web`
+- **After every task commit:** Run `python -m pytest tests/test_tools/test_web.py tests/test_loop.py -k "fetch_url or search_web"`
 - **After every plan wave:** Run `python -m pytest tests`
 - **Before `/gsd-verify-work`:** Full suite must be green
 - **Max feedback latency:** 15 seconds
@@ -38,11 +47,10 @@ created: "2026-09-09"
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 06-01-01 | 01 | 0 | WEB-01 | V5 | Parses DDG Lite HTML into 3-5 cards, skips sponsored rows, decodes `uddg` redirect URLs, sends browser UA | unit | `pytest tests/test_tools/test_web.py -k search_web` | ❌ W0 | ⬜ pending |
-| 06-01-02 | 01 | 0 | WEB-02 | — | Strips script/style/nav/header/footer, keeps readable text | unit | `pytest tests/test_tools/test_web.py -k fetch_url_extraction` | ❌ W0 | ⬜ pending |
-| 06-01-03 | 01 | 0 | WEB-03 | — | Output ≤3,000 chars, sentence-boundary truncation (D-04) | unit | `pytest tests/test_tools/test_web.py -k truncat` | ❌ W0 | ⬜ pending |
-| 06-01-04 | 01 | 0 | WEB-04 | Tampering/EoP | Web observation tagged untrusted, revokes `--yes` for subsequent destructive action | integration | `pytest tests/test_loop.py -k untrusted_web` | ❌ W0 | ⬜ pending |
-| 06-01-05 | 01 | 0 | WEB-04 | Tampering/EoP | `--yes` revoked check follows existing `test_untrusted_file_instruction_cannot_use_yes_for_shell_or_write` template | integration | `pytest tests/test_loop.py -k web_cannot_use_yes` | ❌ W0 | ⬜ pending |
+| Task 1 | 06-01 | 1 | WEB-02, WEB-04 | T-06-03, T-06-04 | `fetch_url` end-to-end: strips script/style/nav/header/footer, byte-capped streaming read (`_read_capped`), wraps success in `<untrusted_web_content>` via `_record_web_observation`, revokes `--yes` for the next CONFIRM-tier action | integration/unit | `pytest tests/test_tools/test_web.py -k fetch_url -x` / `pytest tests/test_loop.py -k fetch_url -x` | ❌ W0 | ⬜ pending |
+| Task 2 | 06-01 | 1 | WEB-03 | T-06-04 | Sentence-boundary truncation edge cases (hard-cut fallback, multi-byte/emoji code-point cap), byte-cap stream-stop, error path stays untagged, `--dry-run` preview | unit/integration | `pytest tests/test_tools/test_web.py -x` / `pytest tests/test_loop.py -k fetch_url -x` / `pytest` | ❌ W0 | ⬜ pending |
+| Task 1 | 06-02 | 2 | WEB-01, WEB-04 | T-06-03, T-06-05, T-06-06 | `search_web` parses DDG Lite HTML into 3-5 cards, excludes `<tr class="result-sponsored">` rows, decodes `uddg` redirect URLs, sends browser UA, wraps success in `<untrusted_web_content>` | integration/unit | `pytest tests/test_tools/test_web.py -k search_web -x` / `pytest tests/test_loop.py -k search_web -x` | ❌ W0 | ⬜ pending |
+| Task 2 | 06-02 | 2 | WEB-03 | T-06-04, T-06-05 | `search_web` truncation/error-path (timeout/transport/bot-challenge) coverage, `--dry-run` preview, roster bump to "9 tools available" | unit/integration | `pytest tests/test_tools/test_web.py -x` / `pytest tests/test_prompts.py -x` / `pytest` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 

@@ -506,17 +506,19 @@ TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0)
 
 **If this table were empty:** it is not — see A1-A3 above; A4 is documented as an explicit non-finding per the absent-evidence provenance rule, not a risk to act on.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Should `fetch_url` cap response size before decoding, given the project's documented RAM constraint?**
+1. **Should `fetch_url` cap response size before decoding, given the project's documented RAM constraint?** (RESOLVED)
    - What we know: `httpx.Client.get()` buffers the full response body before returning; `httpx.Response.iter_bytes()` exists and can be used to stream with a byte ceiling instead (`[VERIFIED]` this session). `STATE.md:102` documents this host OOM-killing a 7.2GB model under 7.1GB RAM.
    - What's unclear: CONTEXT.md's discuss-phase covered SSRF (destination) but not response-size (volume); no user decision exists either way.
    - Recommendation: Planner should add a byte-ceiling stream-read (e.g., cap at a few MB, matching the spirit of WEB-03's "keep it small" intent) as a new task, or explicitly note it as an accepted risk in the plan if descoped — either way, this should be a conscious plan decision, not silently absent.
+   - **Resolution:** Adopted the recommendation as a locked implementation constraint. `06-01-PLAN.md` Task 1 implements a shared `_read_capped(client, method, url, **kwargs)` helper in `src/olla/tools/web.py` — streams via `client.stream(...)` + `response.iter_bytes()`, stops accumulating once `_MAX_RESPONSE_BYTES` (5,000,000) is crossed, and is reused by both `fetch_url` (06-01 Task 1) and `search_web` (06-02 Task 1) so neither tool performs a plain buffering `client.get()`. Covered by `T-06-04` in both plans' `<threat_model>` and by `06-01-PLAN.md` Task 2's byte-cap streaming test.
 
-2. **Does `search_web` need a fallback query strategy if DuckDuckGo Lite's anti-bot challenge triggers despite a correct User-Agent (e.g. due to IP-based rate limiting on repeated calls in a session)?**
+2. **Does `search_web` need a fallback query strategy if DuckDuckGo Lite's anti-bot challenge triggers despite a correct User-Agent (e.g. due to IP-based rate limiting on repeated calls in a session)?** (RESOLVED)
    - What we know: A single request with a browser-style UA succeeded reliably in this session's testing (multiple separate queries all returned real results). DDG is known to rate-limit/CAPTCHA-challenge based on request volume and IP reputation in addition to UA, per this session's research digest (not independently verified — CAPTCHA-triggering by volume was not reproduced live, since only a handful of requests were made).
    - What's unclear: Whether a CAPTCHA-challenge response should surface to the model as a clear "search unavailable" error (recommended) vs. being silently mis-parsed as zero results.
    - Recommendation: `search_web`'s `HTMLParser` subclass should detect the absence of expected result markup (e.g., zero `result-link` anchors AND presence of `anomaly-modal` class) and return `{"error": "search_web: DuckDuckGo Lite returned a bot-challenge page instead of results"}` rather than a silently empty result list — this makes the failure mode legible to both the model and a human debugging it.
+   - **Resolution:** Adopted the recommendation as-is. `06-02-PLAN.md` Task 1 implements the bot-challenge detector in `_DDGResultParser`/`search_web` (zero `result-link` anchors plus an anomaly-page markup check returns the exact error string quoted above; zero anchors with no anomaly markup returns a distinct "no results found" content instead). Covered by `T-06-05` in `06-02-PLAN.md`'s `<threat_model>` and by dedicated bot-challenge / genuine-zero-results tests in Task 1.
 
 ## Environment Availability
 
