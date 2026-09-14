@@ -16,13 +16,13 @@
     {
       "number": "7",
       "name": "Interactive REPL Mode",
-      "status": "planned"
+      "status": "pending"
     }
   ],
   "next": {
-    "command": "/gsd-execute-phase 7",
-    "label": "Execute Phase 7 (Interactive REPL Mode)",
-    "reason": "Phase 7 of 7 — planned, ready to execute"
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 07 of 6 · executing"
   },
-  "updated_at": "2026-09-14T15:40:00.000Z"
+  "updated_at": "2026-09-14T16:03:36.161Z"
 }
