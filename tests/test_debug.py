@@ -60,6 +60,7 @@ def test_debug_log_when_enabled(capsys):
 
 def test_run_loop_logs_in_debug_mode(mocker, capsys):
     mock_provider = MagicMock()
+    mock_provider.get_context_length.return_value = 8192
     mock_chunk = MagicMock()
     mock_chunk.is_thought = False
     mock_chunk.text = "<final>Done</final>"

@@ -7,6 +7,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.patch_stdout import patch_stdout
 
+from olla import context_trim
 from olla.loop import SessionState, run_loop
 from olla.providers import ProviderError, get_provider
 from olla.tools.memory import Scratchpad
@@ -51,6 +52,11 @@ def main_loop(
     except ProviderError as error:
         print(f"REPL failed to initialize model '{model}': {error}")
         return
+
+    # Warm the tiktoken encoder once at startup (Pitfall 1) so the ~3.5s cold
+    # fetch cost is paid here, with a visible message, rather than landing
+    # unexplained mid-conversation at the first trim-check.
+    context_trim.warm_encoder()
 
     current_model = model
     session_state = SessionState(

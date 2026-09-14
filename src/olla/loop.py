@@ -13,6 +13,7 @@ import ollama
 from rich.prompt import Confirm
 from rich.text import Text
 
+from olla import context_trim
 from olla.debug import debug_log, mask_secret, set_debug
 from olla.parser import parse_response
 from olla.providers import Provider, ProviderError, get_provider
@@ -552,8 +553,22 @@ def _stream_model_turn(
     provider: Provider,
     messages: list[dict],
     model: str = "",
+    protected_from_index: int = 1,
 ) -> str | None:
-    """Stream model response, rendering thought tokens in dimmed styling."""
+    """Stream model response, rendering thought tokens in dimmed styling.
+
+    Single chokepoint (D-10, Pattern 3 broad reading): every model call a REPL
+    turn causes — the step-loop call, the dry_run branch call, and the legacy
+    call_model()/_call_model_for_loop() path (only ever reached from inside
+    this function) — routes through here, so the proactive trim-check runs
+    before all three. `protected_from_index` marks where the current
+    in-progress turn begins; messages[0] (system) and messages[protected_from_index:]
+    are never eligible for trimming.
+    """
+    budget = provider.get_context_length()
+    if context_trim.should_trim(messages, budget):
+        context_trim.summarize_and_trim(messages, protected_from_index, provider, model)
+
     if _is_mocked(call_model) or _is_mocked(ollama.chat):
         return _call_model_for_loop(model, messages)
 
@@ -1063,12 +1078,22 @@ def run_loop(
     if not session.messages:
         session.messages.append({"role": "system", "content": system_prompt})
     session.messages.append({"role": "user", "content": task})
-    # Captured for 07-03's rolling-trim protected_from_index; unused in this plan.
-    turn_start_index = len(session.messages) - 1  # noqa: F841
+    # Where this turn begins — the trim chokepoint never drops messages at or
+    # after this index (D-08). The dry_run branch calls _stream_model_turn()
+    # at most once and returns immediately, so no delta recompute is needed
+    # there; the step loop below recomputes this after every call since it can
+    # invoke _stream_model_turn() (and therefore the trim chokepoint) more
+    # than once per turn.
+    turn_start_index = len(session.messages) - 1
 
     if dry_run:
         debug_log("Executing dry run turn")
-        content = _stream_model_turn(provider, session.messages, model=resolved_model)
+        content = _stream_model_turn(
+            provider,
+            session.messages,
+            model=resolved_model,
+            protected_from_index=turn_start_index,
+        )
         if content is None:
             return
         action = _prepare_action(content)
@@ -1096,7 +1121,20 @@ def run_loop(
                 ],
             },
         )
-        content = _stream_model_turn(provider, session.messages, model=resolved_model)
+        _len_before = len(session.messages)
+        content = _stream_model_turn(
+            provider,
+            session.messages,
+            model=resolved_model,
+            protected_from_index=turn_start_index,
+        )
+        # A trim only ever removes messages strictly below protected_from_index,
+        # never the in-progress turn's own messages (see _stream_model_turn's
+        # only-caller-of-call_model()/streaming invariant). Recompute the
+        # boundary from the actual length delta so a second trim later in this
+        # same turn slices against the correctly-shrunk boundary, not a stale
+        # (too-large) one that could clip into this turn's own messages.
+        turn_start_index -= _len_before - len(session.messages)
         if content is None:
             debug_log(f"Step {step} - Model turn returned None")
             return

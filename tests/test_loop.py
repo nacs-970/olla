@@ -2568,6 +2568,7 @@ def test_stream_model_turn_dimmed_thinking(mocker, capsys):
     from olla.providers import StreamChunk
 
     mock_provider = MagicMock()
+    mock_provider.get_context_length.return_value = 8192
     mock_provider.stream_chat.return_value = [
         StreamChunk(text="considering...", is_thought=True),
         StreamChunk(text="Hello world", is_thought=False),
@@ -2601,6 +2602,7 @@ def test_run_loop_catches_provider_error_diagnostically(mocker, capsys):
 def test_run_loop_passes_api_key_and_base_url_to_provider(mocker):
     """api_key and base_url are threaded to get_provider."""
     mock_provider = mocker.MagicMock()
+    mock_provider.get_context_length.return_value = 8192
     mock_provider.stream_chat.return_value = []
     mock_get_provider = mocker.patch("olla.loop.get_provider", return_value=(mock_provider, "llama-3.1"))
 

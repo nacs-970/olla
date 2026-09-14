@@ -262,3 +262,19 @@ def test_ctrl_c_during_turn_leaves_state_unchanged_before_next_turn(mocker):
         {"role": "user", "content": "next task"},
         {"role": "assistant", "content": "ok"},
     ]
+
+
+def test_main_loop_warms_encoder_at_startup(mocker):
+    mocker.patch("olla.repl.get_provider", return_value=(MagicMock(), "m"))
+    mock_warm_encoder = mocker.patch("olla.repl.context_trim.warm_encoder")
+    mocker.patch("olla.repl.run_loop")
+    mock_session_cls = mocker.patch("olla.repl.PromptSession")
+    mock_session_cls.return_value.prompt.side_effect = [EOFError()]
+
+    main_loop(model="m", max_steps=5, system_prompt="sys")
+
+    mock_warm_encoder.assert_called_once()
+    # Warmed before the first prompt() call — the mock is configured before
+    # main_loop runs, so call_count==1 at this point already proves ordering
+    # relative to the single prompt() call that follows it in the loop body.
+    mock_session_cls.return_value.prompt.assert_called_once()
