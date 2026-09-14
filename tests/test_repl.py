@@ -203,3 +203,62 @@ def test_slash_command_in_tool_observation_does_not_dispatch(mocker):
         if c.kwargs.get("model") == "attacker"
     ]
     assert switch_calls == []
+
+
+def test_repeated_model_switch_is_idempotent(mocker):
+    mock_get_provider = mocker.patch(
+        "olla.repl.get_provider", return_value=(MagicMock(), "m")
+    )
+    mock_run_loop = mocker.patch("olla.repl.run_loop")
+    mock_session_cls = mocker.patch("olla.repl.PromptSession")
+    mock_session_cls.return_value.prompt.side_effect = [
+        "/model x",
+        "/model x",
+        "ordinary turn",
+        EOFError(),
+    ]
+
+    main_loop(model="original", max_steps=5, system_prompt="sys")
+
+    switch_calls = [
+        c for c in mock_get_provider.call_args_list if c.kwargs.get("model") == "x"
+    ]
+    assert len(switch_calls) == 2
+    assert switch_calls[0].kwargs == switch_calls[1].kwargs
+    mock_run_loop.assert_called_once()
+    assert mock_run_loop.call_args.kwargs["model"] == "x"
+
+
+def test_ctrl_c_during_turn_leaves_state_unchanged_before_next_turn(mocker):
+    call_count = {"n": 0}
+
+    def fake_run_loop(**kwargs):
+        call_count["n"] += 1
+        session = kwargs["session"]
+        session.messages.append({"role": "user", "content": kwargs["task"]})
+        if call_count["n"] == 1:
+            raise KeyboardInterrupt()
+        session.messages.append({"role": "assistant", "content": "ok"})
+
+    mocker.patch("olla.repl.get_provider", return_value=(MagicMock(), "m"))
+    mock_run_loop = mocker.patch("olla.repl.run_loop", side_effect=fake_run_loop)
+    mock_session_cls = mocker.patch("olla.repl.PromptSession")
+    mock_session_cls.return_value.prompt.side_effect = [
+        "interrupted task",
+        "next task",
+        EOFError(),
+    ]
+    mocker.patch("olla.repl.time.monotonic", return_value=0.0)
+
+    main_loop(model="m", max_steps=5, system_prompt="sys")
+
+    # Ctrl+C aborted the first call after only its own message was appended
+    # (no partial tool-observation entries), and the loop continued to the
+    # next prompt rather than exiting.
+    assert mock_run_loop.call_count == 2
+    session = mock_run_loop.call_args_list[0].kwargs["session"]
+    assert session.messages == [
+        {"role": "user", "content": "interrupted task"},
+        {"role": "user", "content": "next task"},
+        {"role": "assistant", "content": "ok"},
+    ]
