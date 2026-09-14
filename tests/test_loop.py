@@ -5,6 +5,7 @@ import pytest
 
 from olla.loop import (
     MAX_OBSERVATION_CHARS,
+    SessionState,
     _prepare_action,
     _render_write_preview,
     _terminal_safe,
@@ -14,7 +15,7 @@ from olla.loop import (
 )
 from olla.safety import check
 from olla.tools.files import write_file as safe_write_file
-from olla.tools.memory import MAX_KEY_CHARS
+from olla.tools.memory import MAX_KEY_CHARS, Scratchpad
 
 
 def test_truncate_output_under_limit():
@@ -2911,3 +2912,97 @@ def test_search_web_dry_run_shows_search_preview(mocker, capsys):
     captured = capsys.readouterr()
     assert "Step 1 would search:" in captured.out
     assert "python html.parser" in captured.out
+
+
+def test_run_loop_session_state_persists_scratchpad_across_calls(mocker, capsys):
+    session_state = SessionState(messages=[], scratchpad=Scratchpad(), read_snapshots={})
+
+    turn1_responses = iter(
+        [
+            "<tool>remember</tool><args>note\nhello from turn 1</args>",
+            "<final>stored</final>",
+        ]
+    )
+    mocker.patch(
+        "olla.loop.call_model", side_effect=lambda *a, **kw: next(turn1_responses)
+    )
+    run_loop("remember something", "test-model", 5, "sys", session=session_state)
+    capsys.readouterr()  # discard turn 1 output
+
+    turn2_responses = iter(
+        [
+            "<tool>recall</tool><args>note</args>",
+            "<final>the note says: hello from turn 1</final>",
+        ]
+    )
+    mocker.patch(
+        "olla.loop.call_model", side_effect=lambda *a, **kw: next(turn2_responses)
+    )
+    run_loop("recall something", "test-model", 5, "sys", session=session_state)
+
+    captured = capsys.readouterr()
+    assert "hello from turn 1" in captured.out
+
+
+def test_run_loop_read_snapshot_persists_across_turns(tmp_path, mocker):
+    target = tmp_path / "shared.txt"
+    target.write_text("original\n", encoding="utf-8")
+    session_state = SessionState(messages=[], scratchpad=Scratchpad(), read_snapshots={})
+
+    turn1_responses = iter(
+        [
+            f"<tool>read_file</tool><args>{target}</args>",
+            "<final>read it</final>",
+        ]
+    )
+    mocker.patch(
+        "olla.loop.call_model", side_effect=lambda *a, **kw: next(turn1_responses)
+    )
+    run_loop("read the file", "test-model", 5, "sys", session=session_state)
+
+    turn2_responses = iter(
+        [
+            f"<tool>write_file</tool><args>{target}\nreplacement\n</args>",
+            "<final>wrote it</final>",
+        ]
+    )
+    mocker.patch(
+        "olla.loop.call_model", side_effect=lambda *a, **kw: next(turn2_responses)
+    )
+    mocker.patch("olla.loop.Confirm.ask", return_value=True)
+
+    run_loop("write to it", "test-model", 5, "sys", session=session_state)
+
+    assert target.read_text(encoding="utf-8") == "replacement\n"
+
+
+def test_run_loop_untrusted_observation_seen_persists_across_calls(tmp_path, mocker):
+    target = tmp_path / "read_target.txt"
+    target.write_text("data\n", encoding="utf-8")
+    session_state = SessionState(
+        messages=[],
+        scratchpad=Scratchpad(),
+        read_snapshots={},
+        untrusted_observation_seen=False,
+    )
+
+    turn1_responses = iter(
+        [
+            f"<tool>read_file</tool><args>{target}</args>",
+            "<final>done reading</final>",
+        ]
+    )
+    mocker.patch(
+        "olla.loop.call_model", side_effect=lambda *a, **kw: next(turn1_responses)
+    )
+    run_loop("read it", "test-model", 5, "sys", session=session_state)
+
+    assert session_state.untrusted_observation_seen is True
+
+    turn2_responses = iter(["<final>nothing more to do</final>"])
+    mocker.patch(
+        "olla.loop.call_model", side_effect=lambda *a, **kw: next(turn2_responses)
+    )
+    run_loop("just answer", "test-model", 5, "sys", session=session_state)
+
+    assert session_state.untrusted_observation_seen is True

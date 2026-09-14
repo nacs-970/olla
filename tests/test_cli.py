@@ -23,14 +23,36 @@ def test_missing_model_raises_usage_error(mocker):
     mock_run_loop.assert_not_called()
 
 
-def test_missing_task_raises_usage_error(mocker):
-    mocker.patch("olla.cli.run_loop")
+def test_no_task_launches_repl_when_model_given(mocker):
+    mock_run_repl = mocker.patch("olla.cli.run_repl")
+    runner = CliRunner()
+
+    result = runner.invoke(main, ["--model", "some-model"])
+
+    assert result.exit_code == 0
+    mock_run_repl.assert_called_once_with(
+        model="some-model",
+        max_steps=50,
+        system_prompt=SYSTEM_PROMPT,
+        yes=False,
+        dry_run=False,
+        api_key=None,
+        base_url=None,
+        debug=False,
+    )
+
+
+def test_no_task_no_model_raises_usage_error(mocker):
+    mock_run_repl = mocker.patch("olla.cli.run_repl")
+    mock_run_loop = mocker.patch("olla.cli.run_loop")
     runner = CliRunner()
 
     result = runner.invoke(main, [])
 
     assert result.exit_code != 0
-    assert "TASK" in result.output
+    assert "--model" in result.output
+    mock_run_repl.assert_not_called()
+    mock_run_loop.assert_not_called()
 
 
 def test_task_and_model_call_run_loop_with_defaults(mocker):
