@@ -89,6 +89,42 @@ def main_loop(
         if not text.strip():
             continue
 
+        if text.startswith("/"):
+            command, *rest = text.split(maxsplit=1)
+            argument = rest[0].strip() if rest else ""
+
+            if command in ("/exit", "/quit"):
+                break
+
+            if command == "/model":
+                if not argument:
+                    print("Usage: /model <name>")
+                    continue
+                try:
+                    # Config-level validation gate only (D-06/D-17) — confirms
+                    # the model string parses and resolves to a provider; for
+                    # the local Ollama path this does NOT confirm the model
+                    # itself exists or loads (OllamaProvider makes no network
+                    # call), only the next real provider.chat() call does.
+                    get_provider(model=argument, api_key=api_key, base_url=base_url)
+                except ProviderError as error:
+                    print(f"Failed to switch to model '{argument}': {error}")
+                    continue
+                current_model = argument
+                print(f"Switched to model '{current_model}'")
+                continue
+
+            if command == "/clear":
+                session_state.messages = []
+                session_state.scratchpad = Scratchpad()
+                session_state.read_snapshots = {}
+                session_state.untrusted_observation_seen = False
+                print("Session cleared.")
+                continue
+
+            print(f"Unknown command: {command}")
+            continue
+
         try:
             with patch_stdout():
                 run_loop(
