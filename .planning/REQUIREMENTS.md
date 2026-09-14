@@ -22,7 +22,7 @@
 
 - [x] **REPL-01**: Launching `olla` with no arguments starts an interactive terminal REPL with multiline editing and history via `prompt_toolkit`
 - [x] **REPL-02**: Multi-turn conversational session preserves Scratchpad memory across turns within the session
-- [ ] **REPL-03**: Rolling conversation context management truncates older turns to remain within model `num_ctx`
+- [x] **REPL-03**: Rolling conversation context management truncates older turns to remain within model `num_ctx`
 
 ## Future Requirements
 
@@ -56,7 +56,7 @@
 | WEB-04 | Phase 6 | Complete |
 | REPL-01 | Phase 7 | Complete |
 | REPL-02 | Phase 7 | Complete |
-| REPL-03 | Phase 7 | Pending |
+| REPL-03 | Phase 7 | Complete |
 
 **Coverage:**
 
