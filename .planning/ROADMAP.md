@@ -36,10 +36,10 @@
 ### Phase 7: Interactive REPL Mode
 
 - [ ] **Phase 7: Interactive REPL Mode** - Multi-turn terminal REPL with prompt_toolkit, persistent scratchpad memory, and rolling context management
-  - **Plans:** 1/3 plans executed
+  - **Plans:** 2/3 plans executed
   - Plans:
     - [x] 07-01-PLAN.md — SessionState refactor + minimal REPL tracer (run_loop() session injection, cli.py dispatch, dependency checkpoint)
-    - [ ] 07-02-PLAN.md — Full REPL UX (FileHistory, multiline, double-Ctrl+C, /model /exit /quit /clear)
+    - [x] 07-02-PLAN.md — Full REPL UX (FileHistory, multiline, double-Ctrl+C, /model /exit /quit /clear)
     - [ ] 07-03-PLAN.md — Rolling context trimming (tiktoken counting, summarization digest, untrusted tagging)
 
 ## Phase Details
