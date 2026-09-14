@@ -2981,6 +2981,53 @@ def test_run_loop_read_snapshot_persists_across_turns(tmp_path, mocker):
     assert target.read_text(encoding="utf-8") == "replacement\n"
 
 
+def test_run_loop_stale_snapshot_is_refused_across_repl_turn_boundary(
+    tmp_path, mocker
+):
+    target = tmp_path / "shared.txt"
+    target.write_text("original\n", encoding="utf-8")
+    session_state = SessionState(messages=[], scratchpad=Scratchpad(), read_snapshots={})
+
+    turn1_responses = iter(
+        [
+            f"<tool>read_file</tool><args>{target}</args>",
+            "<final>read it</final>",
+        ]
+    )
+    mocker.patch(
+        "olla.loop.call_model", side_effect=lambda *a, **kw: next(turn1_responses)
+    )
+    run_loop("read the file", "test-model", 5, "sys", session=session_state)
+
+    # External modification between REPL turns — no tool call, simulating a
+    # file edited outside this REPL session while it was idle at the prompt.
+    target.write_text("changed externally\n", encoding="utf-8")
+
+    turn2_responses = iter(
+        [
+            f"<tool>write_file</tool><args>{target}\nreplacement\n</args>",
+            "<final>done</final>",
+        ]
+    )
+    mock_model = mocker.patch(
+        "olla.loop.call_model", side_effect=lambda *a, **kw: next(turn2_responses)
+    )
+    mock_write = mocker.patch("olla.loop.write_file")
+    mock_confirm = mocker.patch("olla.loop.Confirm.ask")
+
+    run_loop("write to it", "test-model", 5, "sys", session=session_state)
+
+    mock_confirm.assert_not_called()
+    mock_write.assert_not_called()
+    assert target.read_text(encoding="utf-8") == "changed externally\n"
+    messages = mock_model.call_args_list[1].args[1]
+    assert any(
+        "changed" in message["content"] and "read_file" in message["content"]
+        for message in messages
+        if message["role"] == "user"
+    )
+
+
 def test_run_loop_untrusted_observation_seen_persists_across_calls(tmp_path, mocker):
     target = tmp_path / "read_target.txt"
     target.write_text("data\n", encoding="utf-8")
