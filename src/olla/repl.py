@@ -1,10 +1,24 @@
 """Minimal prompt_toolkit REPL controller (REPL-01/REPL-02, D-01/D-02)."""
 
+import time
+from pathlib import Path
+
 from prompt_toolkit import PromptSession
+from prompt_toolkit.history import FileHistory
+from prompt_toolkit.patch_stdout import patch_stdout
 
 from olla.loop import SessionState, run_loop
 from olla.providers import ProviderError, get_provider
 from olla.tools.memory import Scratchpad
+
+# Second Ctrl+C arriving within this window of the first exits the session (D-12).
+DOUBLE_TAP_THRESHOLD_SECONDS = 1.5
+
+# Persistent REPL input history location (prompt_toolkit FileHistory, REPL-01).
+# NOTE (T-07-04): this file is plaintext — anything typed at the REPL prompt,
+# including a pasted secret, is written to disk unredacted, the same as any
+# shell history file. No redaction is implemented for REPL input in this phase.
+_HISTORY_FILENAME = ".olla_history"
 
 
 def main_loop(
@@ -21,8 +35,16 @@ def main_loop(
 
     One SessionState is constructed for the whole process and shared across every
     run_loop() call (D-01/D-02/D-05). `current_model` is a mutable loop-scoped seam —
-    07-02's `/model <name>` handler reassigns it so the next turn executes against the
+    the `/model <name>` handler reassigns it so the next turn executes against the
     switched-to model without resetting any other session state.
+
+    Ctrl+C is handled at two sites: while idle at the prompt (raised by
+    `PromptSession.prompt()` via its default `interrupt_exception=KeyboardInterrupt`)
+    and mid-turn while `run_loop()` is running (Python's default SIGINT handling
+    raises KeyboardInterrupt in the main thread regardless of what it is blocked on).
+    A single Ctrl+C at either site aborts only the in-flight prompt/turn and returns
+    to the `> ` prompt; a second Ctrl+C within `DOUBLE_TAP_THRESHOLD_SECONDS` of the
+    first (at either site) exits the session (D-12).
     """
     try:
         get_provider(model=model, api_key=api_key, base_url=base_url)
@@ -34,12 +56,32 @@ def main_loop(
     session_state = SessionState(
         messages=[], scratchpad=Scratchpad(), read_snapshots={}
     )
-    session_prompt = PromptSession()
+    history_path = Path.home() / _HISTORY_FILENAME
+    session_prompt = PromptSession(
+        history=FileHistory(str(history_path)),
+        multiline=False,
+    )
+
+    last_interrupt: float | None = None
+
+    def _is_double_tap() -> bool:
+        """Record this Ctrl+C's timestamp; return True if it arrived within the
+        double-tap exit threshold of the previous one (D-12)."""
+        nonlocal last_interrupt
+        now = time.monotonic()
+        double_tap = (
+            last_interrupt is not None
+            and (now - last_interrupt) <= DOUBLE_TAP_THRESHOLD_SECONDS
+        )
+        last_interrupt = now
+        return double_tap
 
     while True:
         try:
             text = session_prompt.prompt("> ")
         except KeyboardInterrupt:
+            if _is_double_tap():
+                break
             continue
         except EOFError:
             break
@@ -47,15 +89,21 @@ def main_loop(
         if not text.strip():
             continue
 
-        run_loop(
-            task=text,
-            model=current_model,
-            max_steps=max_steps,
-            system_prompt=system_prompt,
-            yes=yes,
-            dry_run=dry_run,
-            api_key=api_key,
-            base_url=base_url,
-            debug=debug,
-            session=session_state,
-        )
+        try:
+            with patch_stdout():
+                run_loop(
+                    task=text,
+                    model=current_model,
+                    max_steps=max_steps,
+                    system_prompt=system_prompt,
+                    yes=yes,
+                    dry_run=dry_run,
+                    api_key=api_key,
+                    base_url=base_url,
+                    debug=debug,
+                    session=session_state,
+                )
+        except KeyboardInterrupt:
+            if _is_double_tap():
+                break
+            continue
