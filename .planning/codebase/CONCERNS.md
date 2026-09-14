@@ -1,145 +1,121 @@
 # Codebase Concerns
 
-**Analysis Date:** 2026-07-25
+**Analysis Date:** 2026-09-14
 
 ## Tech Debt
 
-**ReAct loop duplicates tool orchestration:**
-- Issue: Shell, `read_file`, and `write_file` repeat signature tracking, repetition checks, result normalization, printing, and observation construction inside one 233-line function.
+**Monolithic `loop.py` carries most control flow:**
+- Issue: `src/olla/loop.py` is 1,178 lines and owns action parsing (`_prepare_action`), dry-run preview rendering (`_preview_action`), per-tool execution (`_execute_shell`, `_execute_read_file`, `_execute_write_file`, `_execute_list_dir`, `_execute_grep_files`, `_execute_fetch_url`, `_execute_search_web`, `_execute_memory`), streaming, and the `run_loop` state machine, all in one module.
 - Files: `src/olla/loop.py`
-- Impact: Every new tool requires edits across dry-run and normal dispatch branches, making safety and behavior drift likely.
-- Fix approach: Extract a shared tool-call pipeline and handler registry while preserving shell-specific safety and write-specific confirmation policies.
+- Impact: Any change to the action protocol (adding a tool, changing confirmation policy) touches `_Action`, `_prepare_action`, `_preview_action`, and a new `_execute_*` function plus the dispatch `if/elif` chain in `run_loop` (lines 1104-1175) — five edit sites per tool addition, increasing the chance of an inconsistent change (e.g. forgetting to update `untrusted_observation_seen` propagation for a new tool).
+- Fix approach: Extract a tool-registry pattern (dict of tool name -> parse/preview/execute callables) so adding a tool is one registration instead of five scattered edits.
 
-**Phase 3 validation state is inconsistent:**
-- Issue: UAT is marked `testing`, step 4 is blocked, seven tests are skipped, and failed gap records coexist with a completed gap-closure plan.
-- Files: `.planning/phases/03-file-tools/03-UAT.md`, `.planning/phases/03-file-tools/03-04-PLAN.md`
-- Impact: File-tool unit coverage is strong, but release confidence for the real small-model workflow is unresolved.
-- Fix approach: Re-run the full UAT after the prompt/error-message changes and reconcile the UAT totals and gap statuses.
+**Duplicated per-tool "error short-circuit" boilerplate:**
+- Issue: Every `_execute_*` function in `src/olla/loop.py` (e.g. `_execute_read_file:707-709`, `_execute_list_dir:882-884`, `_execute_grep_files:905-907`, `_execute_fetch_url:929-931`) repeats the same `if action.error is not None: _record_observation(...); return False` guard.
+- Files: `src/olla/loop.py:648-991`
+- Impact: Low risk today (mechanical and consistent), but any future tool that forgets this guard would execute on already-invalid `_Action` state.
+- Fix approach: Factor the guard into a decorator or a shared dispatch wrapper that checks `action.error` once before calling the tool-specific body.
+
+**Root-level stray script outside the package/tests layout:**
+- Issue: `test_connection.py` (tracked in git, 7.9K) lives at the repo root rather than under `tests/` or `src/olla/`, despite its `test_` prefix suggesting a pytest file; it is not collected by `pytest` (`testpaths = ["tests"]` in `pyproject.toml`) and appears to be a manual diagnostics script (commit message: "add test_connection.py script to verify API keys and models").
+- Files: `test_connection.py`
+- Impact: Confusing naming — looks like a test but isn't one; not covered by CI/lint scope definitions; risks accidental collection if `testpaths` is ever loosened.
+- Fix approach: Rename to something like `scripts/check_connection.py` or move under a `scripts/` directory, and drop the `test_` prefix.
+
+**Orphaned root `__pycache__` directory with no matching source:**
+- Issue: `./__pycache__/test_fix.cpython-314.pyc`, `test_replace.cpython-314.pyc`, and `test_temp.cpython-314.pyc` exist with no corresponding `test_fix.py`/`test_replace.py`/`test_temp.py` source files anywhere in the repo (only `test_connection.cpython-314.pyc` has a live source).
+- Files: `./__pycache__/`
+- Impact: Harmless (already `.gitignore`d), but indicates ad hoc scratch scripts were created and deleted locally without cleanup; a minor sign of untracked exploratory work outside the git history.
+- Fix approach: `rm -rf __pycache__` locally; no repo change needed since the directory is already ignored.
 
 ## Known Bugs
 
-**Default pytest collection fails:**
-- Symptoms: `.venv/bin/pytest -q` stops during collection with syntax/import errors, while `.venv/bin/pytest tests -q` passes 151 tests.
-- Files: `test_fix.py`, `test_replace.py`, `test_temp.py`, `pyproject.toml`, `tests/`
-- Trigger: Run pytest from the repository root without an explicit test path.
-- Workaround: Run `.venv/bin/pytest tests`; quarantine/remove invalid root artifacts and configure `testpaths = ["tests"]`.
-
-**NUL-containing write path crashes before tool error handling:**
-- Symptoms: A `write_file` call whose path contains `\x00` raises `ValueError` from `Path.resolve()` and terminates the loop.
-- Files: `src/olla/loop.py`, `src/olla/tools/files.py`, `tests/test_tools/test_files.py`
-- Trigger: Model output contains a NUL in the first `write_file` argument line.
-- Workaround: Validate/resolve paths inside a caught helper before confirmation; add an end-to-end loop regression test.
-
-**Empty write path produces a misleading target:**
-- Symptoms: An empty first line resolves to the repository working directory and can display a write confirmation for a directory.
-- Files: `src/olla/loop.py`, `src/olla/tools/files.py`, `.planning/phases/03-file-tools/03-VERIFICATION.md`
-- Trigger: Model emits `<args>\ncontent</args>` for `write_file`.
-- Workaround: Reject empty or whitespace-only paths before `Path.resolve()` and before confirmation.
-
-**Model and subprocess failures escape as tracebacks:**
-- Symptoms: Ollama connection/OOM errors and subprocess errors other than missing executable/timeout are not converted to observations or CLI diagnostics.
-- Files: `src/olla/loop.py`, `src/olla/smoke.py`, `src/olla/tools/shell.py`
-- Trigger: Ollama is unavailable or killed, or process launch raises `PermissionError`/another `OSError`.
-- Workaround: Catch SDK and process-boundary exceptions, print concise diagnostics, and preserve nonzero CLI exit status.
-
-**Parser precedence can discard valid output:**
-- Symptoms: A response containing both `write_file` and `<final>` is treated only as a write; uppercase `WRITE_FILE` bypasses the verbatim-content special case.
-- Files: `src/olla/parser.py`, `.planning/phases/03-file-tools/03-VERIFICATION.md`
-- Trigger: Mixed tag blocks or case-varied tool names in model output.
-- Workaround: Normalize tool names, enforce one-block parsing, and define deterministic mixed-block rejection.
+No reproducible bugs identified. The full test suite (431 tests across `tests/`) passes, and `ruff check src/ tests/` reports no issues as of this analysis.
 
 ## Security Considerations
 
-**Blocklist is bypassable when confirmation is disabled:**
-- Risk: Confirmed variants such as `/bin/rm -rf /`, `rm -rf /.`, `env -S "sudo rm -rf /"`, chained `bash -c` content, `/dev/vda`, and `/dev/mmcblk0` classify as `CONFIRM`; `--yes` then executes them unattended.
-- Files: `src/olla/safety.py`, `src/olla/loop.py`, `tests/test_safety.py`, `.planning/phases/02-safety-gate-loop-control/02-SECURITY.md`
-- Current mitigation: Exact-pattern blocking plus interactive confirmation; project documentation defines the blocklist as a speed bump.
-- Recommendations: Treat `--yes` as privileged, normalize executable paths, expand device/root equivalence checks, and prefer an execution allowlist or OS sandbox.
+**`fetch_url`/`search_web` have no host/scheme allowlist and execute unconfirmed:**
+- Risk: `src/olla/tools/web.py` (`fetch_url`, `search_web`) accepts any model-supplied URL and fetches it via `httpx` with no restriction on scheme, host, or IP range. `src/olla/loop.py:_execute_fetch_url` (923-940) and `_execute_search_web` (943-960) invoke these tools directly with no `safety.check()` gate and no `Confirm.ask` prompt — this is a deliberate design choice (documented in `src/olla/prompts.py:21-27` as "runs immediately without asking for confirmation" and tracked as `WEB-01`..`WEB-04` in `.planning/REQUIREMENTS.md`), but it means a model (or content injected into a prior tool observation) can direct outbound requests to internal/link-local addresses (e.g. cloud metadata endpoints at `169.254.169.254`, or `localhost`-bound services like the Ollama server itself on `11434`) without any confirmation gate.
+- Files: `src/olla/tools/web.py`, `src/olla/loop.py:923-960`
+- Current mitigation: `WEB-04` (`.planning/REQUIREMENTS.md`) revokes `--yes` auto-bypass for *subsequent* destructive actions once any untrusted observation (including a web fetch) has been seen, and observations are wrapped in `<untrusted_web_content>` tags with an explicit system-prompt instruction not to follow embedded requests (`src/olla/prompts.py:7-9`). Output is truncated to 3,000 chars (`_truncate_to_sentence`) and response bodies are capped at 5MB (`_MAX_RESPONSE_BYTES`).
+- Recommendations: Add an opt-in host/IP denylist (RFC 1918, loopback, link-local, and the Ollama server's own bind address) before dispatching `fetch_url`/`search_web` requests, or at minimum surface the resolved IP in the tool-call preview so a `--yes`-less user sees where the request is actually going.
 
-**Filesystem access is unrestricted:**
-- Risk: `read_file` can read any accessible UTF-8 file without confirmation, and `write_file --yes` can overwrite any writable path.
-- Files: `src/olla/tools/files.py`, `src/olla/loop.py`, `src/olla/prompts.py`
-- Current mitigation: Write confirmation shows a resolved path unless `--yes`; reads have no path boundary.
-- Recommendations: Add an optional project-root boundary, deny sensitive path classes by default, and require explicit opt-in for paths outside the workspace.
+**Shell safety gate is a blocklist, not an allowlist, for unknown binaries:**
+- Risk: `src/olla/safety.py` classifies any binary not in `ALLOWLIST` (10 read-only commands) or `_HARD_BLOCKED_BINARIES` (6 binaries) as `CONFIRM` rather than `BLOCK`. This is intentional (per the module docstring and `D-04`: "yes does not change the gate decision; it only affects whether loop.py prompts"), but it means the safety net for a model going off-script relies entirely on the user reading and approving the `Confirm.ask("Proceed?")` prompt in `src/olla/loop.py:_execute_shell` (669-685) — there is no secondary technical control once a human approves.
+- Files: `src/olla/safety.py`, `src/olla/loop.py:648-697`
+- Current mitigation: Comprehensive blocklist covering `rm` dangerous targets, `dd`/`mkfs*` on raw block devices, fork bombs, `chmod`/`chown -R /`, and recursive unwrapping of `env`, `find -exec`, and `bash/sh/zsh -c` wrappers (`src/olla/safety.py:158-251`), all well covered by `tests/test_safety.py` (373 lines).
+- Recommendations: None required for the stated threat model (human-in-the-loop confirm is the intended boundary); document this explicitly for users relying on `--yes` unattended runs, since `--yes` bypasses the `CONFIRM` prompt for anything not on the blocklist.
 
-**Write confirmation has a symlink race:**
-- Risk: The resolved target shown to the user can change before `Path.write_text()` follows the original path.
-- Files: `src/olla/loop.py`, `src/olla/tools/files.py`
-- Current mitigation: Path resolution improves disclosure but does not bind the confirmed inode to the write.
-- Recommendations: Revalidate immediately before write, reject symlinks where appropriate, and use safe descriptor-based/atomic replacement.
+**`--yes` unattended mode trusts model output for any non-blocklisted command:**
+- Risk: When `--yes` is passed, every shell command classified `CONFIRM` (i.e., everything except the 10-command read-only allowlist and the explicit blocklist) runs without a human prompt, as long as no untrusted observation has been seen yet in the run (`untrusted_observation_seen` gate in `src/olla/loop.py:669-676`). A small local model producing a plausible-looking but destructive command (e.g. `mv`, arbitrary `rm` of a non-dangerous-looking path, `curl | sh`-style download-and-execute if split across two shell calls) would execute unattended.
+- Files: `src/olla/loop.py:648-697`, `src/olla/safety.py`
+- Current mitigation: `untrusted_observation_seen` correctly revokes the `--yes` bypass once any file/shell/web/memory observation has been recorded, forcing a confirm prompt for the *next* action — this narrows the unattended-execution window to the very first action of a run.
+- Recommendations: This is a documented tradeoff for the project's "small models, minimal overhead" goal; no change needed unless the project wants a stricter default (e.g. requiring `--yes` to also pass an explicit `--i-understand-the-risk` flag).
+
+**Config file secrets loaded without permission checks:**
+- Risk: `src/olla/config.py:load_config` reads `~/.config/olla/config.toml` (or legacy `~/.olla/config.toml`) which can contain `api_key` for remote providers (`src/olla/providers/__init__.py:33-39,65-71`), with no check on file permissions (e.g. world-readable config).
+- Files: `src/olla/config.py`, `src/olla/providers/__init__.py`
+- Current mitigation: `mask_secret` (`src/olla/debug.py:21-27`) prevents secrets from being printed in full in debug logs.
+- Recommendations: Low priority for a single-user local CLI; consider warning if the config file's mode bits are group/world-readable.
 
 ## Performance Bottlenecks
 
-**Truncation happens after full buffering:**
-- Problem: Shell stdout/stderr and files are fully loaded into memory before the 2,000-character preview is created.
-- Files: `src/olla/tools/shell.py`, `src/olla/tools/files.py`, `src/olla/loop.py`
-- Cause: `capture_output=True` and `Path.read_text()` are unbounded.
-- Improvement path: Stream or cap reads at the boundary while retaining useful head/tail diagnostics.
-
-**Conversation history is not token-budgeted:**
-- Problem: Parsed tool responses, especially `write_file` content, remain in full assistant history even though the model context is fixed at 8,192 tokens.
-- Files: `src/olla/loop.py`, `src/olla/parser.py`
-- Cause: Only tool observations and unparseable responses are character-truncated.
-- Improvement path: Track approximate tokens and compact old/tool payload messages before every model call.
+No significant bottlenecks identified. The ReAct loop is inherently sequential (one model call per step, per `AGENTS.md`/stack decisions), and file/shell/web tools all have explicit size/time caps: `MAX_OBSERVATION_CHARS = 2000` (`src/olla/loop.py:37`), `_MAX_RESPONSE_BYTES = 5_000_000` and 3,000-char truncation for web content (`src/olla/tools/web.py:18,59-70`), a 30-second default shell timeout (`src/olla/tools/shell.py:8`), and a 50-entry cap on `list_dir` / 25-match cap on `grep_files` (`src/olla/tools/inspect.py:38,69`).
 
 ## Fragile Areas
 
-**Regex protocol is model-sensitive:**
-- Files: `src/olla/parser.py`, `src/olla/prompts.py`, `src/olla/smoke.py`
-- Why fragile: Literal `</args>` truncates file content, multiple blocks pair by first regex match, and format compliance depends on small-model prompting.
-- Safe modification: Change parser, stop sequences, prompt examples, and smoke classifications together.
-- Test coverage: Parser unit tests exist, but the target 0.6B-4B model matrix remains empirically incomplete in `.planning/phases/01-core-loop-shell-tool-cli/01-AUDIT.md`.
+**`write_file`'s atomic-replace path in `src/olla/tools/files.py` is intricate and platform-narrow:**
+- Files: `src/olla/tools/files.py:249-677` (`_exchange_files`, `perform_write`)
+- Why fragile: Overwriting an existing file uses `renameat2`/`RENAME_EXCHANGE` (Linux) or `renameatx_np`/`RENAME_SWAP` (macOS) via raw `ctypes.CDLL` calls (`_exchange_files:249-285`) to get a race-free atomic swap, with manual rollback logic if post-exchange verification fails (`perform_write:566-590`). `_validate_backend_support()` (`src/olla/tools/files.py:20-67`) runs at **import time** and raises `RuntimeError` if the runtime lacks `fcntl.flock`, `O_NOFOLLOW`/`O_DIRECTORY`, or `dir_fd` support — meaning the whole `olla` package fails to import on non-POSIX systems (e.g. native Windows) rather than degrading gracefully.
+- Safe modification: Any change to `perform_write`, `_exchange_files`, or `_copy_and_verify_metadata` should be validated against the existing `tests/test_tools/test_files.py` (784 lines) before merging, since the race-condition and metadata-preservation guarantees are easy to silently break (e.g. reordering the `fstat`/`flock`/digest-verify sequence in `perform_write:405-597`).
+- Test coverage: Strong (784-line test file specifically for this module), but the platform-specific `ctypes` FFI path (`_exchange_files`) is inherently harder to exercise across all target platforms (Linux vs. macOS syscall numbers) in a single CI run.
 
-**File writes are destructive and non-atomic:**
-- Files: `src/olla/tools/files.py`, `src/olla/loop.py`
-- Why fragile: `Path.write_text()` truncates the destination directly; interruption or partial I/O can damage the original with no backup.
-- Safe modification: Write to a sibling temporary file, flush, then atomically replace after revalidation.
-- Test coverage: `tests/test_tools/test_files.py` covers success/basic errors but not interrupted writes, symlinks, permissions, or atomicity.
+**Parser's positional/ordering-based tag disambiguation in `src/olla/parser.py`:**
+- Files: `src/olla/parser.py:45-165`
+- Why fragile: `parse_response` distinguishes valid single tool calls from malformed/duplicated ones purely through regex `.finditer()` position counting and nested nested branching (e.g. the special-cased `write_file`/`remember`/`recall` payload-opacity handling at lines 77-122, layered on top of the generic ordered-pair logic at lines 124-164). Small models are known to emit malformed tags (unbalanced, extra, or out-of-order), so this parser's correctness depends on exhaustive edge-case enumeration rather than a formal grammar.
+- Safe modification: Change only via the existing 292-line `tests/test_parser.py`, adding a new test case for any new malformed-input scenario before touching the regex logic.
+- Test coverage: Good relative to module size (292 test lines vs. 164 source lines), but any new special-cased tool (beyond `write_file`/`remember`/`recall`) will require re-verifying the payload-opacity branch at lines 77-122.
 
 ## Scaling Limits
 
-**Single-process task execution:**
-- Current capacity: One synchronous Ollama request or tool execution at a time, default 15 steps and 30 seconds per shell call.
-- Limit: Long model/tool calls block the CLI; timeout handling does not manage descendant process groups.
-- Scaling path: Keep the sequential ReAct semantics but add cancellation, process-group cleanup, and configurable bounded timeouts in `src/olla/loop.py` and `src/olla/tools/shell.py`.
+**In-process, per-invocation memory only:**
+- Current capacity: `Scratchpad` (`src/olla/tools/memory.py`) caps notes at `MAX_KEYS = 32`, `MAX_VALUE_CHARS = 2_000`, `MAX_TOTAL_CHARS = 16_000`, and exists only for the lifetime of one `run_loop()` call (`src/olla/loop.py:1046`) — there is no persistence across CLI invocations.
+- Limit: Not a bug (the interactive REPL that would need cross-turn persistence is `REPL-02`, tracked as pending in `.planning/REQUIREMENTS.md`), but any workflow expecting memory to survive between separate `olla` invocations will silently lose it.
+- Scaling path: `REPL-01`/`REPL-02`/`REPL-03` (`.planning/REQUIREMENTS.md`, Phase 7, status `pending`) are the planned path to multi-turn sessions with rolling context management.
+
+**Fixed `num_ctx=8192` for local Ollama models:**
+- Current capacity: `src/olla/loop.py:call_model` (514) and `src/olla/providers/ollama.py` (13,27,46) hardcode `num_ctx=8192` regardless of the model's actual supported context window.
+- Limit: Models with larger native context (e.g. 32k+) are artificially capped; models that can't handle 8192 well may degrade. `MAX_OBSERVATION_CHARS = 2000` per tool observation is tuned against this fixed budget.
+- Scaling path: Make `num_ctx` configurable via `config.toml`/CLI flag, or query the model's actual context window the way `OpenAICompatProvider.get_context_length()` (`src/olla/providers/openai_compat.py:83-104`) already does for remote providers.
 
 ## Dependencies at Risk
 
-**Open-ended runtime dependency ranges:**
-- Risk: `ollama>=0.6.2` and `rich>=13` permit future breaking major releases for normal pip installs.
-- Impact: SDK response shape, `think=` support, or prompt APIs can break `src/olla/loop.py` and `src/olla/smoke.py`.
-- Migration plan: Add compatible upper bounds or CI against minimum/latest versions in `pyproject.toml`; keep `uv.lock` refreshed deliberately.
+No dependencies currently at risk. Runtime dependencies (`ollama>=0.6.2`, `click>=8.1,<9`, `rich>=13`, `httpx>=0.27.0`, `tomli` for `<3.11` only) are all actively maintained with no known deprecation notices at analysis time. See `.planning/codebase/STACK.md` for full version detail if present.
 
 ## Missing Critical Features
 
-**Scratchpad memory is absent:**
-- Problem: The active v1 requirement for `remember(key, value)` has no implementation.
-- Blocks: Cross-turn fact persistence and Phase 4 completion in `.planning/ROADMAP.md`; no memory module exists under `src/olla/`.
+**Interactive REPL not yet implemented:**
+- Problem: `REPL-01`/`REPL-02`/`REPL-03` (`.planning/REQUIREMENTS.md`, Phase 7 "Interactive REPL Mode", status `pending` in `.planning/state.json`) are not built — `olla` currently only supports single-shot `TASK` invocations (`src/olla/cli.py:65-66` requires a `task` argument).
+- Blocks: Any workflow needing a persistent multi-turn conversational session with retained `Scratchpad` state across turns.
 
-**Small-model fallback format is absent:**
-- Problem: XML compliance is not validated across the stated smallest models and no fallback protocol exists below the 80% threshold.
-- Blocks: Reliable operation on the core 0.6B-4B audience described in `.planning/PROJECT.md` and `.planning/phases/01-core-loop-shell-tool-cli/01-AUDIT.md`.
+**No per-tool allowlist / restricted-tool sessions:**
+- Problem: `CLI-04` ("Per-tool allowlist (`--tools`/`-t`) to restrict a session to read-only tools") is listed under "Future Requirements" in `.planning/REQUIREMENTS.md` and not implemented — every `olla` invocation exposes all 9 tools (`shell`, `read_file`, `write_file`, `list_dir`, `grep_files`, `fetch_url`, `search_web`, `remember`, `recall`) with no way to run a read-only-only session.
+- Blocks: Safer restricted-scope usage (e.g. "only let this model read and search, never write or run shell").
+
+**No context/token usage indicator:**
+- Problem: `CLI-05` ("Token/context usage indicator") is listed under "Future Requirements" and not implemented.
+- Blocks: Users cannot see how close a long-running task is to the fixed `num_ctx=8192` budget before truncation/drift issues occur.
 
 ## Test Coverage Gaps
 
-**Real boundary failures:**
-- What's not tested: Ollama unavailable/OOM responses, unexpected SDK shapes, subprocess permission/encoding failures, process descendants after timeout.
-- Files: `src/olla/loop.py`, `src/olla/smoke.py`, `src/olla/tools/shell.py`, `tests/test_loop.py`, `tests/test_tools/test_shell.py`
-- Risk: Common runtime failures terminate the CLI or leave work running.
-- Priority: High
+No significant gaps identified for the current feature set — every `src/olla/` module has a corresponding test file (`tests/test_*.py` or `tests/test_tools/test_*.py`), and the largest source module (`loop.py`, 1,178 lines) has by far the largest test file (`test_loop.py`, 2,913 lines). `ruff check` and the full 431-test suite both pass cleanly at analysis time.
 
-**Filesystem adversarial cases:**
-- What's not tested: Loop-level NUL paths, empty paths, symlink swaps, sensitive/out-of-root reads, huge files, and atomic-write failure.
-- Files: `src/olla/loop.py`, `src/olla/tools/files.py`, `tests/test_loop.py`, `tests/test_tools/test_files.py`
-- Risk: Crashes, misleading approval, unintended target access, memory pressure, or file corruption.
-- Priority: High
-
-**End-to-end model behavior:**
-- What's not tested: The complete read-modify-write UAT and smoke matrix on the target small models.
-- Files: `.planning/phases/03-file-tools/03-UAT.md`, `.planning/phases/01-core-loop-shell-tool-cli/01-AUDIT.md`, `src/olla/prompts.py`
-- Risk: Unit tests pass while the intended user workflow remains unreliable.
-- Priority: High
+**Platform-specific atomic-write path (`_exchange_files`) is harder to fully exercise:**
+- What's not tested: The `renameat2`/`renameatx_np` `ctypes` FFI branch in `src/olla/tools/files.py:249-285` depends on the actual OS syscall being available; CI running on a single platform (e.g. Linux only) cannot directly exercise the macOS `renameatx_np` branch or the `NotImplementedError` fallback path for unsupported platforms in the same run.
+- Files: `src/olla/tools/files.py:249-285`
+- Risk: A regression in the macOS-specific branch could go undetected if CI only runs on Linux.
+- Priority: Low (the project's own `_validate_backend_support` already refuses to run at all on unsupported platforms, narrowing the blast radius).
 
 ---
 
-*Concerns audit: 2026-07-25*
+*Concerns audit: 2026-09-14*

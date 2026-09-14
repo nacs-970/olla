@@ -1,362 +1,153 @@
 # Codebase Structure
 
-**Analysis Date:** 2026-07-25
+**Analysis Date:** 2026-09-14
 
 ## Directory Layout
 
-```text
-olla/
-├── src/
-│   └── olla/                    # Installable application package
-│       ├── cli.py               # Click composition root
-│       ├── loop.py              # ReAct orchestration
-│       ├── parser.py            # Model-response protocol parser
-│       ├── prompts.py           # Compact system prompt
-│       ├── safety.py            # Shell safety policy
-│       ├── smoke.py             # Model-format smoke test
-│       └── tools/               # Host I/O adapters and result contract
-├── tests/
-│   ├── test_cli.py              # CLI routing tests
-│   ├── test_loop.py             # Controller behavior tests
-│   ├── test_parser.py           # Protocol parser tests
-│   ├── test_safety.py           # Safety policy tests
-│   ├── test_smoke.py            # Smoke classifier/runner tests
-│   └── test_tools/              # Tool adapter tests
-├── .planning/
-│   ├── codebase/                # Generated current-state codebase maps
-│   ├── phases/                  # Phase plans, reviews, and verification
-│   ├── quick/                   # Quick-task planning artifacts
-│   ├── research/                # Project research documents
-│   ├── PROJECT.md               # Product/constraint context
-│   ├── REQUIREMENTS.md          # Requirement inventory
-│   ├── ROADMAP.md               # Phase roadmap
-│   └── STATE.md                 # Current workflow state
-├── .claude/
-│   └── worktrees/               # Tool-managed worktree location
-├── .venv/                       # Local generated Python environment
-├── pyproject.toml               # Package, dependency, build, and script config
-├── uv.lock                      # Resolved dependency lockfile
-├── CLAUDE.md                    # Aggregated repository guidance
-└── .gitignore                   # Generated Python artifact exclusions
 ```
-
-The repository uses a conventional Python `src/` layout. Installable code is
-under `src/olla/`; tests live in a separate mirrored `tests/` hierarchy.
-Planning and delivery artifacts are kept beside the code in `.planning/`.
-
-The root also currently contains non-package scratch artifacts:
-`final_replace.py`, `read_and_replace.py`, `read_and_replace.sh`,
-`test_fix.py`, `test_replace.py`, `test_temp.py`, and `test.txt`. These files
-are outside `src/olla/`, outside `tests/`, and are not tracked by git. Do not use
-them as patterns or destinations for application code.
+olla/
+├── src/olla/                  # Application package (installed as `olla`)
+│   ├── __init__.py             # Empty/near-empty package marker
+│   ├── cli.py                  # click entry point (`olla` console script)
+│   ├── config.py               # TOML config loader (~/.config/olla/config.toml)
+│   ├── debug.py                # --debug / OLLA_DEBUG tracing
+│   ├── loop.py                 # ReAct loop orchestrator (largest file, 1178 lines)
+│   ├── parser.py                # <tool>/<args>/<final> tag parser
+│   ├── prompts.py               # SYSTEM_PROMPT string
+│   ├── safety.py                # Shell argv ALLOW/CONFIRM/BLOCK classifier
+│   ├── smoke.py                 # Model format-compliance smoke test
+│   ├── providers/                # LLM backend abstraction
+│   │   ├── __init__.py            # get_provider() factory + re-exports
+│   │   ├── base.py                # Provider Protocol, StreamChunk, ProviderError
+│   │   ├── ollama.py              # Local Ollama daemon provider
+│   │   └── openai_compat.py       # OpenRouter/OpenAI-compatible HTTP provider
+│   └── tools/                     # Individual tool implementations
+│       ├── __init__.py             # Empty
+│       ├── base.py                 # ToolResult / FileSnapshot shared types
+│       ├── files.py                # read_file / write_file (TOCTOU-safe)
+│       ├── inspect.py              # list_dir / grep_files
+│       ├── memory.py               # Scratchpad (remember / recall)
+│       ├── shell.py                # run_shell (subprocess wrapper)
+│       └── web.py                  # fetch_url / search_web
+├── tests/                      # pytest suite, mirrors src/olla/ layout
+│   ├── test_cli.py
+│   ├── test_config.py
+│   ├── test_debug.py
+│   ├── test_loop.py             # Largest test file (103K) — full loop scenarios
+│   ├── test_parser.py
+│   ├── test_prompts.py
+│   ├── test_providers.py
+│   ├── test_safety.py
+│   ├── test_smoke.py
+│   └── test_tools/               # Mirrors src/olla/tools/
+│       ├── test_files.py
+│       ├── test_inspect.py
+│       ├── test_memory.py
+│       ├── test_shell.py
+│       └── test_web.py
+├── .planning/                  # GSD workflow state (requirements, roadmap, phase plans, codebase docs)
+├── test_connection.py           # Standalone manual connectivity script (repo root, not in tests/)
+├── pyproject.toml               # hatchling build, deps, [project.scripts] entry point, pytest config
+├── uv.lock                      # uv-managed lockfile
+├── README.md
+└── CLAUDE.md                    # Project-specific instructions for Claude Code
+```
 
 ## Directory Purposes
 
 **`src/olla/`:**
+- Purpose: The entire application — flat package, no sub-packages beyond `providers/` and `tools/`
+- Contains: Orchestration (`loop.py`), CLI (`cli.py`), support modules (`config.py`, `debug.py`, `prompts.py`, `smoke.py`), parser (`parser.py`), safety gate (`safety.py`)
+- Key files: `loop.py` (core logic, 1178 lines), `cli.py` (thin wiring layer)
 
-- Purpose: Contains all shipped Python application code.
-- Contains: CLI wiring, application orchestration, model protocol, safety
-  policy, diagnostics, and the `tools` package.
-- Key files: `src/olla/cli.py`, `src/olla/loop.py`,
-  `src/olla/parser.py`, `src/olla/prompts.py`,
-  `src/olla/safety.py`, `src/olla/smoke.py`
+**`src/olla/providers/`:**
+- Purpose: Isolate all LLM-backend-specific code behind a common `Provider` Protocol
+- Contains: One module per backend family (`ollama.py` for local Ollama, `openai_compat.py` for any OpenAI-compatible HTTP API used by both `openrouter/` and `openai/` model prefixes) plus the shared `base.py` types and the `__init__.py` routing factory
+- Key files: `__init__.py` (`get_provider()` — the only way callers obtain a provider)
 
 **`src/olla/tools/`:**
-
-- Purpose: Contains concrete host I/O adapters and their shared return
-  contract.
-- Contains: One module per tool concern plus an empty package initializer.
-- Key files: `src/olla/tools/base.py`, `src/olla/tools/files.py`,
-  `src/olla/tools/shell.py`, `src/olla/tools/__init__.py`
+- Purpose: One module per tool family exposed to the model via the tag protocol
+- Contains: `shell.py` (process execution), `files.py` (filesystem read/write with staleness protection), `inspect.py` (read-only directory/grep tools), `memory.py` (in-run scratchpad), `web.py` (network fetch/search), `base.py` (shared result/snapshot types consumed by all of the above)
+- Key files: `base.py` defines the contract every other file in this directory implements
 
 **`tests/`:**
-
-- Purpose: Contains pytest coverage for application modules and cross-layer
-  orchestration behavior.
-- Contains: Flat test modules mirroring top-level `src/olla/*.py` modules and a
-  nested `test_tools/` package mirroring `src/olla/tools/`.
-- Key files: `tests/test_cli.py`, `tests/test_loop.py`,
-  `tests/test_parser.py`, `tests/test_safety.py`, `tests/test_smoke.py`
-
-**`tests/test_tools/`:**
-
-- Purpose: Exercises adapter success/error behavior independently of the
-  controller.
-- Contains: Shell and filesystem adapter tests.
-- Key files: `tests/test_tools/test_shell.py`,
-  `tests/test_tools/test_files.py`
+- Purpose: pytest suite; structure mirrors `src/olla/` 1:1 (`tests/test_X.py` tests `src/olla/X.py`; `tests/test_tools/test_Y.py` tests `src/olla/tools/Y.py`)
+- Contains: Unit tests per module plus `test_loop.py`, which is by far the largest test file and covers full multi-step loop scenarios (safety confirmation, write staleness, repetition detection, provider streaming)
+- Committed: Yes
 
 **`.planning/`:**
-
-- Purpose: Stores GSD project state, roadmap context, implementation plans,
-  reviews, audits, and codebase reference documents.
-- Contains: Project-level Markdown/JSON files plus phase-, quick-task-,
-  research-, and codebase-specific subdirectories.
-- Key files: `.planning/PROJECT.md`, `.planning/REQUIREMENTS.md`,
-  `.planning/ROADMAP.md`, `.planning/STATE.md`,
-  `.planning/config.json`, `.planning/HANDOFF.json`
-
-**`.planning/phases/`:**
-
-- Purpose: Groups implementation artifacts by zero-padded phase number and
-  kebab-case phase slug.
-- Contains: `PLAN`, `SUMMARY`, `RESEARCH`, `REVIEW`, `SECURITY`, `VALIDATION`,
-  `VERIFICATION`, and `UAT` documents where applicable.
-- Key files: `.planning/phases/01-core-loop-shell-tool-cli/01-01-PLAN.md`,
-  `.planning/phases/02-safety-gate-loop-control/02-PATTERNS.md`,
-  `.planning/phases/03-file-tools/03-VERIFICATION.md`
-
-**`.planning/research/`:**
-
-- Purpose: Holds design-time ecosystem and architecture research.
-- Contains: Stack, feature, pitfall, architecture, summary documents.
-- Key files: `.planning/research/ARCHITECTURE.md`,
-  `.planning/research/STACK.md`, `.planning/research/SUMMARY.md`
-
-**`.planning/codebase/`:**
-
-- Purpose: Holds current-state maps consumed by planning and execution
-  workflows.
-- Contains: Uppercase Markdown documents organized by analysis focus.
-- Key files: `.planning/codebase/ARCHITECTURE.md`,
-  `.planning/codebase/STRUCTURE.md`
-
-**`.claude/worktrees/`:**
-
-- Purpose: Reserved for tool-managed isolated worktrees.
-- Contains: No project source files in the current repository state.
-- Key files: Not applicable
-
-**`.venv/`:**
-
-- Purpose: Local Python runtime and installed dependency environment.
-- Contains: Generated interpreter, packages, and scripts.
-- Key files: Not applicable; never add application code here.
+- Purpose: GSD workflow artifacts — requirements, roadmap, phase plans/summaries, research notes, and this `codebase/` doc set
+- Contains: `PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `STATE.md`, `milestones/`, `phases/`, `research/`, `codebase/`
+- Generated: Partially (research cache files under `.cache/` are generated; most `.md` files are hand/agent-authored)
+- Committed: Yes (except `.planning/tmp/` and `.planning/research/.cache/` per typical GSD conventions — verify against `.gitignore` before assuming)
 
 ## Key File Locations
 
 **Entry Points:**
-
-- `pyproject.toml`: Declares `olla = "olla.cli:main"` as the installed console
-  script.
-- `src/olla/cli.py`: Defines the single Click command and routes normal versus
-  smoke-test execution.
-- `src/olla/loop.py`: Defines the normal task runner used by the CLI.
-- `src/olla/smoke.py`: Defines the diagnostic runner selected by
-  `--smoke-test`.
+- `src/olla/cli.py`: `main()` — the `olla` console-script target (`pyproject.toml` `[project.scripts]`)
+- `src/olla/loop.py`: `run_loop()` — the programmatic core entry point invoked by `cli.py`
 
 **Configuration:**
-
-- `pyproject.toml`: Owns package name/version, Python floor, runtime/dev
-  dependencies, Hatchling build configuration, and console entry point.
-- `uv.lock`: Pins the complete resolved dependency graph for local/reproducible
-  development.
-- `.gitignore`: Excludes virtual environments, bytecode, egg metadata, and
-  pytest caches.
-- `CLAUDE.md`: Aggregates project, stack, workflow, and repository guidance.
-- `.planning/config.json`: Stores GSD workflow configuration.
+- `pyproject.toml`: dependencies, build backend (hatchling), console script, pytest config
+- `src/olla/config.py`: runtime TOML config resolution (`~/.config/olla/config.toml`, `OLLA_CONFIG` env override, legacy `~/.olla/config.toml` fallback)
+- `.ruff_cache/`, `.pytest_cache/`: tool caches, not hand-edited
 
 **Core Logic:**
-
-- `src/olla/loop.py`: ReAct state machine, model calls, confirmation gates, and
-  tool dispatch.
-- `src/olla/parser.py`: XML-like response parsing and write-payload
-  preservation.
-- `src/olla/prompts.py`: Model-facing tool protocol.
-- `src/olla/safety.py`: Shell command policy.
-- `src/olla/tools/base.py`: Cross-adapter `ToolResult` shape.
-- `src/olla/tools/shell.py`: Shell execution adapter.
-- `src/olla/tools/files.py`: File read/write adapters.
-- `src/olla/smoke.py`: Model protocol compatibility diagnostics.
+- `src/olla/loop.py`: ReAct step cycle, action dispatch, safety/confirmation wiring
+- `src/olla/parser.py`: model-output tag parsing
+- `src/olla/safety.py`: shell command risk classification
 
 **Testing:**
-
-- `tests/test_cli.py`: CLI validation and argument forwarding.
-- `tests/test_loop.py`: Model/tool conversation flow, safety integration,
-  dry-run, truncation, repetition, and max-step behavior.
-- `tests/test_parser.py`: Parser tolerance and payload preservation.
-- `tests/test_safety.py`: Safety policy and wrapper-bypass regression cases.
-- `tests/test_smoke.py`: Response classification and smoke summary behavior.
-- `tests/test_tools/test_shell.py`: Subprocess adapter behavior.
-- `tests/test_tools/test_files.py`: Filesystem adapter behavior.
+- `tests/`: pytest suite; run via `pytest` (uses `[tool.pytest.ini_options] testpaths = ["tests"]` from `pyproject.toml`)
+- `tests/test_tools/`: tool-specific tests mirroring `src/olla/tools/`
 
 ## Naming Conventions
 
 **Files:**
-
-- Use lowercase `snake_case.py` for application modules:
-  `src/olla/parser.py`, `src/olla/safety.py`.
-- Use `test_<module>.py` for tests that mirror one top-level module:
-  `tests/test_parser.py`, `tests/test_safety.py`.
-- Mirror nested source packages in the test tree:
-  `src/olla/tools/files.py` → `tests/test_tools/test_files.py`.
-- Keep package markers named `__init__.py`:
-  `src/olla/__init__.py`, `src/olla/tools/__init__.py`.
-- Use uppercase semantic names for project-wide planning artifacts:
-  `.planning/PROJECT.md`, `.planning/ROADMAP.md`,
-  `.planning/codebase/ARCHITECTURE.md`.
-- Prefix phase artifacts with their zero-padded phase or plan number:
-  `.planning/phases/02-safety-gate-loop-control/02-03-PLAN.md`.
+- Module names are singular, lowercase, underscores only when needed: `loop.py`, `parser.py`, `safety.py`, `config.py`
+- Provider modules named after the backend they wrap: `ollama.py`, `openai_compat.py` (compat suffix signals it serves multiple `*_compat` model prefixes, not just OpenAI itself)
+- Test files always `test_<module>.py`, one-to-one with the source module they cover
 
 **Directories:**
-
-- Use lowercase package names without separators: `src/olla/`.
-- Use source-mirroring lowercase test packages: `tests/test_tools/`.
-- Use kebab-case for multiword phase and quick-task directories:
-  `.planning/phases/01-core-loop-shell-tool-cli/`.
-- Use concise plural nouns for code groupings: `src/olla/tools/`,
-  `.planning/phases/`, `.planning/research/`.
-
-**Symbols:**
-
-- Use `snake_case` for functions, parameters, and local state:
-  `parse_response`, `run_loop`, `repeat_count`.
-- Use `PascalCase` for typed dictionary contracts:
-  `Decision` in `src/olla/safety.py`, `ToolResult` in
-  `src/olla/tools/base.py`.
-- Use uppercase `SNAKE_CASE` for protocol/policy constants:
-  `SYSTEM_PROMPT`, `ALLOWLIST`, `MAX_OBSERVATION_CHARS`.
-- Prefix private implementation helpers with `_`:
-  `_blocklist_match`, `_unwrap_env`, `_normalize_slash_target` in
-  `src/olla/safety.py`.
+- Plural nouns for collections of same-shaped modules: `providers/`, `tools/`
+- `tests/test_tools/` mirrors `src/olla/tools/` exactly — when adding a new tool module, add its test in the matching subdirectory
 
 ## Where to Add New Code
 
-**New User-Facing Feature:**
+**New Tool (e.g. a new model-callable capability):**
+- Implementation: new module in `src/olla/tools/` implementing functions that return `ToolResult` (see `src/olla/tools/base.py`)
+- Wire-up required in `src/olla/parser.py` (if the tag shape needs special-casing, following the `write_file`/`remember`/`recall` precedent), `src/olla/loop.py` (`_prepare_action` branch, new `_execute_*` function, dispatch chain in `run_loop()` and `_preview_action()`), and `src/olla/prompts.py` (document the new tag in `SYSTEM_PROMPT`)
+- Tests: `tests/test_tools/test_<name>.py` plus loop-level scenario coverage in `tests/test_loop.py`
 
-- Primary code: Put task lifecycle behavior in `src/olla/loop.py`; put only CLI
-  declaration, validation, and routing in `src/olla/cli.py`.
-- Tests: Add CLI surface cases to `tests/test_cli.py` and lifecycle cases to
-  `tests/test_loop.py`.
-- Model contract: Update `src/olla/prompts.py` and parser coverage in
-  `tests/test_parser.py` whenever the feature changes model-visible syntax.
+**New Provider (e.g. a new remote model backend):**
+- Implementation: new module in `src/olla/providers/` implementing the `Provider` Protocol (`chat`, `stream_chat`, `get_context_length`) from `src/olla/providers/base.py`
+- Wire-up required in `src/olla/providers/__init__.py` (`get_provider()` prefix-routing logic)
+- Tests: `tests/test_providers.py`
 
-**New Tool:**
-
-- Implementation: Add `src/olla/tools/<tool_name>.py`; keep it focused on host
-  I/O and return `ToolResult`-compatible dictionaries from
-  `src/olla/tools/base.py`.
-- Dispatch: Add explicit execution, observation, repetition, and confirmation
-  handling in `src/olla/loop.py`.
-- Prompting: Teach the exact tool and argument format in
-  `src/olla/prompts.py`.
-- Tests: Add `tests/test_tools/test_<tool_name>.py` for adapter behavior and
-  integration cases to `tests/test_loop.py`.
-- Contract: Extend `src/olla/tools/base.py` only when the new adapter requires
-  reusable result fields; do not mix parser or policy fields into
-  `ToolResult`.
-
-**New Shell Safety Rule:**
-
-- Primary code: Add private matching helpers/constants and route them through
-  `_blocklist_match()` in `src/olla/safety.py`.
-- Tests: Add direct decision cases to `tests/test_safety.py` and a controller
-  integration case to `tests/test_loop.py` when the rule affects `--yes`,
-  prompting, or execution.
-
-**New Model Response Form:**
-
-- Implementation: Extend tolerant decoding in `src/olla/parser.py`; preserve
-  the `final`/`tool`/`none` discriminator expected by
-  `src/olla/loop.py`.
-- Tests: Add focused parsing cases to `tests/test_parser.py` and end-to-end
-  conversation behavior to `tests/test_loop.py`.
-- Prompt: Keep emitted examples synchronized in `src/olla/prompts.py`.
-
-**New Diagnostic/Smoke Check:**
-
-- Implementation: Add classifiers or scenarios to `src/olla/smoke.py`.
-- CLI routing: Extend the existing diagnostic branch in `src/olla/cli.py`
-  unless the project gains multiple subcommands.
-- Tests: Add deterministic model-boundary cases to `tests/test_smoke.py`.
-
-**New Component/Module:**
-
-- Implementation: Place shipped modules under `src/olla/`; use a subpackage
-  only for a cohesive family such as `src/olla/tools/`.
-- Imports: Use absolute package imports in application code, matching
-  `from olla.parser import parse_response` in `src/olla/loop.py`.
-- Tests: Mirror module ownership under `tests/`.
+**Safety Rule Changes:**
+- All shell-risk logic lives in `src/olla/safety.py` only — do not duplicate allowlist/blocklist checks elsewhere
+- Tests: `tests/test_safety.py`
 
 **Utilities:**
-
-- Shared helpers: No generic utility module exists. Keep a helper private in
-  the owning module, as in `src/olla/safety.py`, until two or more production
-  modules share the same semantic responsibility.
-- Shared contracts: Put adapter result types in
-  `src/olla/tools/base.py`; keep policy types beside policy in
-  `src/olla/safety.py`.
-
-**Planning and Documentation:**
-
-- Current-state architecture maps: `.planning/codebase/`
-- Up-front technical research: `.planning/research/`
-- Phase-specific plans/reviews: `.planning/phases/<NN>-<phase-slug>/`
-- Quick-task records: `.planning/quick/<date-or-id>-<task-slug>/`
+- Shared helpers with no natural tool/provider home go directly in `src/olla/` (e.g. `debug.py`, `config.py`) rather than a generic `utils.py` — this codebase has no catch-all utility module
 
 ## Special Directories
 
-**`src/`:**
-
-- Purpose: Separates installable Python packages from repository tooling and
-  tests.
-- Generated: No
-- Committed: Yes
-
-**`tests/`:**
-
-- Purpose: Houses pytest suites outside the installed package.
-- Generated: No
-- Committed: Yes
-
 **`.planning/`:**
+- Purpose: GSD workflow state (requirements, roadmap, phase history, research, codebase docs)
+- Generated: Mixed (agent-authored docs; `.cache/` subfolders are generated research caches)
+- Committed: Yes (verify `.gitignore` for `.planning/tmp/` exclusions)
 
-- Purpose: Persists GSD project context and delivery artifacts.
-- Generated: Partly workflow-generated and partly authored
-- Committed: Yes
-
-**`.planning/codebase/`:**
-
-- Purpose: Stores codebase mapper output used by future plans and execution.
+**`.pytest_cache/`, `.ruff_cache/`:**
+- Purpose: Tool caches for pytest and ruff
 - Generated: Yes
-- Committed: Intended to be committed with the planning corpus
+- Committed: No (present in working tree but excluded via `.gitignore`)
 
-**`.venv/`:**
-
-- Purpose: Local dependency environment.
-- Generated: Yes
-- Committed: No; excluded by `.gitignore`
-
-**`__pycache__/`:**
-
-- Purpose: CPython bytecode caches under `src/olla/` and `tests/`.
-- Generated: Yes
-- Committed: No; excluded by `.gitignore`
-
-**`.pytest_cache/`:**
-
-- Purpose: Pytest's local run metadata.
-- Generated: Yes
-- Committed: No; excluded by `.gitignore`
-
-**`.ruff_cache/`:**
-
-- Purpose: Ruff's local analysis cache.
+**`.gsd/`:**
+- Purpose: GSD tooling working state (untracked at time of analysis)
 - Generated: Yes
 - Committed: No
 
-**`.claude/worktrees/`:**
-
-- Purpose: Tool-managed location for isolated repository worktrees.
-- Generated: Yes
-- Committed: No files detected
-
-**`.agents/` and `.codex/`:**
-
-- Purpose: Reserved repository-local agent/skill configuration roots.
-- Generated: Environment-managed
-- Committed: No files detected
-
 ---
 
-*Structure analysis: 2026-07-25*
+*Structure analysis: 2026-09-14*

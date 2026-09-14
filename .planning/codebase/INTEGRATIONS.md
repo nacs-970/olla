@@ -1,97 +1,97 @@
 # External Integrations
 
-**Analysis Date:** 2026-07-25
+**Analysis Date:** 2026-09-14
 
 ## APIs & External Services
 
-**Local Model Inference:**
-- Ollama - Supplies chat completions for the ReAct agent and format-compliance smoke test.
-  - SDK/Client: `ollama` 0.6.2, declared in `pyproject.toml` and locked in `uv.lock`.
-  - Call site: `call_model()` in `src/olla/loop.py` invokes the synchronous package-level `ollama.chat()` function. `src/olla/smoke.py` reuses that boundary rather than creating a second client.
-  - Request contract: `src/olla/loop.py` sends a selected model name, system/user/assistant message history, stop sequences `</args>` and `Observation:`, `num_ctx = 8192`, and a `think` boolean.
-  - Response contract: `src/olla/loop.py` reads `response["message"]["content"]`; `src/olla/parser.py` interprets the text as the project’s XML-style `<tool>`, `<args>`, and `<final>` protocol.
-  - Endpoint: The application does not construct a URL. The official SDK’s package-level client uses its normal local Ollama endpoint by default and can be redirected with `OLLAMA_HOST`.
-  - Auth: None required for the intended local Ollama service. The installed SDK can consume `OLLAMA_API_KEY` for a bearer token, but `src/olla/` does not read or enforce it.
-  - Model provisioning: Not managed. `--model` is required by `src/olla/cli.py`; the named model must already be available to the reachable Ollama server.
-  - Failure handling: No retry, timeout override, availability probe, or SDK-exception translation is implemented around `ollama.chat()` in `src/olla/loop.py`; client/service exceptions propagate to the CLI.
+**LLM Providers:**
+- Local Ollama server - primary/default model backend
+  - SDK/Client: `ollama` Python package, `ollama.chat()` / streaming (`src/olla/providers/ollama.py`)
+  - Auth: none (assumes local trusted daemon, typically `http://localhost:11434`)
+  - Model selector: unprefixed model name or `ollama/<model>` prefix (`src/olla/providers/__init__.py:86-91`)
+- OpenRouter - remote OpenAI-compatible model routing service
+  - SDK/Client: raw `httpx` streaming HTTP calls to `{base_url}/chat/completions` and `{base_url}/models` (`src/olla/providers/openai_compat.py`)
+  - Default base URL: `https://openrouter.ai/api/v1`
+  - Auth: Bearer token via `OPENROUTER_API_KEY` env var, `--api-key` CLI flag, or `config.toml` (`src/olla/providers/__init__.py:22-52`)
+  - Model selector: `openrouter/<model>` prefix
+  - Sends attribution headers: `HTTP-Referer: https://github.com/olla/olla`, `X-Title: olla CLI Agent` (`src/olla/providers/openai_compat.py:120-123`)
+- OpenAI (or OpenAI-compatible endpoint, e.g. self-hosted vLLM) - remote model backend
+  - SDK/Client: same `httpx`-based `OpenAICompatProvider` as OpenRouter
+  - Default base URL: `https://api.openai.com/v1`
+  - Auth: Bearer token via `OPENAI_API_KEY` env var, `--api-key` CLI flag, or `config.toml` (`src/olla/providers/__init__.py:54-84`)
+  - Model selector: `openai/<model>` prefix
 
-**Package Registry:**
-- Python Package Index - `uv.lock` resolves third-party packages from `https://pypi.org/simple` and records artifacts hosted by Python package infrastructure.
-  - SDK/Client: uv/pip-compatible Python packaging metadata in `pyproject.toml` and `uv.lock`.
-  - Auth: None configured in the repository. No package-manager credential file is part of the project.
-  - Runtime use: Package downloads occur during installation/synchronization, not during an `olla` agent run.
-
-**Host Process Execution:**
-- Local operating system executables - The model can request a `shell` tool call, which `src/olla/loop.py` tokenizes with `shlex.split()` and passes through the policy in `src/olla/safety.py`.
-  - SDK/Client: Python `subprocess.run(..., shell=False)` in `src/olla/tools/shell.py`.
-  - Auth: The child process inherits the current user identity and process environment; the application provides no separate credential boundary.
-  - Limits: `src/olla/tools/shell.py` applies a 30-second default timeout and captures stdout/stderr. `src/olla/loop.py` truncates observations before returning them to the model.
+**Web tools (untrusted external content):**
+- DuckDuckGo Lite - web search, scraped via HTML parsing (no API key/official API)
+  - Endpoint: `https://lite.duckduckgo.com/lite/` (`src/olla/tools/web.py:23`)
+  - Client: `httpx.Client` with browser-spoofed `User-Agent`, capped read (5MB), custom `_DDGResultParser` (HTMLParser subclass) to extract organic (non-sponsored) results
+  - Returns up to 5 results, truncated to 3000 chars (`WEB-01`/`WEB-03` requirements)
+  - Bot-challenge detection: checks for `anomaly-modal` marker in response and raises a tool error if DuckDuckGo blocks the request
+- Arbitrary URL fetch (`fetch_url` tool)
+  - Client: `httpx.Client`, same headers/timeout/byte-cap as search, strips `<script>/<style>/<nav>/<header>/<footer>` via `_TextExtractor` (`src/olla/tools/web.py:189-215`)
+  - No allowlist/domain restriction - the model can direct fetches to any URL
 
 ## Data Storage
 
 **Databases:**
-- Not detected. No database driver, ORM, schema, migration, connection string, or persistence layer appears in `pyproject.toml`, `uv.lock`, or `src/olla/`.
+- None - no database, ORM, or persistent data store in the codebase
 
 **File Storage:**
-- Local filesystem only.
-  - Client: Python `pathlib.Path` in `src/olla/tools/files.py`.
-  - Reads: `read_file()` reads complete UTF-8 text files and returns content through the shared `ToolResult` shape in `src/olla/tools/base.py`.
-  - Writes: `write_file()` replaces the target with UTF-8 text, requires the parent directory to exist, and reports bytes written. `src/olla/loop.py` requires confirmation unless `--yes` is supplied.
-  - Scope: Paths are supplied by model output and resolved for display in `src/olla/loop.py`; no application data directory, database file, object-storage bucket, or persistent conversation history is created.
+- Local filesystem only, via `olla`'s file tools (`src/olla/tools/files.py`: `read_file`, `write_file`) and inspection tools (`src/olla/tools/inspect.py`: `list_dir`, `grep_files`)
+- Config file: `~/.config/olla/config.toml` (XDG) or legacy `~/.olla/config.toml`, read-only (no runtime writes observed)
 
 **Caching:**
-- None. Conversation state exists only in the in-memory `messages` list inside `src/olla/loop.py` for the duration of one CLI invocation.
+- None - no caching layer (each provider/context-length lookup is a live call, e.g. `OpenAICompatProvider.get_context_length()` caches only in-memory per-instance, `src/olla/providers/openai_compat.py:83-104`)
 
 ## Authentication & Identity
 
 **Auth Provider:**
-- No application authentication or identity provider is implemented.
-  - Implementation: The `olla` process runs as the invoking operating-system user. Local file and process access in `src/olla/tools/files.py` and `src/olla/tools/shell.py` uses that user’s permissions.
-  - Ollama: Intended local use is unauthenticated. Optional SDK-level host/API-key configuration is external to application code and is not validated by `src/olla/`.
-  - User authorization: Interactive approval through `rich.prompt.Confirm` in `src/olla/loop.py` is a safety consent gate for tool actions, not authentication.
+- None (no user auth system - this is a local single-user CLI tool)
+- Remote-provider API keys (OpenRouter/OpenAI) function as service credentials, not user identity; resolved via CLI flag > env var > per-provider config table > legacy flat config key (`src/olla/providers/__init__.py`)
+- Secrets are masked before logging via `mask_secret()` (`src/olla/debug.py`, used in `src/olla/cli.py:47`, `src/olla/loop.py:1027`, `src/olla/providers/openai_compat.py:145`)
 
 ## Monitoring & Observability
 
 **Error Tracking:**
-- None. No Sentry, OpenTelemetry, hosted monitoring SDK, or error-reporting integration is declared in `pyproject.toml` or imported by `src/olla/`.
+- None - no external error-tracking/APM service integrated
 
 **Logs:**
-- Console output only.
-  - `src/olla/loop.py` prints model final text, tool-step status, tool observations, policy blocks, repeated-call termination, and max-step termination to stdout.
-  - `src/olla/smoke.py` prints model compliance summaries and threshold warnings to stdout.
-  - `src/olla/tools/shell.py` captures child stdout/stderr into `ToolResult`; `src/olla/loop.py` combines and truncates it before printing and appending it to model history.
-  - No log levels, structured logging, persistent log file, metrics, traces, correlation IDs, or remote log sink are present.
+- Local-only debug logging via `debug_log()` (`src/olla/debug.py`), gated behind `--debug` flag, `OLLA_DEBUG` env var, or `debug` config key
+- No log shipping, no structured log aggregation
 
 ## CI/CD & Deployment
 
 **Hosting:**
-- None. The repository has no Dockerfile, Compose file, platform manifest, process manager configuration, hosted service adapter, or infrastructure-as-code file.
-- The supported delivery form is the local `olla` console script configured in `pyproject.toml`; it requires a separately operated Ollama server.
+- None - not a hosted service; distributed as a pip-installable CLI package
 
 **CI Pipeline:**
-- None detected. There is no tracked `.github/workflows/` pipeline or configuration for another CI provider.
-- Tests and linting are local development commands backed by the `dev` extra in `pyproject.toml` and resolved versions in `uv.lock`.
+- None detected in-repo (no `.github/workflows/`, no other CI config found)
 
 ## Environment Configuration
 
 **Required env vars:**
-- None are read directly by `src/olla/`.
-- `OLLAMA_HOST` - Optional SDK-supported override for the Ollama server endpoint used by the package-level client invoked from `src/olla/loop.py`.
-- `OLLAMA_API_KEY` - Optional SDK-supported bearer credential. It is not needed for the intended unauthenticated local Ollama server and is not consumed directly by application code.
-- Runtime model selection is not an environment variable: supply the required `--model` option defined in `src/olla/cli.py`.
+- None required for the default local-Ollama path (no API key needed)
+- `OPENROUTER_API_KEY` - required only when using `openrouter/<model>` and no `--api-key`/config value is supplied
+- `OPENAI_API_KEY` - required only when using `openai/<model>` and no `--api-key`/config value is supplied
+
+**Optional env vars:**
+- `OLLA_CONFIG` - custom config file path
+- `OLLA_DEBUG` - enable debug logging
+- `OPENROUTER_BASE_URL`, `OPENAI_BASE_URL` - override default provider endpoints
+- `XDG_CONFIG_HOME` - relocate default config directory
 
 **Secrets location:**
-- Not detected. No `.env` file or repository-managed secret store is present.
-- Keep any optional Ollama credential outside the repository and provide it through the process environment; neither `pyproject.toml` nor `src/olla/` defines a secret-loading mechanism.
+- User-supplied via `~/.config/olla/config.toml` (git-ignored by nature of being outside the repo), environment variables, or `--api-key` CLI flag
+- No `.env` file or in-repo secrets file present in this repository (verified: no `.env*`, `*secret*`, or credential files found at repo root)
 
 ## Webhooks & Callbacks
 
 **Incoming:**
-- None. `src/olla/cli.py` is a local command entry point, not an HTTP server, and no route/callback listener exists under `src/olla/`.
+- None - `olla` is a CLI tool with no server/listener component
 
 **Outgoing:**
-- None. The only network request path is the synchronous Ollama chat request in `src/olla/loop.py`; no webhook, notification, analytics, callback, browser, or arbitrary HTTP integration is implemented.
+- None (no webhook dispatch); all outbound HTTP is synchronous request/response (chat completions, model listing, web search/fetch)
 
 ---
 
-*Integration audit: 2026-07-25*
+*Integration audit: 2026-09-14*
