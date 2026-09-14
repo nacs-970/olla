@@ -8,6 +8,7 @@ from olla.config import find_config_path, load_config
 from olla.debug import debug_log, mask_secret, set_debug
 from olla.loop import run_loop
 from olla.prompts import SYSTEM_PROMPT
+from olla.repl import main_loop as run_repl
 from olla.smoke import run_smoke_test
 
 
@@ -63,7 +64,20 @@ def main(task, model, dry_run, max_steps, unlimited, yes, smoke_test, api_key, b
         return
 
     if not task:
-        raise click.UsageError("TASK argument is required")
+        if not model:
+            raise click.UsageError("--model is required (no hardcoded default model, CLI-01)")
+        run_repl(
+            model=model,
+            max_steps=max_steps,
+            system_prompt=SYSTEM_PROMPT,
+            yes=yes,
+            dry_run=dry_run,
+            api_key=api_key,
+            base_url=base_url,
+            debug=debug,
+        )
+        return
+
     if not model:
         raise click.UsageError("--model is required (no hardcoded default model, CLI-01)")
 

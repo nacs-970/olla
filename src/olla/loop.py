@@ -93,6 +93,23 @@ class _FileReadSnapshot:
     identity: FileSnapshot | None
 
 
+@dataclass
+class SessionState:
+    """Session state externally owned by a caller and threaded through run_loop() (D-01).
+
+    One-shot CLI invocations never construct this directly — run_loop() builds a fresh
+    instance internally whenever `session=None`, matching the pre-refactor per-invocation
+    contract exactly. REPL callers (src/olla/repl.py) construct exactly one instance at
+    session launch and pass it to every per-turn run_loop() call, so messages/scratchpad/
+    read_snapshots/untrusted_observation_seen all persist across turns until reset.
+    """
+
+    messages: list[dict]
+    scratchpad: Scratchpad
+    read_snapshots: dict[Path, "_FileReadSnapshot"]
+    untrusted_observation_seen: bool = False
+
+
 @dataclass(frozen=True)
 class _Action:
     """One parsed and normalized model action shared by all loop policies."""
@@ -1001,8 +1018,16 @@ def run_loop(
     api_key: str | None = None,
     base_url: str | None = None,
     debug: bool = False,
+    session: SessionState | None = None,
 ) -> None:
-    """Drive the reason-act-observe loop until a <final> answer or max_steps."""
+    """Drive the reason-act-observe loop until a <final> answer or max_steps.
+
+    `session` is optional externally-owned state (D-01). When omitted (the one-shot CLI
+    path), a fresh SessionState is constructed here — identical to the pre-refactor
+    per-invocation behavior. A caller driving multiple turns (the REPL, src/olla/repl.py)
+    constructs one SessionState and passes it on every call so messages/scratchpad/
+    read_snapshots/untrusted_observation_seen persist across turns.
+    """
     if debug:
         set_debug(True)
 
@@ -1029,13 +1054,21 @@ def run_loop(
         },
     )
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": task},
-    ]
+    session = session or SessionState(
+        messages=[],
+        scratchpad=Scratchpad(),
+        read_snapshots={},
+        untrusted_observation_seen=False,
+    )
+    if not session.messages:
+        session.messages.append({"role": "system", "content": system_prompt})
+    session.messages.append({"role": "user", "content": task})
+    # Captured for 07-03's rolling-trim protected_from_index; unused in this plan.
+    turn_start_index = len(session.messages) - 1  # noqa: F841
+
     if dry_run:
         debug_log("Executing dry run turn")
-        content = _stream_model_turn(provider, messages, model=resolved_model)
+        content = _stream_model_turn(provider, session.messages, model=resolved_model)
         if content is None:
             return
         action = _prepare_action(content)
@@ -1043,11 +1076,8 @@ def run_loop(
         _preview_action(action, yes=yes)
         return
 
-    scratchpad = Scratchpad()
-    read_snapshots: dict[Path, _FileReadSnapshot] = {}
     previous_signature: tuple | None = None
     repeat_count = 0
-    untrusted_observation_seen = False
 
     step_iter = range(1, max_steps + 1) if max_steps > 0 else itertools.count(1)
     for step in step_iter:
@@ -1055,18 +1085,18 @@ def run_loop(
         debug_log(
             f"=== Step {step}/{total_label} ===",
             {
-                "message_count": len(messages),
+                "message_count": len(session.messages),
                 "messages": [
                     {
                         "role": m["role"],
                         "chars": len(m.get("content", "")),
                         "content": m.get("content", ""),
                     }
-                    for m in messages
+                    for m in session.messages
                 ],
             },
         )
-        content = _stream_model_turn(provider, messages, model=resolved_model)
+        content = _stream_model_turn(provider, session.messages, model=resolved_model)
         if content is None:
             debug_log(f"Step {step} - Model turn returned None")
             return
@@ -1084,7 +1114,7 @@ def run_loop(
             },
         )
         history_content = truncate_output(content) if action.kind == "none" else content
-        messages.append({"role": "assistant", "content": history_content})
+        session.messages.append({"role": "assistant", "content": history_content})
 
         if action.kind == "final":
             _display(action.text)
@@ -1102,69 +1132,69 @@ def run_loop(
             return
 
         if action.kind == "shell":
-            untrusted_observation_seen = (
+            session.untrusted_observation_seen = (
                 _execute_shell(
                     action,
                     step=step,
-                    messages=messages,
+                    messages=session.messages,
                     yes=yes,
-                    untrusted_observation_seen=untrusted_observation_seen,
+                    untrusted_observation_seen=session.untrusted_observation_seen,
                 )
-                or untrusted_observation_seen
+                or session.untrusted_observation_seen
             )
         elif action.kind == "read_file":
-            untrusted_observation_seen = (
+            session.untrusted_observation_seen = (
                 _execute_read_file(
                     action,
                     step=step,
-                    messages=messages,
-                    read_snapshots=read_snapshots,
+                    messages=session.messages,
+                    read_snapshots=session.read_snapshots,
                 )
-                or untrusted_observation_seen
+                or session.untrusted_observation_seen
             )
         elif action.kind == "write_file":
             _execute_write_file(
                 action,
                 step=step,
-                messages=messages,
-                read_snapshots=read_snapshots,
+                messages=session.messages,
+                read_snapshots=session.read_snapshots,
                 yes=yes,
-                untrusted_observation_seen=untrusted_observation_seen,
+                untrusted_observation_seen=session.untrusted_observation_seen,
             )
         elif action.kind == "list_dir":
-            untrusted_observation_seen = (
-                _execute_list_dir(action, step=step, messages=messages)
-                or untrusted_observation_seen
+            session.untrusted_observation_seen = (
+                _execute_list_dir(action, step=step, messages=session.messages)
+                or session.untrusted_observation_seen
             )
         elif action.kind == "grep_files":
-            untrusted_observation_seen = (
-                _execute_grep_files(action, step=step, messages=messages)
-                or untrusted_observation_seen
+            session.untrusted_observation_seen = (
+                _execute_grep_files(action, step=step, messages=session.messages)
+                or session.untrusted_observation_seen
             )
         elif action.kind == "fetch_url":
-            untrusted_observation_seen = (
-                _execute_fetch_url(action, step=step, messages=messages)
-                or untrusted_observation_seen
+            session.untrusted_observation_seen = (
+                _execute_fetch_url(action, step=step, messages=session.messages)
+                or session.untrusted_observation_seen
             )
         elif action.kind == "search_web":
-            untrusted_observation_seen = (
-                _execute_search_web(action, step=step, messages=messages)
-                or untrusted_observation_seen
+            session.untrusted_observation_seen = (
+                _execute_search_web(action, step=step, messages=session.messages)
+                or session.untrusted_observation_seen
             )
         elif action.kind == "memory":
-            untrusted_observation_seen = (
+            session.untrusted_observation_seen = (
                 _execute_memory(
                     action,
                     step=step,
-                    messages=messages,
-                    scratchpad=scratchpad,
+                    messages=session.messages,
+                    scratchpad=session.scratchpad,
                 )
-                or untrusted_observation_seen
+                or session.untrusted_observation_seen
             )
         elif action.kind == "unknown":
-            _record_observation(messages, f"unknown tool '{action.tool}'")
+            _record_observation(session.messages, f"unknown tool '{action.tool}'")
         else:
-            messages.append(
+            session.messages.append(
                 {
                     "role": "user",
                     "content": (

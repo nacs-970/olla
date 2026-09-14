@@ -1,4 +1,10 @@
-"""Invocation-local scratchpad memory with explicit remember and recall calls."""
+"""Scratchpad memory with explicit remember and recall calls.
+
+Lifetime is dual-contract (D-01/D-05): the one-shot CLI path still gets a fresh
+Scratchpad per run_loop() invocation (unchanged); a REPL session instead constructs one
+Scratchpad inside its SessionState and reuses it across every turn, reset only by
+`/clear` (07-02).
+"""
 
 from dataclasses import dataclass
 
@@ -67,7 +73,13 @@ def parse_recall_args(args_raw: str) -> tuple[str | None, str | None]:
 
 
 class Scratchpad:
-    """Store notes for the lifetime of one owning run-loop invocation."""
+    """Store notes for the lifetime of one owning run-loop invocation.
+
+    One-shot CLI path: run_loop() constructs a fresh Scratchpad every call when no
+    session is injected (unchanged, per-invocation contract). REPL path: one Scratchpad
+    is constructed once per session inside SessionState and reused across every turn,
+    reset only by `/clear` (07-02) — see D-01/D-05.
+    """
 
     def __init__(self) -> None:
         self._values: dict[str, str] = {}
