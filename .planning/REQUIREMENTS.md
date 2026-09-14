@@ -7,9 +7,9 @@
 
 ### Inspection Tools
 
-- [ ] **INSPECT-01**: `list_dir(path)` tool lists directory entries with `[d]`/`[f]` indicator, names, and sizes, capped at 50 entries
-- [ ] **INSPECT-02**: `grep_files(pattern, path)` tool performs regex search across text files (ignoring `.git` and binary files), returning up to 25 matches with file:line
-- [ ] **INSPECT-03**: `list_dir`/`grep_files` execute without interactive confirmation prompts via unconfirmed dispatch straight from `run_loop()`, bypassing `safety.check()` entirely (D-09) rather than being classified `ALLOW` by it
+- [x] **INSPECT-01**: `list_dir(path)` tool lists directory entries with `[d]`/`[f]` indicator, names, and sizes, capped at 50 entries
+- [x] **INSPECT-02**: `grep_files(pattern, path)` tool performs regex search across text files (ignoring `.git` and binary files), returning up to 25 matches with file:line
+- [x] **INSPECT-03**: `list_dir`/`grep_files` execute without interactive confirmation prompts via unconfirmed dispatch straight from `run_loop()`, bypassing `safety.check()` entirely (D-09) rather than being classified `ALLOW` by it
 
 ### Web Tools
 
