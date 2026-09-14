@@ -156,7 +156,8 @@ def test_summarize_and_trim_provider_failure_falls_back_to_placeholder_digest(mo
         messages, protected_from_index=2, provider=mock_provider, model="m"
     )
 
-    assert len(messages) == 2
+    assert len(messages) == 3
+    assert messages[2] == {"role": "user", "content": "current"}
     assert "<untrusted_summary_digest>" in messages[1]["content"]
     assert "summarization unavailable" in messages[1]["content"]
 
