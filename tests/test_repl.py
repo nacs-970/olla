@@ -2,10 +2,15 @@
 
 from unittest.mock import MagicMock
 
+from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
+from prompt_toolkit.input.defaults import create_pipe_input
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.keys import Keys
+from prompt_toolkit.output import DummyOutput
 
 from olla.providers import ProviderError
-from olla.repl import main_loop
+from olla.repl import _build_key_bindings, main_loop
 
 
 def test_main_loop_dispatches_two_turns_with_shared_session(mocker):
@@ -43,7 +48,36 @@ def test_session_construction_uses_file_history_and_multiline(mocker):
 
     _, kwargs = mock_session_cls.call_args
     assert isinstance(kwargs["history"], FileHistory)
-    assert "multiline" in kwargs
+    assert kwargs["multiline"] is False
+    assert isinstance(kwargs["key_bindings"], KeyBindings)
+
+
+def test_alt_enter_key_binding_inserts_newline_without_submitting():
+    kb = _build_key_bindings()
+
+    assert len(kb.bindings) == 1
+    assert kb.bindings[0].keys == (Keys.Escape, Keys.ControlM)
+
+    fake_event = MagicMock()
+    kb.bindings[0].handler(fake_event)
+
+    fake_event.current_buffer.insert_text.assert_called_once_with("\n")
+    fake_event.current_buffer.validate_and_handle.assert_not_called()
+
+
+def test_alt_enter_inserts_newline_via_real_pipe_input_prompt_session():
+    with create_pipe_input() as pipe_input:
+        session = PromptSession(
+            input=pipe_input,
+            output=DummyOutput(),
+            key_bindings=_build_key_bindings(),
+            multiline=False,
+        )
+        pipe_input.send_text("line1\x1b\rline2\r")
+
+        result = session.prompt()
+
+    assert result == "line1\nline2"
 
 
 def test_exit_semantics_single_ctrl_c_continues(mocker):
