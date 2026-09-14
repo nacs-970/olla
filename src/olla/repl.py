@@ -5,6 +5,7 @@ from pathlib import Path
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
+from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.patch_stdout import patch_stdout
 
 from olla import context_trim
@@ -20,6 +21,18 @@ DOUBLE_TAP_THRESHOLD_SECONDS = 1.5
 # including a pasted secret, is written to disk unredacted, the same as any
 # shell history file. No redaction is implemented for REPL input in this phase.
 _HISTORY_FILENAME = ".olla_history"
+
+
+def _build_key_bindings() -> KeyBindings:
+    """Bind Alt+Enter to insert a newline, leaving plain Enter bound to
+    prompt_toolkit's own default single-line submit behavior."""
+    kb = KeyBindings()
+
+    @kb.add("escape", "enter")
+    def _insert_newline(event) -> None:
+        event.current_buffer.insert_text("\n")
+
+    return kb
 
 
 def main_loop(
@@ -66,6 +79,7 @@ def main_loop(
     session_prompt = PromptSession(
         history=FileHistory(str(history_path)),
         multiline=False,
+        key_bindings=_build_key_bindings(),
     )
 
     last_interrupt: float | None = None
