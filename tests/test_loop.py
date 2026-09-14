@@ -1,8 +1,11 @@
 """Tests for olla.loop."""
 
+import itertools
+
 import ollama
 import pytest
 
+from olla import context_trim
 from olla.loop import (
     MAX_OBSERVATION_CHARS,
     SessionState,
@@ -3008,3 +3011,143 @@ def test_run_loop_untrusted_observation_seen_persists_across_calls(tmp_path, moc
     run_loop("just answer", "test-model", 5, "sys", session=session_state)
 
     assert session_state.untrusted_observation_seen is True
+
+
+def test_run_loop_trim_check_fires_before_model_call(mocker):
+    """The trim-check chokepoint (D-10) fires inside the real step loop, before
+    the model call, and never includes the system prompt in the summarized slice."""
+    responses = iter(
+        [
+            {"message": {"content": "<tool>recall</tool><args>notekey</args>"}},
+            {"message": {"content": "<final>done</final>"}},
+        ]
+    )
+
+    def fake_chat(**kwargs):
+        return next(responses)
+
+    mocker.patch("olla.loop.ollama.chat", side_effect=fake_chat)
+    mocker.patch(
+        "olla.loop.Scratchpad.recall", return_value={"content": "recalled-value"}
+    )
+    mock_should_trim = mocker.patch(
+        "olla.context_trim.should_trim", return_value=True
+    )
+    mock_summarize = mocker.patch("olla.context_trim.summarize_and_trim")
+
+    run_loop(task="do something", model="test-model", max_steps=5, system_prompt="sys")
+
+    assert mock_should_trim.called
+    assert mock_summarize.called
+    messages_arg, protected_from_index_arg = mock_summarize.call_args.args[:2]
+    assert messages_arg[0] == {"role": "system", "content": "sys"}
+    # A fresh single-turn session: turn_start_index == 1, so the summarized
+    # slice (messages[1:protected_from_index]) never reaches the system prompt.
+    assert protected_from_index_arg == 1
+
+
+def test_run_loop_trim_check_protects_in_progress_turn_across_multiple_trims(mocker):
+    """A stale protected_from_index boundary must never be reused for a later
+    trim within the same turn (regression coverage for boundary staleness)."""
+    session = SessionState(
+        messages=[
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "u1"},
+            {"role": "assistant", "content": "a1"},
+            {"role": "user", "content": "u2"},
+            {"role": "assistant", "content": "a2"},
+        ],
+        scratchpad=Scratchpad(),
+        read_snapshots={},
+    )
+
+    responses = iter(
+        [
+            {"message": {"content": "<tool>recall</tool><args>notekey1</args>"}},
+            {"message": {"content": "<tool>recall</tool><args>notekey2</args>"}},
+            {"message": {"content": "<final>done</final>"}},
+        ]
+    )
+
+    def fake_chat(**kwargs):
+        return next(responses)
+
+    mocker.patch("olla.loop.ollama.chat", side_effect=fake_chat)
+    mocker.patch(
+        "olla.loop.Scratchpad.recall", return_value={"content": "recalled-value"}
+    )
+    # A trim is requested on exactly the first two step-loop iterations, never
+    # again — an unbounded iterator so the harness driving more steps than
+    # entries can't raise StopIteration.
+    mocker.patch(
+        "olla.context_trim.should_trim",
+        side_effect=itertools.chain([True, True], itertools.repeat(False)),
+    )
+
+    def _fake_summarize_and_trim(messages, protected_from_index, provider, model):
+        """Mirror the real splice so the length-delta recompute has something
+        real to react to — a no-op mock would keep every delta at zero."""
+        messages[1:protected_from_index] = [
+            {
+                "role": "tool",
+                "content": (
+                    "Observation: <untrusted_summary_digest>\ndigest\n"
+                    "</untrusted_summary_digest>"
+                ),
+            }
+        ]
+
+    mock_summarize = mocker.patch(
+        "olla.context_trim.summarize_and_trim", side_effect=_fake_summarize_and_trim
+    )
+
+    run_loop(
+        task="new task",
+        model="test-model",
+        max_steps=5,
+        system_prompt="sys",
+        session=session,
+    )
+
+    # Exactly two trims fired — not more (a stale-boundary regression could
+    # silently no-op the second trim and this assertion would catch it) and
+    # not fewer.
+    assert mock_summarize.call_count == 2
+    first_protected = mock_summarize.call_args_list[0].args[1]
+    second_protected = mock_summarize.call_args_list[1].args[1]
+    assert first_protected == 5
+    assert second_protected == 2
+    assert second_protected < first_protected
+
+    final_contents = [m["content"] for m in session.messages]
+    # The original pre-turn history was fully summarized away on the first trim.
+    assert "u1" not in final_contents
+    assert "a1" not in final_contents
+    assert "u2" not in final_contents
+    assert "a2" not in final_contents
+    assert "<untrusted_summary_digest>" in session.messages[1]["content"]
+    # This turn's own messages (task + both tool-call rounds) all survive
+    # unmodified, never clipped by either trim.
+    assert "new task" in final_contents
+    assert any("notekey1" in c for c in final_contents)
+    assert any("notekey2" in c for c in final_contents)
+    assert sum(1 for c in final_contents if "recalled-value" in c) == 2
+
+
+def test_run_loop_one_shot_trim_check_is_effectively_a_noop(mocker):
+    """A one-shot run_loop(session=None) call still runs the trim chokepoint
+    (it fires unconditionally), but protected_from_index=1 makes the
+    summarized slice empty — no observable message content change."""
+    mocker.patch(
+        "olla.loop.ollama.chat",
+        side_effect=[{"message": {"content": "<final>done</final>"}}],
+    )
+    mocker.patch("olla.context_trim.should_trim", return_value=True)
+    spy_summarize = mocker.spy(context_trim, "summarize_and_trim")
+
+    run_loop(task="one shot", model="test-model", max_steps=5, system_prompt="sys")
+
+    spy_summarize.assert_called_once()
+    messages_arg, protected_from_index_arg = spy_summarize.call_args.args[:2]
+    assert protected_from_index_arg == 1
+    assert messages_arg[1:1] == []
