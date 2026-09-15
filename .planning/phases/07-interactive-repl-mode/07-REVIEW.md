@@ -18,17 +18,17 @@ files_reviewed_list:
   - tests/test_debug.py
 findings:
   critical: 1
-  warning: 5
-  info: 2
-  total: 8
+  warning: 6
+  info: 5
+  total: 12
 status: issues_found
 ---
 
 # Phase 07: Code Review Report
 
-**Reviewed:** 2026-09-15
+**Reviewed:** 2026-09-15 (initial), 2026-09-15 (incremental pass, plan 07-04)
 **Depth:** standard
-**Files Reviewed:** 12
+**Files Reviewed:** 12 (full phase scope); 3 changed in the 07-04 incremental pass
 **Status:** issues_found
 
 ## Summary
@@ -47,6 +47,21 @@ a documented no-op for the most common context-overflow scenario (a single
 long-running task), the startup encoder warm-up is only wired into the REPL
 entry point (not the one-shot CLI path it was designed to help), and its
 failure handling is narrower than the surrounding code implies.
+
+**Incremental pass — plan 07-04 (diff `b45b7341333b86788e5e1ab6bcd5848f7ec67bb0..HEAD`):**
+This pass reviews only the files changed by gap-closure plan 07-04:
+`src/olla/repl.py` (new `_build_key_bindings()` binding Alt+Enter to
+newline-insert), `tests/test_loop.py` (new cross-turn stale-snapshot
+regression test), and `tests/test_repl.py` (new tests for the key binding).
+All 166 tests in `tests/test_repl.py` + `tests/test_loop.py` pass, and
+`ruff check` is clean on the three changed files. The new functional code
+is small and its behavior was verified both by the shipped tests and by
+independent reproduction against the installed `prompt_toolkit==3.0.53`
+source (see WR-06 below). No new Critical issues were found; CR-01 below
+predates this diff and remains open in `src/olla/loop.py` (out of scope for
+this incremental pass, not re-verified here). One new Warning and three new
+Info items were found and are appended to their respective sections below
+(IDs continue from the existing sequence: WR-06, IN-03..05).
 
 ## Critical Issues
 
@@ -232,6 +247,45 @@ callable into `run_loop()`/`_stream_model_turn()` with a production default)
 over runtime mock-detection, so tests substitute behavior explicitly rather
 than being auto-detected.
 
+### WR-06: Alt+Enter-inserted lines render with no continuation prefix in single-line mode
+
+**File:** `src/olla/repl.py:26-35, 79-83` (`_build_key_bindings()`, `PromptSession(multiline=False, key_bindings=...)`)
+
+**Issue:** `_build_key_bindings()` binds Alt+Enter to
+`event.current_buffer.insert_text("\n")`, and `PromptSession` is constructed
+with `multiline=False`. This is verified to correctly capture the inserted
+newline in the *returned* string (both the shipped
+`test_alt_enter_inserts_newline_via_real_pipe_input_prompt_session` test and
+an independent repro against the installed `prompt_toolkit==3.0.53` confirm
+`"line1\x1b\rline2\r"` returns `"line1\nline2"`). However, prompt_toolkit's
+own `PromptSession._get_continuation()` (`shortcuts/prompt.py:1313-1327`)
+only pads the continuation prefix for lines after the first when
+`is_true(self.multiline)` is true:
+```python
+if continuation is None and is_true(self.multiline):
+    continuation = " " * width
+```
+Since this session is constructed with `multiline=False`, `continuation`
+stays `None` and `to_formatted_text(None, ...)` resolves to an empty
+fragment (confirmed: `to_formatted_text(None, style=...) == FormattedText([])`).
+The input window's height is unconstrained (`_get_default_buffer_control_height()`
+returns a bare `Dimension()` unless a completion menu needs space, so the
+second line does render, it is not clipped) — but it renders flush against
+column 0 with none of the `" " * width` alignment padding a genuine
+multiline session would show under the `> ` prompt. A user who presses
+Alt+Enter to compose a multi-line task will see subsequent lines start at
+the terminal's left edge, visually disconnected from the `> ` prompt above
+them, rather than aligned as a continuation of the same input the way
+prompt_toolkit's native multiline mode would render it. This is a display
+gap in a mechanism this diff exists specifically to enable (multi-line
+compose-then-submit), not a correctness bug in the captured/returned text.
+
+**Fix:** Pass an explicit `prompt_continuation` callable/string to
+`PromptSession` (e.g. matching the `> ` prompt width with spaces) so
+Alt+Enter-inserted lines get the same visual alignment a `multiline=True`
+session would provide, independent of the `multiline` flag's other
+(submit-key) behavior.
+
 ## Info
 
 ### IN-01: Trailing whitespace
@@ -246,8 +300,86 @@ than being auto-detected.
 **Issue:** `PromptSession(history=FileHistory(...))` persists every line typed at the `>` prompt to `~/.olla_history` in plaintext, including any secret a user pastes as part of a task. This is already called out in a code comment as a known, accepted limitation for this phase, but is worth keeping on record as a real exposure surface (e.g. `.olla_history` is not obviously covered by typical `.gitignore`/backup-exclusion conventions the way shell history sometimes is).
 **Fix:** No action required for this phase per the existing design note; consider a redaction pass or an opt-out flag in a future phase if this becomes a real user concern.
 
+### IN-03: `_build_key_bindings()` silently overrides prompt_toolkit's own default Meta+Enter binding, undocumented
+
+**File:** `src/olla/repl.py:26-35`
+**Issue:** prompt_toolkit's built-in emacs key-binding set already binds
+Alt+Enter (`"escape", "enter"`) to `accept-line` — i.e. "force submit,
+regardless of mode" (`prompt_toolkit/key_binding/bindings/emacs.py:156`,
+comment: `# Meta + Enter: always accept input.`). `_build_key_bindings()`
+registers a new, unconditional (`filter`-less) binding for the exact same
+key combination that instead inserts a newline, and per
+`Application._create_key_bindings()`'s merge-priority order
+(`application.py:1451-1503`), the session's own `key_bindings` argument
+outranks the library's `_default_bindings`, so this repurposing wins (this
+was independently verified against `prompt_toolkit==3.0.53`, and is also
+what the shipped end-to-end pipe-input test demonstrates). The behavior
+itself is correct and covered by a real-input test. What's missing is that
+neither the code comment nor the docstring on `_build_key_bindings()`
+mentions that this *replaces* an existing, differently-purposed default
+binding rather than claiming previously-unbound key real estate — a future
+maintainer reading only the docstring ("leaving plain Enter bound to
+prompt_toolkit's own default... behavior") could reasonably assume Alt+Enter
+itself was unbound before this change.
+**Fix:** Add a one-line comment noting this binding intentionally overrides
+prompt_toolkit's default `accept-line` binding for Alt+Enter, repurposing it
+for newline-insertion since this REPL always uses `multiline=False`.
+
+### IN-04: `_insert_newline(event)` has no type annotation, inconsistent with the rest of the file
+
+**File:** `src/olla/repl.py:32`
+**Issue:** Every other function signature in `repl.py` is fully type
+annotated (e.g. `main_loop(model: str, max_steps: int, ...)`,
+`_build_key_bindings() -> KeyBindings`), but `def _insert_newline(event) -> None:`
+leaves `event` unannotated. The correct type is
+`prompt_toolkit.key_binding.key_processor.KeyPressEvent`.
+**Fix:** `def _insert_newline(event: KeyPressEvent) -> None:` and add the
+import.
+
+### IN-05: New tests couple to internal `mock.call_args` aliasing and `prompt_toolkit` `Binding` internals
+
+**File:** `tests/test_loop.py` (new `test_run_loop_stale_snapshot_is_refused_across_repl_turn_boundary`), `tests/test_repl.py:55-65` (new `test_alt_enter_key_binding_inserts_newline_without_submitting`)
+**Issue:** Two minor test-robustness points, neither of which currently
+causes a false pass on the behavior each test is named for:
+1. In the new `test_loop.py` test, `messages = mock_model.call_args_list[1].args[1]`
+   captures a reference to `session_state.messages`, the same list object
+   mutated in place throughout `run_loop()`. Because `mock.call_args`
+   stores a reference (not a copy) of the arguments it was called with,
+   inspecting it after the run completes reflects the *final* state of the
+   shared list rather than a snapshot at call time — so the subsequent
+   `any(...)` assertion checks "does this message exist anywhere in the
+   final list" rather than "was this exact message present in what was
+   sent to the second model call." It happens to be correct here because
+   the stronger, order-sensitive assertions in the same test
+   (`mock_write.assert_not_called()`, `mock_confirm.assert_not_called()`,
+   and the direct `target.read_text()` check) are the ones actually
+   carrying the regression-detection weight; the messages assertion is
+   weaker than its position in the test suggests.
+2. `test_alt_enter_key_binding_inserts_newline_without_submitting` asserts
+   `len(kb.bindings) == 1` and `kb.bindings[0].keys == (Keys.Escape, Keys.ControlM)`,
+   reaching into `KeyBindings`' internal `bindings` list/`Binding` shape.
+   This is not part of prompt_toolkit's documented public API and is only
+   protected by the `>=3.0,<4` pin in `pyproject.toml`; a minor-version
+   internal refactor within that range could break this test without any
+   behavior change. The same test's final two assertions
+   (`insert_text.assert_called_once_with("\n")` /
+   `validate_and_handle.assert_not_called()`) are also somewhat tautological
+   given the handler's current one-line body — they mechanically restate
+   what `_insert_newline()`'s source already shows, rather than exercising
+   it through the framework. The real behavioral proof that Alt+Enter
+   inserts-without-submitting lives in the companion
+   `test_alt_enter_inserts_newline_via_real_pipe_input_prompt_session` test,
+   which drives a real `PromptSession` end to end — that test is the one
+   that would actually catch a prompt_toolkit-internals regression here.
+**Fix:** No action required — the real-input end-to-end test already
+provides the load-bearing regression coverage for both points. Consider
+trimming the internals-coupled assertions in
+`test_alt_enter_key_binding_inserts_newline_without_submitting` (or keeping
+it only as a fast unit-level smoke check) and treating the pipe-input test
+as the canonical spec for this feature.
+
 ---
 
-_Reviewed: 2026-09-15T00:00:00Z_
+_Reviewed: 2026-09-15T00:00:00Z (initial); 2026-09-15 (incremental, plan 07-04)_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
