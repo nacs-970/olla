@@ -4,15 +4,15 @@ milestone: v1.1
 milestone_name: Tools Expansion & Interactive REPL
 current_phase: 07
 current_phase_name: Interactive REPL Mode
-status: verifying
-stopped_at: Completed 07-04-PLAN.md
-last_updated: "2026-09-14T18:20:10.848Z"
-last_activity: 2026-09-14
-last_activity_desc: Phase 07 execution started
+status: complete
+stopped_at: Phase 7 complete — v1.1 milestone shipped
+last_updated: "2026-09-22T00:00:00.000Z"
+last_activity: 2026-09-22
+last_activity_desc: Phase 07 live-UAT round — 3 bugs found and fixed (Alt+Enter terminal interception, ANSI escape leak under patch_stdout, duplicate final-answer print with raw tags), all confirmed live by user; verification status passed; v1.1 milestone complete
 state_head: aad29b6e7cc083302d87c68c1c643a98812cecc6
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 3
   total_plans: 7
   completed_plans: 7
 ---
@@ -26,14 +26,14 @@ Total Phases: 3
 See: .planning/PROJECT.md (updated 2026-09-07)
 
 **Core value:** Stay fast and accurate on small local models. Minimal per-turn token overhead so 2-4B models on constrained hardware remain responsive and don't drift into wrong answers under a bloated context.
-**Current focus:** Phase 07 — Interactive REPL Mode
+**Current focus:** v1.1 milestone complete — awaiting next milestone scope
 
 ## Current Position
 
-Phase: 07 (Interactive REPL Mode) — READY TO EXECUTE
-Plan: 3 of 3
-Status: Phase complete — ready for verification
-Last activity: 2026-09-14 — Phase 07 execution started
+Phase: 07 (Interactive REPL Mode) — COMPLETE
+Plan: 4 of 4 (+ live-UAT fix round)
+Status: v1.1 milestone (Phases 5-7) shipped — all verification passed
+Last activity: 2026-09-22 — Phase 07 live-UAT bugs found and fixed, verification passed
 
 ## Performance Metrics
 
@@ -106,6 +106,7 @@ Recent decisions affecting current work:
 - [Phase 07]: [Phase 07-02]: /model with no argument prints a usage line and re-prompts rather than crashing with IndexError (Rule 2 fix, not specified in PLAN.md).
 - [Phase 07]: [Phase 07-03]: summarize_and_trim()'s no-op guard checks slice emptiness (messages[1:protected_from_index]) directly rather than an index comparison — avoids a silent list-growth bug where messages[1:1] = [digest] would insert instead of no-op
 - [Phase 07]: [Phase 07-04]: No production-code change needed for the cross-turn stale-snapshot gap — _execute_write_file()'s freshness check already operates on read_snapshots regardless of origin (fresh vs session-persisted), so closure was test-only.
+- [2026-09-22]: Phase 07 live-UAT round (post 07-04): 3 bugs found only by a real terminal, none catchable by the mocked test suite — (1) Alt+Enter intercepted by the user's terminal emulator before reaching the program → added Ctrl+J as a fallback newline-insert binding; (2) prompt_toolkit's `patch_stdout()` defaults to `raw=False`, which strips every ESC byte to `?` via `Vt100_Output.write()` → `patch_stdout(raw=True)`; (3) `_stream_model_turn()` echoed the model's raw `<tool>/<final>` envelope live while `run_loop()` also printed the parsed answer afterward → answer no longer echoed live, `run_loop()` prints it once with a `"* "` turn marker (`"~ "` marks thinking). All three confirmed fixed live by the user; 07-VERIFICATION.md status is now `passed`.
 
 ### Pending Todos
 
@@ -133,10 +134,10 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-09-14T18:20:10.774Z
-Stopped at: Completed 07-04-PLAN.md
+Last session: 2026-09-22
+Stopped at: Phase 7 verification passed; v1.1 milestone complete
 Resume file: None
 
 ## Operator Next Steps
 
-- Plan Phase 7 (Interactive REPL Mode) via /gsd-plan-phase 7
+- v1.1 milestone (Phases 5-7) is complete. Next: define scope for the next milestone, or run /gsd-complete-milestone to archive v1.1.

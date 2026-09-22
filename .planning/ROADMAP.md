@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 MVP** — Phases 1-4 (shipped 2026-09-07)
-- 🚧 **v1.1 Tools Expansion & Interactive REPL** — Phases 5-7 (in progress)
+- ✅ **v1.1 Tools Expansion & Interactive REPL** — Phases 5-7 (shipped 2026-09-22)
 
 ## Phases
 
@@ -35,13 +35,14 @@
 
 ### Phase 7: Interactive REPL Mode
 
-- [ ] **Phase 7: Interactive REPL Mode** - Multi-turn terminal REPL with prompt_toolkit, persistent scratchpad memory, and rolling context management
+- [x] **Phase 7: Interactive REPL Mode** - Multi-turn terminal REPL with prompt_toolkit, persistent scratchpad memory, and rolling context management (completed 2026-09-22)
   - **Plans:** 4/4 plans executed
-- [x] 07-04-PLAN.md
   - Plans:
     - [x] 07-01-PLAN.md — SessionState refactor + minimal REPL tracer (run_loop() session injection, cli.py dispatch, dependency checkpoint)
     - [x] 07-02-PLAN.md — Full REPL UX (FileHistory, multiline, double-Ctrl+C, /model /exit /quit /clear)
     - [x] 07-03-PLAN.md — Rolling context trimming (tiktoken counting, summarization digest, untrusted tagging)
+    - [x] 07-04-PLAN.md — Gap closure: multiline editing key binding + cross-turn stale-snapshot test
+  - Live UAT (2026-09-22) found and closed 3 further bugs beyond 07-04: Alt+Enter intercepted by the user's terminal emulator (Ctrl+J fallback added), ANSI escape leak under `patch_stdout()` (`raw=True` fix), and a duplicate final-answer print with raw `<final>` tags visible (`_stream_model_turn`/`run_loop` fix). See `07-VERIFICATION.md`.
 
 ## Phase Details
 

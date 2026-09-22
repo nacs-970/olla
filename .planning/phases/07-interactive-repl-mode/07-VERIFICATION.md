@@ -1,8 +1,8 @@
 ---
 phase: 07-interactive-repl-mode
 verified: 2026-09-15T00:00:00Z
-status: human_needed
-score: 8/8 must-haves verified (2 live-UAT bugs found and fixed since last pass, see re_verification below)
+status: passed
+score: 8/8 must-haves verified (3 live-UAT bugs found and fixed this pass, see round_3_live_uat_findings below)
 covered_files:
   - ".planning/REQUIREMENTS.md"
   - ".planning/phases/07-interactive-repl-mode/07-01-PLAN.md"
@@ -76,29 +76,52 @@ round_3_live_uat_findings:
       ::test_patch_stdout_raw_preserves_escape_codes (new, reproduces the exact bug and fix against
       a real prompt_toolkit Vt100_Output/StringIO buffer, asserting raw=True preserves the ESC byte
       and raw=False strips it to '?', matching what the user observed byte-for-byte).
-human_verification:
-  - test: "Launch `olla --model <local-model>` at a real terminal (TTY): (a) type a line, press Ctrl+J, confirm a newline is inserted without submitting, then press Enter to submit the multi-line input; (b) trigger a 'thinking' model response and confirm the dimmed text renders as actual dim styling, not literal `?[2m`/`?[0m` text."
-    expected: "Ctrl+J inserts a newline in the live prompt (Alt+Enter may also work depending on the terminal emulator); Enter submits the full multi-line text; thinking tokens render dim, no literal escape-code text visible."
-    why_human: >
-      Both items are terminal-emulator/TTY-rendering behavior that this non-interactive execution
-      environment cannot exercise — the automated tests above prove the underlying mechanism
-      (key-binding dispatch, ESC byte pass-through) correctly on a real but non-TTY prompt_toolkit
-      Output, which is as far as automation can reach. A human with a real terminal is the only way
-      to confirm the visual/keyboard behavior end-to-end. This repeats the same class of residual
-      gap round 2 already flagged for Alt+Enter — Ctrl+J is expected to be more portable, but has
-      not itself been confirmed on a real keypress.
+  - bug: >
+      Final answer printed twice, second time with the raw <final>...</final> protocol tags
+      visible: "* <final>Hello! How can I help you today?</final>" followed by a duplicate
+      "Hello! How can I help you today?" line.
+    root_cause: >
+      _stream_model_turn() echoed every non-thought chunk live as raw text, which for a real
+      (non-mocked) streaming provider includes the model's own <tool>/<final> XML envelope
+      verbatim. run_loop() then separately called _display(action.text) with the parsed,
+      tag-free text after _prepare_action() extracted it — printing the same answer a second
+      time. Invisible to the prior test suite because every run_loop test mocks
+      ollama.chat/call_model directly, which bypasses _stream_model_turn's streaming branch
+      entirely (_is_mocked() short-circuit) — it only manifested with a real streaming
+      provider in a live terminal.
+    fix: >
+      src/olla/loop.py — _stream_model_turn() no longer echoes non-thought chunks live (still
+      accumulates them for parsing); it only ever streams dimmed "~ "-prefixed thinking text
+      live. run_loop()'s single _display() call for action.kind == "final" now prints the
+      parsed answer with a "* " turn marker: "* Hello! How can I help you today?" — printed
+      exactly once, tag-free.
+    evidence: >
+      tests/test_loop.py::test_stream_model_turn_dimmed_thinking (updated),
+      ::test_stream_model_turn_no_thinking_produces_no_live_output (new),
+      ::test_run_loop_final_answer_prints_once_with_marker (new, end-to-end through run_loop()
+      with a real StreamChunk-driven mock provider, asserts the answer text appears exactly
+      once and no `<final>` substring reaches the terminal). 473/473 full suite passes; ruff
+      clean.
+human_verification: []
+human_verification_completed:
+  - test: "Ctrl+J inserts a newline without submitting; Enter then submits the multi-line input."
+    result: "PASS — confirmed live by the user."
+  - test: "Thinking text renders as actual dim styling (no literal `?[2m`/`?[0m` text)."
+    result: "PASS — confirmed live by the user."
+  - test: "Final answer displays exactly once, with the '* ' marker, no raw `<final>` tag visible."
+    result: "PASS — confirmed live by the user after the round-3 fix."
 ---
 
 # Phase 7: Interactive REPL Mode Verification Report
 
 **Phase Goal:** As a user working iteratively, I want to run `olla` without arguments to enter an interactive conversation session, so that I can refine tasks across multiple turns while preserving intermediate scratchpad notes.
-**Verified:** 2026-09-15
-**Status:** human_needed
-**Re-verification:** Yes — after gap closure (07-04-PLAN.md / 07-04-SUMMARY.md)
+**Verified:** 2026-09-22
+**Status:** passed
+**Re-verification:** Yes — after gap closure (07-04-PLAN.md / 07-04-SUMMARY.md) and a round of live human UAT that found and closed 3 further bugs (round_3_live_uat_findings above)
 
 ## Goal Achievement
 
-Both gaps from the prior verification pass (`gaps_found`, 6/8) are closed with genuine, independently-reproduced evidence — this is not another `--gaps` cycle. The only remaining item is a single real-TTY UAT confirmation that the automated test suite cannot structurally exercise (terminal-emulator keypress-to-byte-sequence behavior), not a code or test defect.
+All 8/8 must-haves verified. Live human UAT in a real terminal surfaced three bugs the automated suite structurally could not reach (terminal-emulator key interception, prompt_toolkit's patch_stdout ESC-stripping, and a real-streaming-only double-print) — all three root-caused, fixed, covered by new regression tests, and confirmed passing live by the user (see `human_verification_completed`). 473/473 tests pass, ruff clean.
 
 ### Observable Truths
 
@@ -106,7 +129,7 @@ Both gaps from the prior verification pass (`gaps_found`, 6/8) are closed with g
 |---|-------|--------|----------|
 | 1 | `olla` with no TASK and a resolvable `--model` launches the REPL instead of raising `UsageError` (REPL-01) | ✓ VERIFIED | `src/olla/cli.py:66-79` — no-TASK branch dispatches to `run_repl(...)` (imported as `main_loop`); `tests/test_cli.py::test_no_task_launches_repl_when_model_given` passes (mocked). Also independently exercised **unmocked** by this verifier: `uv run olla --model definitely-not-a-real-model </dev/null` reached `main_loop()` → `get_provider()` (succeeds, local-Ollama path makes no network call) → `context_trim.warm_encoder()` ("preparing token counter..." printed) → prompt loop → clean `EOFError` exit on empty stdin. Real process, no mocks, confirms the full `cli.py → repl.main_loop()` dispatch chain end-to-end. |
 | 2 | REPL input persists across process restarts via `FileHistory` (REPL-01, partial) | ✓ VERIFIED | `src/olla/repl.py:78-83` — `PromptSession(history=FileHistory(str(history_path)), ...)`; `tests/test_repl.py::test_session_construction_uses_file_history_and_multiline` asserts a real `FileHistory` instance. |
-| 3 | REPL supports **multiline editing** (REPL-01, previously failed clause) | ✓ VERIFIED (see Human Verification for one residual link) | `src/olla/repl.py:26-35` — `_build_key_bindings()` registers `("escape", "enter")` (normalized `(Keys.Escape, Keys.ControlM)`, i.e. Alt+Enter) → `event.current_buffer.insert_text("\n")`; wired into `PromptSession(..., key_bindings=_build_key_bindings())` at line 82, `multiline` stays `False`. Proven three ways in `tests/test_repl.py`, all independently re-run by this verifier (PASS): (a) `test_session_construction_uses_file_history_and_multiline` — `kwargs["multiline"] is False` and `isinstance(kwargs["key_bindings"], KeyBindings)`; (b) `test_alt_enter_key_binding_inserts_newline_without_submitting` — direct handler invocation asserts `insert_text("\n")` called, `validate_and_handle` (submit) never called; (c) `test_alt_enter_inserts_newline_via_real_pipe_input_prompt_session` — a real, unmocked `PromptSession` driven via `create_pipe_input()` resolves the byte sequence `line1`, ESC+CR, `line2`, CR to `"line1\nline2"` through prompt_toolkit's own key-binding merge/priority machinery. The one link this cannot prove — that a real terminal emulator emits ESC+CR on an actual Alt+Enter keypress — is routed to human verification below. |
+| 3 | REPL supports **multiline editing** (REPL-01, previously failed clause) | ✓ VERIFIED (live-confirmed) | `src/olla/repl.py:26-38` — `_build_key_bindings()` binds both `("escape", "enter")` (Alt+Enter) and `("c-j",)` (Ctrl+J) to `event.current_buffer.insert_text("\n")`. Round 2's automated evidence held for Alt+Enter's mechanism, but live UAT found the user's real terminal emulator intercepts Alt+Enter before it reaches the program (a known class of terminal-chrome shortcut collision) — the exact risk round 2 flagged as unable to be exercised automatically. Ctrl+J was added as a fallback not subject to that interception and confirmed working live by the user (see `human_verification_completed`). |
 | 4 | A Scratchpad value written via `remember` in REPL turn 1 is returned by `recall` in turn 2 of the same session (REPL-02) | ✓ VERIFIED | `tests/test_loop.py::test_run_loop_session_state_persists_scratchpad_across_calls` — drives two `run_loop()` calls sharing one `SessionState`; passes (full suite, re-run by this verifier). |
 | 5 | Shared session state doesn't leak into or corrupt the one-shot CLI path (no-regression) | ✓ VERIFIED | `src/olla/cli.py:84-94` — one-shot `run_loop()` call site unchanged (no `session=` kwarg); `tests/test_cli.py::test_task_and_model_call_run_loop_with_defaults` passes unchanged. |
 | 6 | `untrusted_observation_seen` set in REPL turn 1 remains set through turn 2, proven directly against `run_loop()` | ✓ VERIFIED | `tests/test_loop.py::test_run_loop_untrusted_observation_seen_persists_across_calls` — passes (full suite). |
@@ -209,19 +232,23 @@ No disabled tests on requirements. No circular provenance patterns. No insuffici
 
 No gaps. Both gaps from the prior verification pass are closed with genuine, independently-reproduced evidence:
 
-1. **Multiline editing (REPL-01):** `src/olla/repl.py` now wires a real `KeyBindings` instance (Alt+Enter → `insert_text("\n")`) into `PromptSession`, proven not just by kwarg presence but by a real, unmocked `PromptSession` resolving the keystroke sequence through prompt_toolkit's own key-binding machinery. Re-run directly by this verifier: PASS. One residual link (real-terminal keypress → ESC+CR byte sequence) is routed to human verification since it cannot be automated in this environment.
-2. **Cross-turn stale-snapshot prohibition (07-01):** `tests/test_loop.py::test_run_loop_stale_snapshot_is_refused_across_repl_turn_boundary` now drives the exact cross-turn negative case (read in turn 1, external modification, unrefreshed write in turn 2 on a shared `SessionState`) and asserts the write is refused. Re-run directly by this verifier: PASS. No production code change was needed or made — confirmed by re-reading `src/olla/loop.py`'s `_execute_write_file()` freshness check, which is unchanged since the prior pass, and by diffing `069f2e5` to confirm the two pre-existing staleness/freshness tests were not weakened (purely additive commit).
+1. **Multiline editing (REPL-01):** `src/olla/repl.py` wires a real `KeyBindings` instance into `PromptSession`, binding both Alt+Enter and Ctrl+J to `insert_text("\n")`. Live UAT found the user's terminal emulator intercepts Alt+Enter before it reaches the program; Ctrl+J was added as a fallback and confirmed working live.
+2. **Cross-turn stale-snapshot prohibition (07-01):** `tests/test_loop.py::test_run_loop_stale_snapshot_is_refused_across_repl_turn_boundary` drives the exact cross-turn negative case and asserts the write is refused. PASS, no production code change needed.
+3. **ANSI escape leak (found in live UAT, not a prior-round gap):** `src/olla/repl.py`'s `patch_stdout()` → `patch_stdout(raw=True)` — root cause was prompt_toolkit's `Vt100_Output.write()` replacing every ESC byte with `?` by design. Confirmed live.
+4. **Duplicate final-answer print with raw tags visible (found in live UAT, not a prior-round gap):** `_stream_model_turn()` no longer echoes the raw `<tool>/<final>` envelope live; `run_loop()` prints the parsed answer once with a `"* "` marker. Confirmed live.
 
-All 8 observable truths from the phase's must-haves are VERIFIED on automated evidence. All required artifacts, key links, and requirements (REPL-01/02/03) are satisfied. Full workspace test suite (468 tests) passes with zero regressions, independently re-run by this verifier (not taken from SUMMARY.md claims). Phase goal — "run `olla` without arguments to enter an interactive conversation session... refine tasks across multiple turns while preserving intermediate scratchpad notes" — is achieved at the code/test level; the sole open item is a real-terminal UAT confirmation of Alt+Enter behavior, which the phase's own SUMMARY already anticipated as a final manual check.
+All 8 observable truths from the phase's must-haves are VERIFIED. All required artifacts, key links, and requirements (REPL-01/02/03) are satisfied. Full workspace test suite (473 tests) passes with zero regressions. Phase goal — "run `olla` without arguments to enter an interactive conversation session... refine tasks across multiple turns while preserving intermediate scratchpad notes" — is achieved and live-confirmed end-to-end by the user, including three bugs found only by real-terminal UAT and closed in this pass.
 
 ---
 
 ## Gap Closure Tracking
 
 - **Closure plan:** `.planning/phases/07-interactive-repl-mode/07-04-PLAN.md` (wave 4, `gap_closure: true`) — executed, `07-04-SUMMARY.md` status `complete`.
-- **Gap 1 (failed truth #3 — multiline editing):** CLOSED at the automated/code level. `src/olla/repl.py`'s `_build_key_bindings()` + `key_bindings=` kwarg on `PromptSession`, proven by three layered tests including a real unmocked `PromptSession`/pipe-input end-to-end test. Independently re-run by this verifier: PASS. One real-TTY UAT item remains — see Human Verification.
-- **Gap 2 (human_verification item — cross-turn stale snapshot):** CLOSED. `test_run_loop_stale_snapshot_is_refused_across_repl_turn_boundary` in `tests/test_loop.py` drives two `run_loop()` calls sharing one `SessionState`, proving the refusal fires across the REPL turn boundary. Independently re-run by this verifier: PASS. Prohibition non-weakening confirmed via `git show 069f2e5` diff (purely additive).
-- **Status:** `closed_pending_uat` — both code-level gaps confirmed closed on re-verification; phase status is `human_needed` pending the one real-terminal Alt+Enter confirmation above. Not a new `--gaps` cycle.
+- **Gap 1 (failed truth #3 — multiline editing):** CLOSED. Ctrl+J fallback added after live UAT found Alt+Enter intercepted by the terminal emulator; confirmed working live.
+- **Gap 2 (human_verification item — cross-turn stale snapshot):** CLOSED. `test_run_loop_stale_snapshot_is_refused_across_repl_turn_boundary` proves the refusal fires across the REPL turn boundary.
+- **Gap 3 (found in live UAT — ANSI escape leak):** CLOSED. `patch_stdout(raw=True)`; confirmed working live.
+- **Gap 4 (found in live UAT — duplicate final-answer print with raw tags):** CLOSED. `run_loop()` prints the parsed final answer exactly once, tag-free; confirmed working live.
+- **Status:** `passed` — all gaps closed, all live-UAT findings fixed and confirmed by the user in a real terminal. Phase 7 complete.
 
-_Verified: 2026-09-15T00:00:00Z_
+_Verified: 2026-09-22_
 _Verifier: Claude (gsd-verifier)_
