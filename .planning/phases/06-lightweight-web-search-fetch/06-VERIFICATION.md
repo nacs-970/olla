@@ -19,7 +19,16 @@ covered_files:
   - tests/test_loop.py
   - tests/test_prompts.py
   - tests/test_tools/test_web.py
-covered_digest: "v1:sha256:f11c73bf165d4bc129c7891b2d2dfdbf6b01ccbe41ccd481cd34fe05f4be7df2"
+covered_digest: "v1:sha256:8c9d90d22f8c05d6ee65635a885731f45b188d8dbd9494d4931f9cce8b8c2cfd"
+digest_refresh:
+  date: "2026-09-22"
+  reason: >
+    Digest-only refresh, no re-verification of phase 6's own behavior. src/olla/loop.py and
+    tests/test_loop.py changed during phase 7's live-UAT bug fixes (Alt+Enter terminal
+    interception, ANSI escape leak under patch_stdout, duplicate final-answer print); a second
+    refresh was needed after src/olla/prompts.py gained an explicit tag-format warning. Both
+    changes are additive/orthogonal to phase 6's search_web/fetch_url functionality, confirmed
+    by the full 473/473 test suite (including phase 6's own web-tool tests) passing unchanged.
 ---
 
 # Phase 6: Lightweight Web Search & Fetch Verification Report

@@ -23,7 +23,7 @@ covered_files:
   - "tests/test_context_trim.py"
   - "tests/test_loop.py"
   - "tests/test_repl.py"
-covered_digest: "v1:sha256:30898de1fb0c2a14230389904a0fd6d87a55f7432464374484ee13d81c492ba8"
+covered_digest: "v1:sha256:ccddf9554dbff9d466e8706f9c4c0b2bba44da329feb99749aa4e58d35769e2b"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
