@@ -573,11 +573,20 @@ def _stream_model_turn(
         return _call_model_for_loop(model, messages)
 
     full_response: list[str] = []
+    thought_started = False
+    answer_started = False
     try:
         for chunk in provider.stream_chat(messages):
             if chunk.is_thought:
-                print(f"\033[2m{chunk.text}\033[0m", end="", flush=True)
+                prefix = "~ " if not thought_started else ""
+                thought_started = True
+                print(f"\033[2m{prefix}{chunk.text}\033[0m", end="", flush=True)
             else:
+                if not answer_started:
+                    if thought_started:
+                        print()
+                    print("* ", end="", flush=True)
+                    answer_started = True
                 print(chunk.text, end="", flush=True)
             full_response.append(chunk.text)
         print()

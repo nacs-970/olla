@@ -2581,8 +2581,30 @@ def test_stream_model_turn_dimmed_thinking(mocker, capsys):
     assert result == "considering...Hello world"
 
     captured = capsys.readouterr().out
-    assert "\033[2mconsidering...\033[0m" in captured
-    assert "Hello world" in captured
+    assert "\033[2m~ considering...\033[0m" in captured
+    assert "* Hello world" in captured
+
+
+def test_stream_model_turn_answer_prefix_without_thinking(mocker, capsys):
+    """The '* ' answer-turn marker still appears when the model emits no thought chunks."""
+    from unittest.mock import MagicMock
+
+    from olla.loop import _stream_model_turn
+    from olla.providers import StreamChunk
+
+    mock_provider = MagicMock()
+    mock_provider.get_context_length.return_value = 8192
+    mock_provider.stream_chat.return_value = [
+        StreamChunk(text="Hello", is_thought=False),
+        StreamChunk(text=" world", is_thought=False),
+    ]
+
+    result = _stream_model_turn(mock_provider, [{"role": "user", "content": "hi"}], model="test")
+    assert result == "Hello world"
+
+    captured = capsys.readouterr().out
+    assert captured.startswith("* Hello world")
+    assert captured.count("* ") == 1
 
 
 def test_run_loop_catches_provider_error_diagnostically(mocker, capsys):
