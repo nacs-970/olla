@@ -24,11 +24,18 @@ _HISTORY_FILENAME = ".olla_history"
 
 
 def _build_key_bindings() -> KeyBindings:
-    """Bind Alt+Enter to insert a newline, leaving plain Enter bound to
-    prompt_toolkit's own default single-line submit behavior."""
+    """Bind newline-insert keys, leaving plain Enter bound to prompt_toolkit's
+    own default single-line submit behavior.
+
+    Both Alt+Enter (escape, enter) and Ctrl+J insert a newline. Alt+Enter is
+    intercepted by several terminal emulators (commonly bound to a fullscreen
+    toggle) before the keypress ever reaches the running program; Ctrl+J is
+    the raw line-feed control byte and is not intercepted the same way.
+    """
     kb = KeyBindings()
 
     @kb.add("escape", "enter")
+    @kb.add("c-j")
     def _insert_newline(event) -> None:
         event.current_buffer.insert_text("\n")
 
@@ -146,7 +153,7 @@ def main_loop(
             continue
 
         try:
-            with patch_stdout():
+            with patch_stdout(raw=True):
                 run_loop(
                     task=text,
                     model=current_model,

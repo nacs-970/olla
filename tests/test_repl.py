@@ -52,17 +52,21 @@ def test_session_construction_uses_file_history_and_multiline(mocker):
     assert isinstance(kwargs["key_bindings"], KeyBindings)
 
 
-def test_alt_enter_key_binding_inserts_newline_without_submitting():
+def test_newline_key_bindings_insert_without_submitting():
+    """Both Alt+Enter and Ctrl+J are bound (Alt+Enter is often intercepted by
+    the terminal emulator itself, e.g. for a fullscreen toggle, before it
+    ever reaches the running program — Ctrl+J is a fallback that isn't)."""
     kb = _build_key_bindings()
 
-    assert len(kb.bindings) == 1
-    assert kb.bindings[0].keys == (Keys.Escape, Keys.ControlM)
+    assert len(kb.bindings) == 2
+    bound_keys = {binding.keys for binding in kb.bindings}
+    assert bound_keys == {(Keys.Escape, Keys.ControlM), (Keys.ControlJ,)}
 
-    fake_event = MagicMock()
-    kb.bindings[0].handler(fake_event)
-
-    fake_event.current_buffer.insert_text.assert_called_once_with("\n")
-    fake_event.current_buffer.validate_and_handle.assert_not_called()
+    for binding in kb.bindings:
+        fake_event = MagicMock()
+        binding.handler(fake_event)
+        fake_event.current_buffer.insert_text.assert_called_once_with("\n")
+        fake_event.current_buffer.validate_and_handle.assert_not_called()
 
 
 def test_alt_enter_inserts_newline_via_real_pipe_input_prompt_session():
@@ -74,6 +78,21 @@ def test_alt_enter_inserts_newline_via_real_pipe_input_prompt_session():
             multiline=False,
         )
         pipe_input.send_text("line1\x1b\rline2\r")
+
+        result = session.prompt()
+
+    assert result == "line1\nline2"
+
+
+def test_ctrl_j_inserts_newline_via_real_pipe_input_prompt_session():
+    with create_pipe_input() as pipe_input:
+        session = PromptSession(
+            input=pipe_input,
+            output=DummyOutput(),
+            key_bindings=_build_key_bindings(),
+            multiline=False,
+        )
+        pipe_input.send_text("line1\x0aline2\r")
 
         result = session.prompt()
 
@@ -110,6 +129,49 @@ def test_exit_semantics_double_ctrl_c_exits(mocker):
     main_loop(model="m", max_steps=5, system_prompt="sys")
 
     mock_run_loop.assert_not_called()
+
+
+def test_main_loop_uses_raw_patch_stdout(mocker):
+    """main_loop must open patch_stdout(raw=True). Without raw=True, prompt_toolkit's
+    StdoutProxy routes prints through Vt100_Output.write(), which replaces every ESC
+    byte with a literal '?' (see test_patch_stdout_raw_preserves_escape_codes below) —
+    this is what turned the dimmed-thinking styling into visible '?[2m...?[0m' garbage
+    in a live REPL terminal."""
+    mocker.patch("olla.repl.get_provider", return_value=(MagicMock(), "m"))
+    mocker.patch("olla.repl.run_loop")
+    mock_session_cls = mocker.patch("olla.repl.PromptSession")
+    mock_session_cls.return_value.prompt.side_effect = ["do a", EOFError()]
+    mock_patch_stdout = mocker.patch("olla.repl.patch_stdout")
+
+    main_loop(model="m", max_steps=5, system_prompt="sys")
+
+    mock_patch_stdout.assert_called_once_with(raw=True)
+
+
+def test_patch_stdout_raw_preserves_escape_codes():
+    """Regression for the bug test_main_loop_uses_raw_patch_stdout guards against:
+    patch_stdout(raw=True) passes ESC bytes through untouched; patch_stdout(raw=False)
+    (the default) strips them to '?' via Vt100_Output.write()."""
+    from io import StringIO
+
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.output.vt100 import Vt100_Output
+    from prompt_toolkit.patch_stdout import patch_stdout
+
+    dimmed = "\033[2mdim\033[0m"
+
+    raw_buffer = StringIO()
+    with create_app_session(output=Vt100_Output(raw_buffer, lambda: (24, 80))):
+        with patch_stdout(raw=True):
+            print(dimmed, end="", flush=True)
+    assert dimmed in raw_buffer.getvalue()
+
+    stripped_buffer = StringIO()
+    with create_app_session(output=Vt100_Output(stripped_buffer, lambda: (24, 80))):
+        with patch_stdout(raw=False):
+            print(dimmed, end="", flush=True)
+    assert dimmed not in stripped_buffer.getvalue()
+    assert dimmed.replace("\x1b", "?") in stripped_buffer.getvalue()
 
 
 def test_model_switch_preserves_state(mocker):
