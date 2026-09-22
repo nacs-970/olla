@@ -2127,7 +2127,7 @@ def test_run_loop_remember_recall_then_final(mocker, capsys, yes):
         "remembered: meeting_time",
         "Step 2: recalling meeting_time...",
         "3pm",
-        "The meeting is at 3pm.",
+        "* The meeting is at 3pm.",
     ]
     mock_confirm.assert_not_called()
     assert mock_chat.call_count == 3
@@ -2564,7 +2564,9 @@ def test_prepare_action_ignores_tools_inside_thinking():
 
 
 def test_stream_model_turn_dimmed_thinking(mocker, capsys):
-    """Reasoning chunks are rendered in dimmed styling and text is printed in real-time."""
+    """Reasoning chunks are rendered dimmed and printed in real-time; non-thought
+    chunks (the model's raw <tool>/<final> protocol envelope) are accumulated for
+    parsing but not echoed live — run_loop() displays the parsed result once."""
     from unittest.mock import MagicMock
 
     from olla.loop import _stream_model_turn
@@ -2574,19 +2576,20 @@ def test_stream_model_turn_dimmed_thinking(mocker, capsys):
     mock_provider.get_context_length.return_value = 8192
     mock_provider.stream_chat.return_value = [
         StreamChunk(text="considering...", is_thought=True),
-        StreamChunk(text="Hello world", is_thought=False),
+        StreamChunk(text="<final>Hello world</final>", is_thought=False),
     ]
 
     result = _stream_model_turn(mock_provider, [{"role": "user", "content": "hi"}], model="test")
-    assert result == "considering...Hello world"
+    assert result == "considering...<final>Hello world</final>"
 
     captured = capsys.readouterr().out
     assert "\033[2m~ considering...\033[0m" in captured
-    assert "* Hello world" in captured
+    assert "<final>" not in captured
+    assert "Hello world" not in captured
 
 
-def test_stream_model_turn_answer_prefix_without_thinking(mocker, capsys):
-    """The '* ' answer-turn marker still appears when the model emits no thought chunks."""
+def test_stream_model_turn_no_thinking_produces_no_live_output(mocker, capsys):
+    """An answer-only turn (no thought chunks) prints nothing live from _stream_model_turn."""
     from unittest.mock import MagicMock
 
     from olla.loop import _stream_model_turn
@@ -2595,16 +2598,35 @@ def test_stream_model_turn_answer_prefix_without_thinking(mocker, capsys):
     mock_provider = MagicMock()
     mock_provider.get_context_length.return_value = 8192
     mock_provider.stream_chat.return_value = [
-        StreamChunk(text="Hello", is_thought=False),
-        StreamChunk(text=" world", is_thought=False),
+        StreamChunk(text="<final>Hello", is_thought=False),
+        StreamChunk(text=" world</final>", is_thought=False),
     ]
 
     result = _stream_model_turn(mock_provider, [{"role": "user", "content": "hi"}], model="test")
-    assert result == "Hello world"
+    assert result == "<final>Hello world</final>"
+    assert capsys.readouterr().out == "\n"
+
+
+def test_run_loop_final_answer_prints_once_with_marker(mocker, capsys):
+    """The final answer is displayed exactly once, with the '* ' turn marker, and
+    the raw <final> tag envelope never reaches the terminal (regression: a real
+    streaming provider previously echoed the tagged raw text live during
+    _stream_model_turn *and* run_loop printed the parsed text again afterward)."""
+    from olla.providers import StreamChunk
+
+    mock_provider = mocker.MagicMock()
+    mock_provider.get_context_length.return_value = 8192
+    mock_provider.stream_chat.return_value = [
+        StreamChunk(text="<final>Hello! How can I help you today?</final>", is_thought=False),
+    ]
+    mocker.patch("olla.loop.get_provider", return_value=(mock_provider, "test-model"))
+
+    run_loop(task="hi", model="test-model", max_steps=15, system_prompt="sys")
 
     captured = capsys.readouterr().out
-    assert captured.startswith("* Hello world")
-    assert captured.count("* ") == 1
+    assert captured.count("Hello! How can I help you today?") == 1
+    assert "* Hello! How can I help you today?" in captured
+    assert "<final>" not in captured
 
 
 def test_run_loop_catches_provider_error_diagnostically(mocker, capsys):
