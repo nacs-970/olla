@@ -1,7 +1,7 @@
 {
   "contract": "1.0.0",
   "flavor": "core",
-  "milestone": "v1.1 — Tools Expansion & Interactive REPL",
+  "milestone": "v1.1",
   "phases": [
     {
       "number": "5",
@@ -16,13 +16,13 @@
     {
       "number": "7",
       "name": "Interactive REPL Mode",
-      "status": "pending"
+      "status": "complete"
     }
   ],
   "next": {
-    "command": "/gsd:progress --next",
-    "label": "Advance to the next step (verify)",
-    "reason": "Phase 07 of 6 · ready to verify"
+    "command": "/gsd:progress",
+    "label": "Show progress",
+    "reason": "Unsure of state — showing progress"
   },
-  "updated_at": "2026-09-14T18:19:49.017Z"
+  "updated_at": "2026-09-22T15:36:09.953Z"
 }
