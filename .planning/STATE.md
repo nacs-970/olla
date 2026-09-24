@@ -33,7 +33,7 @@ See: .planning/PROJECT.md (updated 2026-09-07)
 Phase: Milestone v1.1 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-09-23 - Completed quick task 260923-0pq: Build benchmark comparing per-turn token overhead of olla's XML-tag tool-call loop vs native Ollama tools= JSON function-calling (Task 1 of 3 — blocked on Ollama repair)
+Last activity: 2026-09-24 - Completed quick task 260924-mml: Fix reasoning-merge parse loop (reasoning excluded from parsed content, harness-labeled retry nudge, envelope-anchored args spans, empty-content reasoning fallback)
 
 ## Performance Metrics
 
@@ -117,7 +117,7 @@ None yet.
 None. All milestone v1.0 blockers and gap-closures resolved.
 
 - [Hardware]: `gemma4:e2b` (7.2GB) does not fit in this host's 7.1GB RAM (OOM-killed). Affects which local models are realistically usable for local dev/testing on this machine.
-- [2026-09-22]: Local Ollama is unusable on this dev machine — `/usr/local/bin/ollama` binary is missing, the systemd unit crash-loops (`203/EXEC`), and `curl` itself isn't installed to test connectivity. Blocks quick task `260923-0pq`'s Task 2/3 (real benchmark run needs a reachable local Ollama server + a pulled model). User must reinstall/repair Ollama, start the service, pull a small (0.6B-7B) model, and install `curl` before resuming.
+- [2026-09-24]: The user deliberately removed Ollama from this dev machine, and olla runs against OpenRouter here. This is not a defect. Quick task `260923-0pq`'s real benchmark run (Tasks 2/3) needs rework to run through OpenRouter, together with the benchmark review findings, and is still open.
 
 ### Quick Tasks Completed
 
@@ -125,6 +125,7 @@ None. All milestone v1.0 blockers and gap-closures resolved.
 |---|-------------|------|--------|-----------|
 | 260611-upi | Fix WR-01 dead-code in loop.py and add tool-name dispatch in run_loop (Phase 01 tasks 3-4) | 2026-06-11 | bad449a | [260611-upi-fix-wr-01-dead-code-in-loop-py-and-add-t](./quick/260611-upi-fix-wr-01-dead-code-in-loop-py-and-add-t/) |
 | 260923-0pq | Build three-arm (xml_full/xml_trimmed/native) tool-overhead benchmark script — INCOMPLETE, blocked on local Ollama being unusable (see Blockers/Concerns) | 2026-09-23 | 86b8d00 | [260923-0pq-build-benchmark-comparing-per-turn-token](./quick/260923-0pq-build-benchmark-comparing-per-turn-token/) |
+| 260924-mml | Fix reasoning-merge parse loop: exclude thought chunks from parsed content, harness-labeled retry nudge, envelope-only args spans, empty-content reasoning fallback | 2026-09-24 | a319f87 | [260924-mml-fix-reasoning-merge-parse-loop-exclude-t](./quick/260924-mml-fix-reasoning-merge-parse-loop-exclude-t/) |
 
 ## Deferred Items
 
