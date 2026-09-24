@@ -3478,3 +3478,12 @@ def test_run_loop_double_empty_stream_records_no_blank_assistant(mocker, capsys)
     assert len(nudges) == 1
     assert mock_provider.stream_chat.call_count == 3
     assert "* ok" in capsys.readouterr().out
+
+
+def test_unclosed_think_is_not_accepted_as_prose_final():
+    """A reasoning model cut off mid-thought must get the nudge, not end the turn."""
+    from olla.loop import _prepare_action
+
+    assert _prepare_action("<think>still reasoning about the task...").kind == "none"
+    assert _prepare_action("partial answer</think>").kind == "none"
+    assert _prepare_action("<think>done</think>The answer is 4.").kind == "final"

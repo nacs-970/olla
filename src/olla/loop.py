@@ -240,6 +240,7 @@ _PROTOCOL_TAG_RES = (
     ARGS_CLOSE_RE,
     FINAL_OPEN_RE,
     FINAL_CLOSE_RE,
+    re.compile(r"</?think>", re.IGNORECASE),
 )
 
 
