@@ -206,6 +206,15 @@ class OpenAICompatProvider:
 
                             # Handle explicit reasoning / reasoning_content field
                             reasoning = delta.get("reasoning") or delta.get("reasoning_content")
+                            if is_debug():
+                                debug_log(
+                                    "SSE delta: "
+                                    f"reasoning={reasoning!r} "
+                                    f"content={delta.get('content')!r} "
+                                    f"in_think_tag={in_think_tag} "
+                                    f"finish={choices[0].get('finish_reason')!r} "
+                                    f"keys={sorted(delta)}"
+                                )
                             if reasoning:
                                 yield StreamChunk(text=reasoning, is_thought=True)
 

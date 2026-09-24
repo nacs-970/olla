@@ -3,10 +3,10 @@ gsd_state_version: "1.0"
 milestone: v1.1
 status: Awaiting next milestone
 stopped_at: Phase 7 complete — v1.1 milestone shipped
-last_updated: "2026-09-22T15:36:09.924Z"
-last_activity: 2026-09-22
+last_updated: "2026-09-24T09:40:13.728Z"
+last_activity: 2026-09-24
 last_activity_desc: Milestone v1.1 completed and archived
-state_head: 20f021a61ff290dca6be0761fbe78e9d4f910eba
+state_head: 42a57eae4f1bb2973080d208c282450163f71e76
 progress:
   total_phases: 6
   completed_phases: 3
@@ -126,6 +126,7 @@ None. All milestone v1.0 blockers and gap-closures resolved.
 | 260611-upi | Fix WR-01 dead-code in loop.py and add tool-name dispatch in run_loop (Phase 01 tasks 3-4) | 2026-06-11 | bad449a | [260611-upi-fix-wr-01-dead-code-in-loop-py-and-add-t](./quick/260611-upi-fix-wr-01-dead-code-in-loop-py-and-add-t/) |
 | 260923-0pq | Build three-arm (xml_full/xml_trimmed/native) tool-overhead benchmark script — INCOMPLETE, blocked on local Ollama being unusable (see Blockers/Concerns) | 2026-09-23 | 86b8d00 | [260923-0pq-build-benchmark-comparing-per-turn-token](./quick/260923-0pq-build-benchmark-comparing-per-turn-token/) |
 | 260924-mml | Fix reasoning-merge parse loop: exclude thought chunks from parsed content, harness-labeled retry nudge, envelope-only args spans, empty-content reasoning fallback | 2026-09-24 | a319f87 | [260924-mml-fix-reasoning-merge-parse-loop-exclude-t](./quick/260924-mml-fix-reasoning-merge-parse-loop-exclude-t/) |
+| 4 | Add per-chunk SSE delta debug logging to openai_compat provider (diagnose answer text arriving as reasoning) | 2026-09-24 | 42a57ea | — |
 
 ## Deferred Items
 
