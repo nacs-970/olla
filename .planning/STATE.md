@@ -33,7 +33,7 @@ See: .planning/PROJECT.md (updated 2026-09-07)
 Phase: Milestone v1.1 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-09-24 - Completed quick task 260924-mml: Fix reasoning-merge parse loop (reasoning excluded from parsed content, harness-labeled retry nudge, envelope-anchored args spans, empty-content reasoning fallback)
+Last activity: 2026-09-24 - Completed quick task 260924-nbw: Cut wasted round-trips (tag-free prose as final, empty-stream retry, debug to stderr, canonical tool-call history)
 
 ## Performance Metrics
 
@@ -126,7 +126,8 @@ None. All milestone v1.0 blockers and gap-closures resolved.
 | 260611-upi | Fix WR-01 dead-code in loop.py and add tool-name dispatch in run_loop (Phase 01 tasks 3-4) | 2026-06-11 | bad449a | [260611-upi-fix-wr-01-dead-code-in-loop-py-and-add-t](./quick/260611-upi-fix-wr-01-dead-code-in-loop-py-and-add-t/) |
 | 260923-0pq | Build three-arm (xml_full/xml_trimmed/native) tool-overhead benchmark script — INCOMPLETE, blocked on local Ollama being unusable (see Blockers/Concerns) | 2026-09-23 | 86b8d00 | [260923-0pq-build-benchmark-comparing-per-turn-token](./quick/260923-0pq-build-benchmark-comparing-per-turn-token/) |
 | 260924-mml | Fix reasoning-merge parse loop: exclude thought chunks from parsed content, harness-labeled retry nudge, envelope-only args spans, empty-content reasoning fallback | 2026-09-24 | a319f87 | [260924-mml-fix-reasoning-merge-parse-loop-exclude-t](./quick/260924-mml-fix-reasoning-merge-parse-loop-exclude-t/) |
-| 4 | Add per-chunk SSE delta debug logging to openai_compat provider (diagnose answer text arriving as reasoning) | 2026-09-24 | 42a57ea | — |
+| 4 | Add per-chunk SSE delta debug logging to openai_compat provider (diagnose answer text arriving as reasoning) | 2026-09-24 | 80ac33b | — |
+| 260924-nbw | Cut wasted round-trips: tag-free prose as final, retry empty stream once, debug to stderr, canonical tool-call history | 2026-09-24 | 8ec2ccd | [260924-nbw-cut-wasted-round-trips-tag-free-prose-as](./quick/260924-nbw-cut-wasted-round-trips-tag-free-prose-as/) |
 
 ## Deferred Items
 
