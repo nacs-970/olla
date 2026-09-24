@@ -8,6 +8,9 @@ TOOL_OPEN_RE = re.compile(r"<tool>", re.IGNORECASE)
 TOOL_CLOSE_RE = re.compile(r"</tool>", re.IGNORECASE)
 ARGS_OPEN_RE = re.compile(r"<args>", re.IGNORECASE)
 ARGS_CLOSE_RE = re.compile(r"</args>", re.IGNORECASE)
+TOOL_ENVELOPE_ARGS_RE = re.compile(
+    r"<tool>\s*[A-Za-z0-9_-]+\s*(?:</tool>)?\s*<args>", re.IGNORECASE
+)
 OUTER_FENCE_OPEN_RE = re.compile(r"\A[ \t]*(`{3,}|~{3,})[^\r\n]*\r?\n")
 
 
@@ -29,9 +32,18 @@ def _unwrap_outer_markdown_fence(content: str) -> str:
 
 
 def _args_payload_spans(content: str) -> list[tuple[int, int]]:
-    """Return spans that may contain literal protocol-looking payload text."""
+    """Return spans that may contain literal protocol-looking payload text.
+
+    Spans open only from the first tool envelope on, so prose quoting <args>
+    before any real call cannot mask later tags.
+    """
+    first_envelope = TOOL_ENVELOPE_ARGS_RE.search(content)
+    if first_envelope is None:
+        return []
     spans = []
     for opening in ARGS_OPEN_RE.finditer(content):
+        if opening.end() < first_envelope.end():
+            continue
         closing = ARGS_CLOSE_RE.search(content, opening.end())
         end = closing.start() if closing is not None else len(content)
         spans.append((opening.end(), end))

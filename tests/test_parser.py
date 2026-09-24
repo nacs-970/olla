@@ -290,3 +290,49 @@ def test_args_are_associated_with_the_only_preceding_tool():
         "tool": "shell",
         "args_raw": "echo intended",
     }
+
+
+def test_prose_args_mention_does_not_hide_later_final_tags():
+    """Regression (260924-mml): a prose <args> mention used to open an
+    unterminated payload span that hid every later <final> opener, so the
+    parser returned a final starting with the prose text 'tag found'."""
+    content = (
+        'the user keeps saying "No <tool> or <final> tag found. Respond using '
+        '<tool>/<args> or <final> only." but I am using <final> tags. '
+        "Nothing else.<final>/home/nacs</final>"
+    )
+
+    result = parse_response(content)
+
+    assert result["type"] == "none"
+    assert "tag found" not in result.get("text", "")
+
+
+def test_prose_args_mention_before_single_final_returns_final():
+    content = "Use <tool>/<args> format.\n<final>done</final>"
+
+    assert parse_response(content) == {"type": "final", "text": "done"}
+
+
+def test_prose_args_mention_after_real_envelope_stays_conservative():
+    """After a genuine tool envelope, later <args> openers still open spans,
+    so ambiguous output resolves to a safe retry instead of an answer."""
+    content = "<tool>shell</tool><args>ls</args> then use <args> again <final>x</final>"
+
+    assert parse_response(content) == {"type": "none", "raw": content}
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "<tool>write_file</tool>\n<args>notes.md\n<final>not an answer</final>\n</args>",
+        "<tool>write_file</tool>\n<args>notes.md\n<final>not an answer</final>\n",
+        "<TOOL> write_file </TOOL>\n\n<ARGS>notes.md\n<final>not an answer</final>\n</ARGS>",
+    ],
+)
+def test_write_file_payload_final_block_stays_opaque(content):
+    result = parse_response(content)
+
+    assert result["type"] == "tool"
+    assert result["tool"] == "write_file"
+    assert "<final>not an answer</final>" in result["args_raw"]
