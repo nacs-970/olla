@@ -1167,7 +1167,15 @@ def run_loop(
                 "args_raw": action.args_raw,
             },
         )
-        history_content = truncate_output(content) if action.kind == "none" else content
+        # Record a canonical envelope rebuilt from the parsed action, so history
+        # never carries a stop-sequence-stripped `</args>` or stray prose that a
+        # small model could copy back.
+        if action.kind == "none":
+            history_content = truncate_output(content)
+        elif action.kind == "final":
+            history_content = f"<final>{action.text}</final>"
+        else:
+            history_content = f"<tool>{action.tool}</tool><args>{action.args_raw}</args>"
         session.messages.append({"role": "assistant", "content": history_content})
 
         if action.kind == "final":

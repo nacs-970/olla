@@ -47,15 +47,17 @@ def test_debug_log_when_disabled(capsys):
     debug_log("Secret title", {"data": 123})
     captured = capsys.readouterr()
     assert captured.out == ""
+    assert captured.err == ""
 
 
 def test_debug_log_when_enabled(capsys):
     set_debug(True)
     debug_log("Test title", {"key": "val"})
     captured = capsys.readouterr()
-    assert "[DEBUG]" in captured.out
-    assert "Test title" in captured.out
-    assert '"key": "val"' in captured.out
+    assert "[DEBUG]" in captured.err
+    assert "Test title" in captured.err
+    assert '"key": "val"' in captured.err
+    assert "[DEBUG]" not in captured.out
 
 
 def test_run_loop_logs_in_debug_mode(mocker, capsys):
@@ -77,8 +79,9 @@ def test_run_loop_logs_in_debug_mode(mocker, capsys):
     )
 
     captured = capsys.readouterr()
-    assert "[DEBUG]" in captured.out
-    assert "Loop initialization" in captured.out
-    assert "Step 1/1" in captured.out
-    assert "Raw model response" in captured.out
+    assert "[DEBUG]" in captured.err
+    assert "Loop initialization" in captured.err
+    assert "Step 1/1" in captured.err
+    assert "Raw model response" in captured.err
+    assert "[DEBUG]" not in captured.out
     assert "Done" in captured.out

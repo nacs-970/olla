@@ -3327,3 +3327,47 @@ def test_run_loop_one_shot_trim_check_is_effectively_a_noop(mocker):
     messages_arg, protected_from_index_arg = spy_summarize.call_args.args[:2]
     assert protected_from_index_arg == 1
     assert messages_arg[1:1] == []
+
+
+def test_run_loop_tool_call_history_is_canonical(mocker, capsys):
+    """Regression (260924-nbw): the stop sequence strips `</args>` from the raw
+    reply; history must still record the full canonical envelope so a small
+    model never learns to copy an unterminated tool call."""
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": "<tool>shell</tool><args>pwd"}},
+        {"message": {"content": "<final>done</final>"}},
+    ]
+    mocker.patch("olla.loop.run_shell")
+
+    run_loop(task="where am i", model="test-model", max_steps=5, system_prompt="sys")
+
+    messages = mock_chat.call_args_list[1].kwargs["messages"]
+    assistant_messages = [m for m in messages if m["role"] == "assistant"]
+    assert assistant_messages[0]["content"] == "<tool>shell</tool><args>pwd</args>"
+    assert assistant_messages[0]["content"].endswith("</args>")
+    assert assistant_messages[-1]["content"] == "<final>done</final>"
+
+
+def test_run_loop_write_file_history_round_trips_args_raw(tmp_path, mocker, capsys):
+    """write_file args_raw is unstripped, so the canonical history envelope
+    carries the path line and content (including trailing newline) byte for byte."""
+    target = tmp_path / "x.txt"
+    args_raw = f"{target}\nnew content\n"
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.side_effect = [
+        {"message": {"content": f"<tool>write_file</tool><args>{args_raw}</args>"}},
+        {"message": {"content": "<final>done</final>"}},
+    ]
+    mock_write_file = mocker.patch("olla.loop.write_file")
+    mock_write_file.return_value = {"path": str(target), "bytes_written": 12}
+    mocker.patch("olla.loop.Confirm.ask", return_value=True)
+
+    run_loop(task="write a file", model="test-model", max_steps=5, system_prompt="sys")
+
+    assert _prepare_action(f"<tool>write_file</tool><args>{args_raw}</args>").args_raw == args_raw
+    messages = mock_chat.call_args_list[1].kwargs["messages"]
+    assistant_messages = [m for m in messages if m["role"] == "assistant"]
+    assert assistant_messages[0]["content"] == (
+        f"<tool>write_file</tool><args>{args_raw}</args>"
+    )

@@ -2,6 +2,7 @@
 
 import json
 import os
+import sys
 from typing import Any
 
 _DEBUG_ENABLED = False
@@ -34,7 +35,7 @@ def debug_log(title: str, content: Any = None) -> None:
 
     prefix = "\033[35m[DEBUG]\033[0m"
     if content is None:
-        print(f"{prefix} {title}")
+        print(f"{prefix} {title}", file=sys.stderr)
         return
 
     if isinstance(content, (dict, list)):
@@ -45,6 +46,6 @@ def debug_log(title: str, content: Any = None) -> None:
     else:
         formatted = str(content)
 
-    print(f"{prefix} \033[1m{title}\033[0m:")
+    print(f"{prefix} \033[1m{title}\033[0m:", file=sys.stderr)
     for line in formatted.splitlines():
-        print(f"{prefix}   {line}")
+        print(f"{prefix}   {line}", file=sys.stderr)
