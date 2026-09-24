@@ -291,9 +291,12 @@ def test_run_loop_max_steps_no_final(mocker, capsys):
     corrective = [
         m
         for m in last_call_messages
-        if m["role"] == "user" and "No <tool> or <final> tag found" in m["content"]
+        if m["role"] == "user" and m["content"].startswith("[olla harness:")
     ]
     assert len(corrective) == 2
+    for message in corrective:
+        for tag in ("<tool>", "</tool>", "<args>", "</args>", "<final>", "</final>"):
+            assert tag not in message["content"]
 
 
 def test_run_loop_unlimited_runs_until_final(mocker, capsys):
@@ -2564,9 +2567,10 @@ def test_prepare_action_ignores_tools_inside_thinking():
 
 
 def test_stream_model_turn_dimmed_thinking(mocker, capsys):
-    """Reasoning chunks are rendered dimmed and printed in real-time; non-thought
-    chunks (the model's raw <tool>/<final> protocol envelope) are accumulated for
-    parsing but not echoed live — run_loop() displays the parsed result once."""
+    """Reasoning chunks are rendered dimmed and printed in real-time but are NOT
+    part of the returned (parsed, history-stored) content; non-thought chunks (the
+    model's raw <tool>/<final> protocol envelope) are accumulated for parsing but
+    not echoed live — run_loop() displays the parsed result once."""
     from unittest.mock import MagicMock
 
     from olla.loop import _stream_model_turn
@@ -2580,7 +2584,7 @@ def test_stream_model_turn_dimmed_thinking(mocker, capsys):
     ]
 
     result = _stream_model_turn(mock_provider, [{"role": "user", "content": "hi"}], model="test")
-    assert result == "considering...<final>Hello world</final>"
+    assert result == "<final>Hello world</final>"
 
     captured = capsys.readouterr().out
     assert "\033[2m~ considering...\033[0m" in captured
@@ -2605,6 +2609,87 @@ def test_stream_model_turn_no_thinking_produces_no_live_output(mocker, capsys):
     result = _stream_model_turn(mock_provider, [{"role": "user", "content": "hi"}], model="test")
     assert result == "<final>Hello world</final>"
     assert capsys.readouterr().out == "\n"
+
+
+@pytest.mark.parametrize("content_chunks", [[], ["  ", "\n"]])
+def test_stream_model_turn_empty_content_uses_reasoning_fallback(
+    mocker, capsys, content_chunks
+):
+    """With empty/whitespace content, an unambiguous action in the reasoning
+    alone is returned (and logged) instead of an empty reply."""
+    from olla.loop import _stream_model_turn
+    from olla.providers import StreamChunk
+
+    mock_debug = mocker.patch("olla.loop.debug_log")
+    mock_provider = mocker.MagicMock()
+    mock_provider.get_context_length.return_value = 8192
+    mock_provider.stream_chat.return_value = [
+        StreamChunk(text="<final>x</final>", is_thought=True),
+        *(StreamChunk(text=text, is_thought=False) for text in content_chunks),
+    ]
+
+    result = _stream_model_turn(mock_provider, [{"role": "user", "content": "hi"}], model="test")
+
+    assert result == "<final>x</final>"
+    mock_debug.assert_called_once()
+
+
+def test_stream_model_turn_no_fallback_when_content_present(mocker, capsys):
+    from olla.loop import _stream_model_turn
+    from olla.providers import StreamChunk
+
+    mock_debug = mocker.patch("olla.loop.debug_log")
+    mock_provider = mocker.MagicMock()
+    mock_provider.get_context_length.return_value = 8192
+    mock_provider.stream_chat.return_value = [
+        StreamChunk(text="<final>x</final>", is_thought=True),
+        StreamChunk(text="plain text", is_thought=False),
+    ]
+
+    result = _stream_model_turn(mock_provider, [{"role": "user", "content": "hi"}], model="test")
+
+    assert result == "plain text"
+    mock_debug.assert_not_called()
+
+
+def test_stream_model_turn_no_fallback_when_reasoning_ambiguous(mocker, capsys):
+    from olla.loop import _stream_model_turn
+    from olla.providers import StreamChunk
+
+    mock_debug = mocker.patch("olla.loop.debug_log")
+    mock_provider = mocker.MagicMock()
+    mock_provider.get_context_length.return_value = 8192
+    mock_provider.stream_chat.return_value = [
+        StreamChunk(text="<final>a</final><final>b</final>", is_thought=True),
+        StreamChunk(text=" ", is_thought=False),
+    ]
+
+    result = _stream_model_turn(mock_provider, [{"role": "user", "content": "hi"}], model="test")
+
+    assert result == " "
+    mock_debug.assert_not_called()
+
+
+def test_run_loop_reasoning_mentioning_final_tag_does_not_loop(mocker, capsys):
+    """Regression (260924-mml): reasoning that mentions <final> in prose used to be
+    concatenated into parsed content, producing multiple outer finals and an
+    endless retry-nudge loop. Only get_provider is patched so the real streaming
+    path (not the _is_mocked early return) runs."""
+    from olla.providers import StreamChunk
+
+    mock_provider = mocker.MagicMock()
+    mock_provider.get_context_length.return_value = 8192
+    mock_provider.stream_chat.return_value = [
+        StreamChunk(text="I should answer with <final> tags now.", is_thought=True),
+        StreamChunk(text="<final>/home/nacs</final>", is_thought=False),
+    ]
+    mocker.patch("olla.loop.get_provider", return_value=(mock_provider, "test-model"))
+
+    run_loop(task="pwd", model="test-model", max_steps=5, system_prompt="sys")
+
+    captured = capsys.readouterr().out
+    assert captured.count("* /home/nacs") == 1
+    assert mock_provider.stream_chat.call_count == 1
 
 
 def test_run_loop_final_answer_prints_once_with_marker(mocker, capsys):

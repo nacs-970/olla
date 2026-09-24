@@ -573,6 +573,7 @@ def _stream_model_turn(
         return _call_model_for_loop(model, messages)
 
     full_response: list[str] = []
+    thought_parts: list[str] = []
     thought_started = False
     try:
         for chunk in provider.stream_chat(messages):
@@ -580,12 +581,23 @@ def _stream_model_turn(
                 prefix = "~ " if not thought_started else ""
                 thought_started = True
                 print(f"\033[2m{prefix}{chunk.text}\033[0m", end="", flush=True)
-            # Non-thought chunks are the model's raw <tool>/<args>/<final> protocol
-            # envelope (not human-facing text) — accumulated for parsing below but
-            # not echoed live; run_loop() displays the parsed, tag-free result once.
-            full_response.append(chunk.text)
+                thought_parts.append(chunk.text)
+            else:
+                # Non-thought chunks are the model's raw <tool>/<args>/<final> protocol
+                # envelope (not human-facing text) — accumulated for parsing below but
+                # not echoed live; run_loop() displays the parsed, tag-free result once.
+                full_response.append(chunk.text)
         print()
-        return "".join(full_response)
+        content = "".join(full_response)
+        thought_text = "".join(thought_parts)
+        if (
+            not content.strip()
+            and thought_text.strip()
+            and parse_response(_strip_thinking(thought_text))["type"] != "none"
+        ):
+            debug_log("Empty content; using reasoning fallback", thought_text[:500])
+            return thought_text
+        return content
     except ProviderError as error:
         _display(f"Model request failed: {error}")
         return None
@@ -1240,8 +1252,11 @@ def run_loop(
                 {
                     "role": "user",
                     "content": (
-                        "No <tool> or <final> tag found. Respond using "
-                        "<tool>/<args> or <final> only."
+                        "[olla harness: automated format check, not a message "
+                        "from the user] Your last reply contained no valid tool "
+                        "call or final answer outside your reasoning. Reply again "
+                        "with exactly one tool block or one final block, formatted "
+                        "as the system prompt shows."
                     ),
                 }
             )
