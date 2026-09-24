@@ -117,7 +117,7 @@ None yet.
 None. All milestone v1.0 blockers and gap-closures resolved.
 
 - [Hardware]: `gemma4:e2b` (7.2GB) does not fit in this host's 7.1GB RAM (OOM-killed). Affects which local models are realistically usable for local dev/testing on this machine.
-- [2026-09-24]: The user deliberately removed Ollama from this dev machine, and olla runs against OpenRouter here. This is not a defect. The tool-overhead benchmark was reworked for OpenRouter in quick task 260924-ofn (superseding 260923-0pq Tasks 2/3). The live measurement run is still pending, waiting on the user's model choice.
+- [2026-09-24]: The user deliberately removed Ollama from this dev machine, and olla runs against OpenRouter here. This is not a defect. Tool-overhead benchmark result (quick task 260924-ofn): on liquid/lfm-2.5-2.6b, XML uses +13.24% MORE prompt tokens per turn than native JSON function calling, which contradicts the public "cuts per-turn overhead" claim. The qwen3.8-27b run was blocked by the OpenRouter free-tier limit of 50 requests/day; re-run it for a second tokenizer.
 
 ### Quick Tasks Completed
 

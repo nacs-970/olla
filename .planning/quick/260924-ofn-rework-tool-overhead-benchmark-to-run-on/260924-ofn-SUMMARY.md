@@ -100,3 +100,26 @@ None. The only new surface is the outbound OpenRouter POST and the `--output` fi
 - FOUND: scripts/benchmark_tool_overhead.py
 - FOUND: tests/test_benchmark_script.py
 - FOUND: commit bbb6116
+
+## Live Results (2026-09-24, orchestrator run)
+
+Command: `scripts/benchmark_tool_overhead.py --model openrouter/<id> --repeats 3 --output results/<id>.json`. Raw JSON and logs are in `results/`.
+
+### liquid/lfm-2.5-2.6b:free: valid (24/24 calls, 0 errors, all served by the `Liquid` provider)
+
+| Arm | Mean prompt tokens/turn | Mean completion tokens |
+|-----|------------------------:|-----------------------:|
+| xml (production `SYSTEM_PROMPT`) | 1111.75 | 52.50 |
+| native (same 9 tools + same policy, `tools=` JSON) | 981.75 | 127.08 |
+
+**Headline: xml vs native prompt tokens = +13.24%.** The XML prompt costs about 130 more prompt tokens per turn than native JSON function calling on this model. The delta was the same on every task, and the 3 repeats gave identical counts.
+
+The completion difference (-58.69%) is not the headline: the XML arm stops at `</args>`, and the native `shell_task` averaged 344 completion tokens.
+
+### qwen/qwen3.8-27b:free: no result
+
+21 of 24 calls returned HTTP 429. The model was first rate-limited upstream, and then the account's free-tier limit of 50 requests per day was used up. Only 3 xml calls succeeded and no native call did, so no comparison is possible. It can be re-run after the daily limit resets, or with credits added.
+
+### Verdict
+
+On the one model with a valid result, this **contradicts** the claim that olla's XML tags "cut per-turn prompt overhead" compared with JSON function calling: the XML arm uses 13% more prompt tokens. The measurement covers one model and one tokenizer/chat template, so another model family is needed before generalizing.

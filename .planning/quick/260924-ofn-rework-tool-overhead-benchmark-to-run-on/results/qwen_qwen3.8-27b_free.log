@@ -1,0 +1,68 @@
+Model: openrouter/qwen/qwen3.8-27b:free  repeats=3  arms=['xml', 'native']  output=.planning/quick/260924-ofn-rework-tool-overhead-benchmark-to-run-on/results/qwen_qwen3.8-27b_free.json
+  arm=xml    task=shell_task       rep=1 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"qwen/qwen3.8-27b:free is temporari
+  arm=native task=shell_task       rep=1 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"qwen/qwen3.8-27b:free is temporari
+  arm=native task=shell_task       rep=2 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"qwen/qwen3.8-27b:free is temporari
+  arm=xml    task=shell_task       rep=2 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"qwen/qwen3.8-27b:free is temporari
+  arm=native task=shell_task       rep=3 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"qwen/qwen3.8-27b:free is temporari
+  arm=xml    task=shell_task       rep=3 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"qwen/qwen3.8-27b:free is temporari
+  arm=xml    task=file_read_task   rep=1 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"qwen/qwen3.8-27b:free is temporari
+  arm=native task=file_read_task   rep=1 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"qwen/qwen3.8-27b:free is temporari
+  arm=xml    task=file_read_task   rep=2 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"qwen/qwen3.8-27b:free is temporari
+  arm=native task=file_read_task   rep=2 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"qwen/qwen3.8-27b:free is temporari
+  arm=native task=file_read_task   rep=3 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"qwen/qwen3.8-27b:free is temporari
+  arm=xml    task=file_read_task   rep=3 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"qwen/qwen3.8-27b:free is temporari
+  arm=native task=file_write_task  rep=1 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"qwen/qwen3.8-27b:free is temporari
+  arm=xml    task=file_write_task  rep=1 prompt=1180 completion=47 cached=0 provider=ModelRun status=200
+  arm=xml    task=file_write_task  rep=2 prompt=1180 completion=47 cached=1024 provider=ModelRun status=200
+  arm=native task=file_write_task  rep=2 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"qwen/qwen3.8-27b:free is temporari
+  arm=xml    task=file_write_task  rep=3 prompt=1180 completion=47 cached=1024 provider=ModelRun status=200
+  arm=native task=file_write_task  rep=3 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"qwen/qwen3.8-27b:free is temporari
+  arm=native task=multi_step_task  rep=1 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model reques
+  arm=xml    task=multi_step_task  rep=1 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model reques
+  arm=native task=multi_step_task  rep=2 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model reques
+  arm=xml    task=multi_step_task  rep=2 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model reques
+  arm=xml    task=multi_step_task  rep=3 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model reques
+  arm=native task=multi_step_task  rep=3 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model reques
+
+Per-(arm, task) means:
+  arm     task                prompt  completion  valid
+  xml     shell_task             n/a         n/a   0/3
+  xml     file_read_task         n/a         n/a   0/3
+  xml     file_write_task     1180.0        47.0   3/3
+  xml     multi_step_task        n/a         n/a   0/3
+  native  shell_task             n/a         n/a   0/3
+  native  file_read_task         n/a         n/a   0/3
+  native  file_write_task        n/a         n/a   0/3
+  native  multi_step_task        n/a         n/a   0/3
+
+HEADLINE: mean prompt_tokens per turn
+  xml     1180.00
+  native  n/a
+  xml vs native: cannot be computed (a mean is missing or native is 0)
+
+Completion tokens (reported separately, NOT part of the headline):
+  xml     mean 47.00
+  native  mean n/a
+  xml vs native: n/a
+  Caveat: the xml arm sends stop at the closing args tag. If the model does not honor stop, xml completion tokens include the text after it. Prompt tokens (the headline) are unaffected.
+
+Cached and reasoning tokens (totals over valid values):
+  xml     cached=2048 reasoning=81
+  native  cached=None reasoning=None
+
+Missing counts (excluded from every mean and total, never counted as 0):
+  xml     prompt_tokens      excluded=9
+  xml     completion_tokens  excluded=9
+  xml     cached_tokens      excluded=9
+  xml     reasoning_tokens   excluded=9
+  xml     errored calls: 9/12
+  native  prompt_tokens      excluded=12
+  native  completion_tokens  excluded=12
+  native  cached_tokens      excluded=12
+  native  reasoning_tokens   excluded=12
+  native  errored calls: 12/12
+WARNING: task file_write_task has 3 valid xml calls but 0 valid native calls; the per-arm means cover different task mixes.
+
+Note: the system prompt and tool definitions are re-sent on every turn, so the prompt delta is a per-turn overhead.
+
+Results written to .planning/quick/260924-ofn-rework-tool-overhead-benchmark-to-run-on/results/qwen_qwen3.8-27b_free.json

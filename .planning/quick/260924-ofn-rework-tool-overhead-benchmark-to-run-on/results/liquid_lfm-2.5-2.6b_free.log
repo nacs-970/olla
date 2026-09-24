@@ -1,0 +1,67 @@
+Model: openrouter/liquid/lfm-2.5-2.6b:free  repeats=3  arms=['xml', 'native']  output=.planning/quick/260924-ofn-rework-tool-overhead-benchmark-to-run-on/results/liquid_lfm-2.5-2.6b_free.json
+  arm=xml    task=shell_task       rep=1 prompt=1106 completion=57 cached=0 provider=Liquid status=200
+  arm=native task=shell_task       rep=1 prompt=976 completion=366 cached=0 provider=Liquid status=200
+  arm=native task=shell_task       rep=2 prompt=976 completion=243 cached=112 provider=Liquid status=200
+  arm=xml    task=shell_task       rep=2 prompt=1106 completion=49 cached=1104 provider=Liquid status=200
+  arm=native task=shell_task       rep=3 prompt=976 completion=424 cached=960 provider=Liquid status=200
+  arm=xml    task=shell_task       rep=3 prompt=1106 completion=49 cached=1104 provider=Liquid status=200
+  arm=xml    task=file_read_task   rep=1 prompt=1111 completion=40 cached=112 provider=Liquid status=200
+  arm=native task=file_read_task   rep=1 prompt=981 completion=40 cached=112 provider=Liquid status=200
+  arm=xml    task=file_read_task   rep=2 prompt=1111 completion=45 cached=1104 provider=Liquid status=200
+  arm=native task=file_read_task   rep=2 prompt=981 completion=43 cached=976 provider=Liquid status=200
+  arm=native task=file_read_task   rep=3 prompt=981 completion=40 cached=976 provider=Liquid status=200
+  arm=xml    task=file_read_task   rep=3 prompt=1111 completion=45 cached=1104 provider=Liquid status=200
+  arm=native task=file_write_task  rep=1 prompt=979 completion=71 cached=944 provider=Liquid status=200
+  arm=xml    task=file_write_task  rep=1 prompt=1109 completion=54 cached=1088 provider=Liquid status=200
+  arm=xml    task=file_write_task  rep=2 prompt=1109 completion=54 cached=1104 provider=Liquid status=200
+  arm=native task=file_write_task  rep=2 prompt=979 completion=59 cached=976 provider=Liquid status=200
+  arm=xml    task=file_write_task  rep=3 prompt=1109 completion=54 cached=1104 provider=Liquid status=200
+  arm=native task=file_write_task  rep=3 prompt=979 completion=59 cached=976 provider=Liquid status=200
+  arm=native task=multi_step_task  rep=1 prompt=991 completion=62 cached=944 provider=Liquid status=200
+  arm=xml    task=multi_step_task  rep=1 prompt=1121 completion=61 cached=1088 provider=Liquid status=200
+  arm=native task=multi_step_task  rep=2 prompt=991 completion=59 cached=976 provider=Liquid status=200
+  arm=xml    task=multi_step_task  rep=2 prompt=1121 completion=61 cached=1120 provider=Liquid status=200
+  arm=xml    task=multi_step_task  rep=3 prompt=1121 completion=61 cached=1120 provider=Liquid status=200
+  arm=native task=multi_step_task  rep=3 prompt=991 completion=59 cached=976 provider=Liquid status=200
+
+Per-(arm, task) means:
+  arm     task                prompt  completion  valid
+  xml     shell_task          1106.0        51.7   3/3
+  xml     file_read_task      1111.0        43.3   3/3
+  xml     file_write_task     1109.0        54.0   3/3
+  xml     multi_step_task     1121.0        61.0   3/3
+  native  shell_task           976.0       344.3   3/3
+  native  file_read_task       981.0        41.0   3/3
+  native  file_write_task      979.0        63.0   3/3
+  native  multi_step_task      991.0        60.0   3/3
+
+HEADLINE: mean prompt_tokens per turn
+  xml     1111.75
+  native  981.75
+  xml vs native: +13.24%  ((xml - native) / native * 100)
+
+Completion tokens (reported separately, NOT part of the headline):
+  xml     mean 52.50
+  native  mean 127.08
+  xml vs native: -58.69%
+  Caveat: the xml arm sends stop at the closing args tag. If the model does not honor stop, xml completion tokens include the text after it. Prompt tokens (the headline) are unaffected.
+
+Cached and reasoning tokens (totals over valid values):
+  xml     cached=11152 reasoning=440
+  native  cached=8928 reasoning=1356
+
+Missing counts (excluded from every mean and total, never counted as 0):
+  xml     prompt_tokens      excluded=0
+  xml     completion_tokens  excluded=0
+  xml     cached_tokens      excluded=0
+  xml     reasoning_tokens   excluded=0
+  xml     errored calls: 0/12
+  native  prompt_tokens      excluded=0
+  native  completion_tokens  excluded=0
+  native  cached_tokens      excluded=0
+  native  reasoning_tokens   excluded=0
+  native  errored calls: 0/12
+
+Note: the system prompt and tool definitions are re-sent on every turn, so the prompt delta is a per-turn overhead.
+
+Results written to .planning/quick/260924-ofn-rework-tool-overhead-benchmark-to-run-on/results/liquid_lfm-2.5-2.6b_free.json
