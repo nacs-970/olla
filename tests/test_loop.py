@@ -257,7 +257,7 @@ def test_run_loop_tool_result_real_no_output_success(mocker, capsys):
 
 def test_run_loop_truncates_none_response_in_history(mocker, capsys):
     mock_chat = mocker.patch("olla.loop.ollama.chat")
-    long_text = "x" * (MAX_OBSERVATION_CHARS + 500)
+    long_text = "<tool>" + "x" * (MAX_OBSERVATION_CHARS + 500)
     mock_chat.side_effect = [
         {"message": {"content": long_text}},
         {"message": {"content": "<final>done</final>"}},
@@ -275,7 +275,7 @@ def test_run_loop_truncates_none_response_in_history(mocker, capsys):
 
 def test_run_loop_max_steps_no_final(mocker, capsys):
     mock_chat = mocker.patch("olla.loop.ollama.chat")
-    mock_chat.return_value = {"message": {"content": "I am thinking about it."}}
+    mock_chat.return_value = {"message": {"content": "<tool>shell"}}
     mocker.patch("olla.loop.run_shell")
 
     run_loop(task="ponder", model="test-model", max_steps=2, system_prompt="sys")
@@ -804,14 +804,14 @@ def test_dry_run_final_response_prints_preview_and_stops(mocker, capsys):
 
 def test_dry_run_none_response_prints_preview_and_stops(mocker, capsys):
     mock_chat = mocker.patch("olla.loop.ollama.chat")
-    mock_chat.return_value = {"message": {"content": "I am thinking about it."}}
+    mock_chat.return_value = {"message": {"content": "<tool>shell"}}
     mock_run_shell = mocker.patch("olla.loop.run_shell")
     mock_confirm = mocker.patch("olla.loop.Confirm.ask")
 
     run_loop(task="ponder", model="test-model", max_steps=15, system_prompt="sys", dry_run=True)
 
     captured = capsys.readouterr()
-    assert "Model produced no valid <tool>/<final> tag: I am thinking about it." in captured.out
+    assert "Model produced no valid <tool>/<final> tag: <tool>shell" in captured.out
     assert mock_chat.call_count == 1
     mock_run_shell.assert_not_called()
     mock_confirm.assert_not_called()
@@ -1050,7 +1050,7 @@ def test_run_loop_repeated_block_triggers_repetition_guard(mocker, capsys):
     [
         ('<tool>shell</tool><args>echo "unterminated</args>', "shell"),
         ("<tool>browse</tool><args>https://example.com</args>", "browse"),
-        ("no protocol tags here", "response"),
+        ("<tool>shell without args", "response"),
     ],
 )
 def test_repetition_guard_covers_every_non_final_response(
@@ -3371,3 +3371,110 @@ def test_run_loop_write_file_history_round_trips_args_raw(tmp_path, mocker, caps
     assert assistant_messages[0]["content"] == (
         f"<tool>write_file</tool><args>{args_raw}</args>"
     )
+
+
+@pytest.mark.parametrize(
+    ("content", "expected_text"),
+    [
+        ("  The file already exists.  \n", "The file already exists."),
+        ("<think>hmm</think> The answer is 4", "The answer is 4"),
+    ],
+)
+def test_prepare_action_tag_free_prose_is_final(content, expected_text):
+    """Regression (260924-nbw): plain prose with no protocol tags is a direct
+    answer, not a format error that costs a nudge round-trip."""
+    action = _prepare_action(content)
+    assert action.kind == "final"
+    assert action.text == expected_text
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "see <TOOL> here",
+        "<tool>shell",
+        "no <final>a</final><final>b</final>",
+        "   \n",
+        "<think>only</think>",
+    ],
+)
+def test_prepare_action_tagged_or_empty_prose_stays_none(content):
+    """Any protocol tag (any case), a partial tag, or empty content keeps the
+    `none` path so malformed tool attempts still get the harness nudge."""
+    assert _prepare_action(content).kind == "none"
+
+
+def test_run_loop_tag_free_prose_ends_turn_in_one_call(mocker, capsys):
+    prose = "The file calculator.py already exists and is complete."
+    mock_chat = mocker.patch("olla.loop.ollama.chat")
+    mock_chat.return_value = {"message": {"content": prose}}
+    session = SessionState(messages=[], scratchpad=Scratchpad(), read_snapshots={})
+
+    run_loop(
+        task="create calculator",
+        model="test-model",
+        max_steps=5,
+        system_prompt="sys",
+        session=session,
+    )
+
+    captured = capsys.readouterr().out
+    assert captured.count(f"* {prose}") == 1
+    assert mock_chat.call_count == 1
+    assert not any(
+        m["content"].startswith("[olla harness:") for m in session.messages
+    )
+    assistant_messages = [m for m in session.messages if m["role"] == "assistant"]
+    assert assistant_messages[-1]["content"] == f"<final>{prose}</final>"
+
+
+def test_run_loop_empty_stream_is_retried_once_without_nudge(mocker, capsys):
+    """Regression (260924-nbw): an HTTP-200 stream with no deltas is retried
+    inside the same step instead of recording an empty turn and nudging. Only
+    get_provider is patched so the real streaming path runs."""
+    from olla.providers import StreamChunk
+
+    mock_provider = mocker.MagicMock()
+    mock_provider.get_context_length.return_value = 8192
+    mock_provider.stream_chat.side_effect = [
+        [],
+        [StreamChunk(text="<final>ok</final>", is_thought=False)],
+    ]
+    mocker.patch("olla.loop.get_provider", return_value=(mock_provider, "test-model"))
+
+    run_loop(task="hi", model="test-model", max_steps=5, system_prompt="sys")
+
+    captured = capsys.readouterr().out
+    assert captured.count("* ok") == 1
+    assert mock_provider.stream_chat.call_count == 2
+
+
+def test_run_loop_double_empty_stream_records_no_blank_assistant(mocker, capsys):
+    from olla.providers import StreamChunk
+
+    mock_provider = mocker.MagicMock()
+    mock_provider.get_context_length.return_value = 8192
+    mock_provider.stream_chat.side_effect = [
+        [],
+        [],
+        [StreamChunk(text="<final>ok</final>", is_thought=False)],
+    ]
+    mocker.patch("olla.loop.get_provider", return_value=(mock_provider, "test-model"))
+    session = SessionState(messages=[], scratchpad=Scratchpad(), read_snapshots={})
+
+    run_loop(
+        task="hi",
+        model="test-model",
+        max_steps=5,
+        system_prompt="sys",
+        session=session,
+    )
+
+    assert not any(
+        m["role"] == "assistant" and not m["content"].strip()
+        for m in session.messages
+    )
+    nudges = [m for m in session.messages if m["content"].startswith("[olla harness:")]
+    assert len(nudges) == 1
+    assert mock_provider.stream_chat.call_count == 3
+    assert "* ok" in capsys.readouterr().out

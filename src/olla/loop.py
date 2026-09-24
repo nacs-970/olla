@@ -15,7 +15,15 @@ from rich.text import Text
 
 from olla import context_trim
 from olla.debug import debug_log, mask_secret, set_debug
-from olla.parser import parse_response
+from olla.parser import (
+    ARGS_CLOSE_RE,
+    ARGS_OPEN_RE,
+    FINAL_CLOSE_RE,
+    FINAL_OPEN_RE,
+    TOOL_CLOSE_RE,
+    TOOL_OPEN_RE,
+    parse_response,
+)
 from olla.providers import Provider, ProviderError, get_provider
 from olla.safety import check
 from olla.tools.base import FileSnapshot
@@ -223,6 +231,17 @@ def _prepare_memory_request(tool: str, args_raw: str) -> _MemoryRequest:
 
 THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
+# Any protocol tag (open or close, any case) marks a reply as an attempted,
+# possibly malformed tool/final call that must be nudged, never accepted as prose.
+_PROTOCOL_TAG_RES = (
+    TOOL_OPEN_RE,
+    TOOL_CLOSE_RE,
+    ARGS_OPEN_RE,
+    ARGS_CLOSE_RE,
+    FINAL_OPEN_RE,
+    FINAL_CLOSE_RE,
+)
+
 
 def _strip_thinking(content: str) -> str:
     """Strip reasoning/thinking content (<think>...</think>) before tag evaluation (D-10)."""
@@ -236,10 +255,16 @@ def _is_mocked(obj: object) -> bool:
 
 def _prepare_action(content: str) -> _Action:
     """Parse once and normalize signatures before any handler can exit early."""
-    parsed = parse_response(_strip_thinking(content))
+    stripped = _strip_thinking(content)
+    parsed = parse_response(stripped)
     if parsed["type"] == "final":
         return _Action("final", "final", None, text=parsed["text"])
     if parsed["type"] == "none":
+        # Tag-free prose is the model answering directly: accept it as final
+        # instead of spending a full-context round-trip on a format nudge.
+        prose = stripped.strip()
+        if prose and not any(regex.search(prose) for regex in _PROTOCOL_TAG_RES):
+            return _Action("final", "final", None, text=prose)
         return _Action("none", "response", ("none", content), text=content)
 
     tool = parsed["tool"]
@@ -549,6 +574,29 @@ def _call_model_for_loop(model: str, messages: list[dict]) -> str | None:
         return None
 
 
+def _stream_once(provider: Provider, messages: list[dict]) -> tuple[str, str]:
+    """Consume one provider stream; return (content, thought_text).
+
+    Thought chunks are rendered dimmed live; content chunks are only collected.
+    """
+    full_response: list[str] = []
+    thought_parts: list[str] = []
+    thought_started = False
+    for chunk in provider.stream_chat(messages):
+        if chunk.is_thought:
+            prefix = "~ " if not thought_started else ""
+            thought_started = True
+            print(f"\033[2m{prefix}{chunk.text}\033[0m", end="", flush=True)
+            thought_parts.append(chunk.text)
+        else:
+            # Non-thought chunks are the model's raw <tool>/<args>/<final> protocol
+            # envelope (not human-facing text) — accumulated for parsing below but
+            # not echoed live; run_loop() displays the parsed, tag-free result once.
+            full_response.append(chunk.text)
+    print()
+    return "".join(full_response), "".join(thought_parts)
+
+
 def _stream_model_turn(
     provider: Provider,
     messages: list[dict],
@@ -572,24 +620,13 @@ def _stream_model_turn(
     if _is_mocked(call_model) or _is_mocked(ollama.chat):
         return _call_model_for_loop(model, messages)
 
-    full_response: list[str] = []
-    thought_parts: list[str] = []
-    thought_started = False
     try:
-        for chunk in provider.stream_chat(messages):
-            if chunk.is_thought:
-                prefix = "~ " if not thought_started else ""
-                thought_started = True
-                print(f"\033[2m{prefix}{chunk.text}\033[0m", end="", flush=True)
-                thought_parts.append(chunk.text)
-            else:
-                # Non-thought chunks are the model's raw <tool>/<args>/<final> protocol
-                # envelope (not human-facing text) — accumulated for parsing below but
-                # not echoed live; run_loop() displays the parsed, tag-free result once.
-                full_response.append(chunk.text)
-        print()
-        content = "".join(full_response)
-        thought_text = "".join(thought_parts)
+        content, thought_text = _stream_once(provider, messages)
+        if not content.strip() and not thought_text.strip():
+            # An HTTP-200 stream with no deltas: retry once here rather than
+            # recording an empty assistant turn and paying for a nudge round-trip.
+            debug_log("Empty model stream; retrying once")
+            content, thought_text = _stream_once(provider, messages)
         if (
             not content.strip()
             and thought_text.strip()
@@ -1176,7 +1213,10 @@ def run_loop(
             history_content = f"<final>{action.text}</final>"
         else:
             history_content = f"<tool>{action.tool}</tool><args>{action.args_raw}</args>"
-        session.messages.append({"role": "assistant", "content": history_content})
+        # An empty reply (even after the stream retry) is never recorded as an
+        # assistant turn; the format nudge below still follows it.
+        if not (action.kind == "none" and not content.strip()):
+            session.messages.append({"role": "assistant", "content": history_content})
 
         if action.kind == "final":
             _display(f"* {action.text}")
