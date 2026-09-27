@@ -336,3 +336,29 @@ def test_write_file_payload_final_block_stays_opaque(content):
     assert result["type"] == "tool"
     assert result["tool"] == "write_file"
     assert "<final>not an answer</final>" in result["args_raw"]
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        (
+            "<tool>shell</tool>\n```\n<args>echo '<final>hi</final>'</args>",
+            {"type": "tool", "tool": "shell", "args_raw": "echo '<final>hi</final>'"},
+        ),
+        (
+            "<tool>write_file</tool>\nFile:\n<args>notes.md\nuse <final>x</final> tags\n</args>",
+            {
+                "type": "tool",
+                "tool": "write_file",
+                "args_raw": "notes.md\nuse <final>x</final> tags\n",
+            },
+        ),
+    ],
+)
+def test_tag_free_text_between_envelope_and_args_keeps_payload_opaque(
+    content, expected
+):
+    """Regression from quick 260924-mml: envelope-only args spans required only
+    whitespace between the tool envelope and <args>, so a fence line or a
+    'File:' label let a payload <final> win over the real tool call."""
+    assert parse_response(content) == expected

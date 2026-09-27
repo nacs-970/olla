@@ -9,7 +9,7 @@ TOOL_CLOSE_RE = re.compile(r"</tool>", re.IGNORECASE)
 ARGS_OPEN_RE = re.compile(r"<args>", re.IGNORECASE)
 ARGS_CLOSE_RE = re.compile(r"</args>", re.IGNORECASE)
 TOOL_ENVELOPE_ARGS_RE = re.compile(
-    r"<tool>\s*[A-Za-z0-9_-]+\s*(?:</tool>)?\s*<args>", re.IGNORECASE
+    r"<tool>\s*[A-Za-z0-9_-]+\s*(?:</tool>)?[^<]*<args>", re.IGNORECASE
 )
 OUTER_FENCE_OPEN_RE = re.compile(r"\A[ \t]*(`{3,}|~{3,})[^\r\n]*\r?\n")
 
