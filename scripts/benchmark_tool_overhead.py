@@ -70,6 +70,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -386,6 +387,27 @@ def sum_excluding_none(values) -> tuple[int | None, int]:
     return sum(valid), excluded
 
 
+def paired_means(records, metric: str) -> tuple[dict[str, float | None], int, int]:
+    """Per-arm means over (task, repeat) sets where every arm has a value.
+
+    Returns (means by arm, paired set count, dropped set count). Means are None
+    for every arm when no complete set exists.
+    """
+    universe = {(r["task"], r["repeat"]) for r in records}
+    by_key: dict[tuple, dict[str, float]] = {}
+    for r in records:
+        if r[metric] is not None:
+            by_key.setdefault((r["task"], r["repeat"]), {})[r["arm"]] = r[metric]
+    complete = [key for key, values in by_key.items() if all(a in values for a in ARMS)]
+    if not complete:
+        means: dict[str, float | None] = {arm: None for arm in ARMS}
+    else:
+        means = {
+            arm: sum(by_key[key][arm] for key in complete) / len(complete) for arm in ARMS
+        }
+    return means, len(complete), len(universe) - len(complete)
+
+
 def signed_pct(xml_mean: float | None, native_mean: float | None) -> float | None:
     """(xml - native) / native * 100, or None if undefined."""
     if xml_mean is None or native_mean is None or native_mean == 0:
@@ -469,7 +491,23 @@ def extract_record(arm, task, repeat, status, data, error) -> dict:
 
 
 def _write_json(path: Path, payload: dict) -> None:
-    path.write_text(json.dumps(payload, indent=2))
+    """Write atomically: temp file in the same dir, fsync, then os.replace."""
+    text = json.dumps(payload, indent=2)
+    tmp = tempfile.NamedTemporaryFile(
+        "w", dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False
+    )
+    try:
+        with tmp:
+            tmp.write(text)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        os.replace(tmp.name, path)
+    except BaseException:
+        try:
+            os.unlink(tmp.name)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def _fmt(value, digits: int = 1) -> str:
@@ -515,18 +553,18 @@ def summarize(records: list[dict]) -> dict:
                 "reasoning_tokens": reasoning_excl,
             },
         }
+    # The headline compares like with like: only (task, repeat) sets where
+    # every arm has a value count toward the per-arm means and the signed %.
+    p_paired, p_paired_n, p_dropped_n = paired_means(records, "prompt_tokens")
+    c_paired, c_paired_n, c_dropped_n = paired_means(records, "completion_tokens")
+    for arm in ARMS:
+        per_arm[arm]["paired_mean_prompt_tokens"] = p_paired[arm]
+        per_arm[arm]["paired_mean_completion_tokens"] = c_paired[arm]
     prompt_by_arm = {
-        arm: signed_pct(
-            per_arm[arm]["mean_prompt_tokens"], per_arm["native"]["mean_prompt_tokens"]
-        )
-        for arm in XML_ARMS
+        arm: signed_pct(p_paired[arm], p_paired["native"]) for arm in XML_ARMS
     }
     completion_by_arm = {
-        arm: signed_pct(
-            per_arm[arm]["mean_completion_tokens"],
-            per_arm["native"]["mean_completion_tokens"],
-        )
-        for arm in XML_ARMS
+        arm: signed_pct(c_paired[arm], c_paired["native"]) for arm in XML_ARMS
     }
     return {
         "per_arm_task": per_arm_task,
@@ -535,6 +573,8 @@ def summarize(records: list[dict]) -> dict:
         "completion_signed_pct": completion_by_arm["xml"],
         "prompt_signed_pct_by_arm": prompt_by_arm,
         "completion_signed_pct_by_arm": completion_by_arm,
+        "paired_sets": {"prompt_tokens": p_paired_n, "completion_tokens": c_paired_n},
+        "dropped_sets": {"prompt_tokens": p_dropped_n, "completion_tokens": c_dropped_n},
     }
 
 
@@ -557,7 +597,12 @@ def print_report(summary: dict) -> None:
     echo("")
     echo("HEADLINE: mean prompt_tokens per turn")
     for arm in ARMS:
-        echo(f"  {arm:<8} {_fmt(per_arm[arm]['mean_prompt_tokens'], 2)}")
+        echo(f"  {arm:<8} {_fmt(per_arm[arm]['paired_mean_prompt_tokens'], 2)}")
+    echo(
+        f"  paired over {summary['paired_sets']['prompt_tokens']} complete "
+        f"(task, repeat) sets; {summary['dropped_sets']['prompt_tokens']} dropped "
+        "(some arm had no value)"
+    )
     for arm, pct in summary["prompt_signed_pct_by_arm"].items():
         if pct is None:
             echo(f"  {arm} vs native: cannot be computed (a mean is missing or native is 0)")
@@ -567,7 +612,12 @@ def print_report(summary: dict) -> None:
     echo("")
     echo("Completion tokens (reported separately, NOT part of the headline):")
     for arm in ARMS:
-        echo(f"  {arm:<8} mean {_fmt(per_arm[arm]['mean_completion_tokens'], 2)}")
+        echo(f"  {arm:<8} mean {_fmt(per_arm[arm]['paired_mean_completion_tokens'], 2)}")
+    echo(
+        f"  paired over {summary['paired_sets']['completion_tokens']} complete "
+        f"(task, repeat) sets; {summary['dropped_sets']['completion_tokens']} dropped "
+        "(some arm had no value)"
+    )
     for arm, cpct in summary["completion_signed_pct_by_arm"].items():
         echo(f"  {arm} vs native: {'n/a' if cpct is None else f'{cpct:+.2f}%'}")
     echo(
@@ -602,7 +652,7 @@ def print_report(summary: dict) -> None:
                 echo(
                     f"WARNING: task {task} has {arm_row['valid_prompt_calls']} valid {arm} "
                     f"calls but {native_row['valid_prompt_calls']} valid native calls; "
-                    "the per-arm means cover different task mixes."
+                    "incomplete sets for this task are dropped from the paired headline."
                 )
         for task in tasks:
             arm_prov = set(per_arm_task[arm][task]["providers"])

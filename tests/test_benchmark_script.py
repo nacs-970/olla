@@ -510,3 +510,90 @@ def test_cli_stops_on_daily_free_limit(bench, monkeypatch, tmp_path):
     data = json.loads(out.read_text())
     assert len(data["records"]) == 2
     assert "summary" in data
+
+
+def _rec(arm, task, prompt, completion=10, repeat=1):
+    return {
+        "arm": arm,
+        "task": task,
+        "repeat": repeat,
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "cached_tokens": None,
+        "reasoning_tokens": None,
+        "provider": None,
+        "finish_reason": "stop",
+        "http_status": 200 if prompt is not None else 500,
+        "error": None if prompt is not None else "boom",
+    }
+
+
+def test_summarize_uses_paired_complete_sets(bench):
+    records = [
+        _rec("xml", "shell_task", 110),
+        _rec("xml_noex", "shell_task", 105, completion=None),
+        _rec("native", "shell_task", 100),
+        _rec("xml", "file_read_task", None),
+        _rec("xml_noex", "file_read_task", 1000),
+        _rec("native", "file_read_task", 1000),
+        _rec("xml", "file_write_task", 5000),
+        _rec("xml_noex", "file_write_task", 5000),
+        _rec("native", "file_write_task", None),
+    ]
+
+    summary = bench.summarize(records)
+
+    assert summary["paired_sets"]["prompt_tokens"] == 1
+    assert summary["dropped_sets"]["prompt_tokens"] == 2
+    per_arm = summary["per_arm"]
+    assert per_arm["xml"]["paired_mean_prompt_tokens"] == 110
+    assert per_arm["xml_noex"]["paired_mean_prompt_tokens"] == 105
+    assert per_arm["native"]["paired_mean_prompt_tokens"] == 100
+    assert summary["prompt_signed_pct"] == pytest.approx(10.0)
+    assert summary["prompt_signed_pct_by_arm"]["xml_noex"] == pytest.approx(5.0)
+    assert summary["paired_sets"]["completion_tokens"] == 2
+    assert summary["dropped_sets"]["completion_tokens"] == 1
+    assert per_arm["native"]["paired_mean_completion_tokens"] == 10
+    # The per-(arm, task) table still shows every valid value.
+    assert (
+        summary["per_arm_task"]["xml_noex"]["file_read_task"]["mean_prompt_tokens"]
+        == 1000
+    )
+
+
+def test_summarize_without_complete_set_has_no_headline(bench, capsys):
+    records = [
+        _rec("xml", "shell_task", 110),
+        _rec("xml_noex", "shell_task", 105),
+        _rec("native", "shell_task", None),
+    ]
+
+    summary = bench.summarize(records)
+
+    assert summary["paired_sets"]["prompt_tokens"] == 0
+    assert summary["dropped_sets"]["prompt_tokens"] == 1
+    for arm in bench.ARMS:
+        assert summary["per_arm"][arm]["paired_mean_prompt_tokens"] is None
+    assert summary["prompt_signed_pct"] is None
+    bench.print_report(summary)
+    out = capsys.readouterr().out
+    assert "xml vs native: cannot be computed" in out
+    assert "paired over 0 complete (task, repeat) sets; 1 dropped" in out
+
+
+def test_write_json_is_atomic(bench, monkeypatch, tmp_path):
+    target = tmp_path / "results.json"
+    old = {"records": [1, 2, 3]}
+    bench._write_json(target, old)
+    old_text = target.read_text()
+
+    def fail_replace(src, dst):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(bench.os, "replace", fail_replace)
+    with pytest.raises(OSError):
+        bench._write_json(target, {"records": [1, 2, 3, 4]})
+
+    assert target.read_text() == old_text
+    assert json.loads(target.read_text()) == old
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["results.json"]
