@@ -33,7 +33,7 @@ See: .planning/PROJECT.md (updated 2026-09-07)
 Phase: Milestone v1.1 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-09-24 - Completed quick task 260924-ofn: Rework tool-overhead benchmark for OpenRouter (live run pending)
+Last activity: 2026-09-28 - Completed quick task 260928-403: Fix code-review findings (parser envelope, prose-as-final gating, final-only reasoning fallback, empty-reply history, paired benchmark means, atomic write)
 
 ## Performance Metrics
 
@@ -138,6 +138,7 @@ Items acknowledged and carried forward from previous milestone close:
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
 | *(none)* | | | |
+| 260928-403 | Fix code-review findings: parser envelope regression, narrow prose-as-final, final-only reasoning fallback, empty-reply history, paired benchmark means, atomic results write | 2026-09-28 | 39e6ddb | [260928-403-fix-code-review-findings-parser-envelope](./quick/260928-403-fix-code-review-findings-parser-envelope/) |
 
 ## Session Continuity
 
