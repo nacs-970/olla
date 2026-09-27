@@ -130,6 +130,7 @@ None. All milestone v1.0 blockers and gap-closures resolved.
 | 260924-nbw | Cut wasted round-trips: tag-free prose as final, retry empty stream once, debug to stderr, canonical tool-call history | 2026-09-24 | 8ec2ccd | [260924-nbw-cut-wasted-round-trips-tag-free-prose-as](./quick/260924-nbw-cut-wasted-round-trips-tag-free-prose-as/) |
 | 260924-ofn | Rework tool-overhead benchmark to run on OpenRouter with review fixes (xml vs native, same 9 tools and policy, usage.prompt_tokens) | 2026-09-24 | bbb6116 | [260924-ofn-rework-tool-overhead-benchmark-to-run-on](./quick/260924-ofn-rework-tool-overhead-benchmark-to-run-on/) |
 | 7 | Benchmark: add xml_noex arm (prompt without examples), balanced n-arm schedule, stop on OpenRouter daily free limit | 2026-09-27 | 3ef1e8b | — |
+| 260928-403 | Fix code-review findings: parser envelope regression, narrow prose-as-final, final-only reasoning fallback, empty-reply history, paired benchmark means, atomic results write | 2026-09-28 | 39e6ddb | [260928-403-fix-code-review-findings-parser-envelope](./quick/260928-403-fix-code-review-findings-parser-envelope/) |
 
 ## Deferred Items
 
@@ -138,7 +139,6 @@ Items acknowledged and carried forward from previous milestone close:
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
 | *(none)* | | | |
-| 260928-403 | Fix code-review findings: parser envelope regression, narrow prose-as-final, final-only reasoning fallback, empty-reply history, paired benchmark means, atomic results write | 2026-09-28 | 39e6ddb | [260928-403-fix-code-review-findings-parser-envelope](./quick/260928-403-fix-code-review-findings-parser-envelope/) |
 
 ## Session Continuity
 
