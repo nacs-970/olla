@@ -3,10 +3,10 @@ gsd_state_version: "1.0"
 milestone: v1.1
 status: Awaiting next milestone
 stopped_at: Phase 7 complete — v1.1 milestone shipped
-last_updated: "2026-09-24T09:40:13.728Z"
+last_updated: "2026-09-27T19:39:50.535Z"
 last_activity: 2026-09-24
 last_activity_desc: Milestone v1.1 completed and archived
-state_head: 42a57eae4f1bb2973080d208c282450163f71e76
+state_head: 3ef1e8b20a79b9434f275029af3c3206f5a87702
 progress:
   total_phases: 6
   completed_phases: 3
@@ -117,7 +117,7 @@ None yet.
 None. All milestone v1.0 blockers and gap-closures resolved.
 
 - [Hardware]: `gemma4:e2b` (7.2GB) does not fit in this host's 7.1GB RAM (OOM-killed). Affects which local models are realistically usable for local dev/testing on this machine.
-- [2026-09-24]: The user deliberately removed Ollama from this dev machine, and olla runs against OpenRouter here. This is not a defect. Tool-overhead benchmark result (quick task 260924-ofn): on liquid/lfm-2.5-2.6b, XML uses +13.24% MORE prompt tokens per turn than native JSON function calling, which contradicts the public "cuts per-turn overhead" claim. The qwen3.8-27b run was blocked by the OpenRouter free-tier limit of 50 requests/day; re-run it for a second tokenizer.
+- [2026-09-24]: The user deliberately removed Ollama from this dev machine, and olla runs against OpenRouter here. This is not a defect. Tool-overhead benchmark (quick task 260924-ofn, follow-up 3ef1e8b), prompt tokens/turn vs native JSON function calling: full XML prompt +13.24% on lfm-2.5-2.6b and -13.41% on nemotron-3-nano (it depends on the model's tool template); XML without few-shot examples -13.34% and -34.07%. The examples cost about 261 tokens/turn. Next: check small-model format compliance without the examples (`olla --smoke-test`) before trimming SYSTEM_PROMPT.
 
 ### Quick Tasks Completed
 
@@ -129,6 +129,7 @@ None. All milestone v1.0 blockers and gap-closures resolved.
 | 4 | Add per-chunk SSE delta debug logging to openai_compat provider (diagnose answer text arriving as reasoning) | 2026-09-24 | 80ac33b | — |
 | 260924-nbw | Cut wasted round-trips: tag-free prose as final, retry empty stream once, debug to stderr, canonical tool-call history | 2026-09-24 | 8ec2ccd | [260924-nbw-cut-wasted-round-trips-tag-free-prose-as](./quick/260924-nbw-cut-wasted-round-trips-tag-free-prose-as/) |
 | 260924-ofn | Rework tool-overhead benchmark to run on OpenRouter with review fixes (xml vs native, same 9 tools and policy, usage.prompt_tokens) | 2026-09-24 | bbb6116 | [260924-ofn-rework-tool-overhead-benchmark-to-run-on](./quick/260924-ofn-rework-tool-overhead-benchmark-to-run-on/) |
+| 7 | Benchmark: add xml_noex arm (prompt without examples), balanced n-arm schedule, stop on OpenRouter daily free limit | 2026-09-27 | 3ef1e8b | — |
 
 ## Deferred Items
 

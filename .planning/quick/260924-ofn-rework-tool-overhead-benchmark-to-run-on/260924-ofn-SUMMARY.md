@@ -123,3 +123,24 @@ The completion difference (-58.69%) is not the headline: the XML arm stops at `<
 ### Verdict
 
 On the one model with a valid result, this **contradicts** the claim that olla's XML tags "cut per-turn prompt overhead" compared with JSON function calling: the XML arm uses 13% more prompt tokens. The measurement covers one model and one tokenizer/chat template, so another model family is needed before generalizing.
+
+## Follow-up: XML Prompt Without Examples (orchestrator run)
+
+Commit `3ef1e8b` adds the `xml_noex` arm: `SYSTEM_PROMPT` truncated before its first `Example:` line, with the same stop sequence. The runs used `--repeats 1`; the prompt counts were identical across repeats in the first lfm run.
+
+Mean prompt tokens per turn:
+
+| Model (upstream) | xml | xml_noex | native | xml vs native | xml_noex vs native |
+|---|---:|---:|---:|---:|---:|
+| liquid/lfm-2.5-2.6b (Liquid), 12/12 calls OK | 1111.75 | 850.75 | 981.75 | **+13.24%** | **-13.34%** |
+| nvidia/nemotron-3-nano-omni-30b-a3b-reasoning (Nvidia), 10/12 OK | 1100.00 | 837.50 | 1270.33 | **-13.41%** | **-34.07%** |
+
+- On Nemotron, 2 calls got HTTP 200 with an upstream `ResourceExhausted` error body (xml/file_read and native/file_write). On the tasks that succeeded for both arms the picture is the same. shell_task: xml 1094, noex 832, native 1264. multi_step_task: xml 1109, noex 847, native 1279.
+- google/gemma-4-26b-a4b-it:free: all 12 calls returned upstream 429 "temporarily rate-limited upstream", so there is no data. Upstream 429s did **not** count toward the account's daily free-model cap (the counter showed 12 used after this run, all from lfm).
+
+### Findings
+
+1. The few-shot examples cost about **261 prompt tokens per turn** on both tokenizers (1112 to 851, 1100 to 838), roughly 23-24% of the XML prompt.
+2. The full XML prompt's standing against JSON function calling **depends on the model's tool template**. It is 13% more expensive on lfm and 13% cheaper on Nemotron, whose chat template renders the tool schemas more verbosely.
+3. **Without the examples, XML is cheaper than native on both models** (-13% and -34%).
+4. The examples exist to keep small models compliant with the tag format. Removing them is only safe if format compliance holds. Check that with `olla --smoke-test` on target small models before changing `SYSTEM_PROMPT`.

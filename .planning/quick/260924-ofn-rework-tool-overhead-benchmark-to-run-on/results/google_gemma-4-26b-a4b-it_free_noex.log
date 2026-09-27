@@ -1,0 +1,69 @@
+Model: openrouter/google/gemma-4-26b-a4b-it:free  repeats=1  arms=['xml', 'xml_noex', 'native']  output=.planning/quick/260924-ofn-rework-tool-overhead-benchmark-to-run-on/results/google_gemma-4-26b-a4b-it_free_noex.json
+  arm=xml    task=shell_task       rep=1 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"google/gemma-4-26b-a4b-it:free is 
+  arm=xml_noex task=shell_task       rep=1 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"google/gemma-4-26b-a4b-it:free is 
+  arm=native task=shell_task       rep=1 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"google/gemma-4-26b-a4b-it:free is 
+  arm=xml_noex task=file_read_task   rep=1 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"google/gemma-4-26b-a4b-it:free is 
+  arm=native task=file_read_task   rep=1 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"google/gemma-4-26b-a4b-it:free is 
+  arm=xml    task=file_read_task   rep=1 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"google/gemma-4-26b-a4b-it:free is 
+  arm=native task=file_write_task  rep=1 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"google/gemma-4-26b-a4b-it:free is 
+  arm=xml    task=file_write_task  rep=1 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"google/gemma-4-26b-a4b-it:free is 
+  arm=xml_noex task=file_write_task  rep=1 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"google/gemma-4-26b-a4b-it:free is 
+  arm=native task=multi_step_task  rep=1 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"google/gemma-4-26b-a4b-it:free is 
+  arm=xml_noex task=multi_step_task  rep=1 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"google/gemma-4-26b-a4b-it:free is 
+  arm=xml    task=multi_step_task  rep=1 prompt=None completion=None cached=None provider=None status=429 error=HTTP 429: {"error":{"message":"Provider returned error","code":429,"metadata":{"raw":"google/gemma-4-26b-a4b-it:free is 
+
+Per-(arm, task) means:
+  arm      task                prompt  completion  valid
+  xml      shell_task             n/a         n/a   0/1
+  xml      file_read_task         n/a         n/a   0/1
+  xml      file_write_task        n/a         n/a   0/1
+  xml      multi_step_task        n/a         n/a   0/1
+  xml_noex shell_task             n/a         n/a   0/1
+  xml_noex file_read_task         n/a         n/a   0/1
+  xml_noex file_write_task        n/a         n/a   0/1
+  xml_noex multi_step_task        n/a         n/a   0/1
+  native   shell_task             n/a         n/a   0/1
+  native   file_read_task         n/a         n/a   0/1
+  native   file_write_task        n/a         n/a   0/1
+  native   multi_step_task        n/a         n/a   0/1
+
+HEADLINE: mean prompt_tokens per turn
+  xml      n/a
+  xml_noex n/a
+  native   n/a
+  xml vs native: cannot be computed (a mean is missing or native is 0)
+  xml_noex vs native: cannot be computed (a mean is missing or native is 0)
+
+Completion tokens (reported separately, NOT part of the headline):
+  xml      mean n/a
+  xml_noex mean n/a
+  native   mean n/a
+  xml vs native: n/a
+  xml_noex vs native: n/a
+  Caveat: the xml arms send stop at the closing args tag. If the model does not honor stop, xml completion tokens include the text after it. Prompt tokens (the headline) are unaffected.
+
+Cached and reasoning tokens (totals over valid values):
+  xml      cached=None reasoning=None
+  xml_noex cached=None reasoning=None
+  native   cached=None reasoning=None
+
+Missing counts (excluded from every mean and total, never counted as 0):
+  xml      prompt_tokens      excluded=4
+  xml      completion_tokens  excluded=4
+  xml      cached_tokens      excluded=4
+  xml      reasoning_tokens   excluded=4
+  xml      errored calls: 4/4
+  xml_noex prompt_tokens      excluded=4
+  xml_noex completion_tokens  excluded=4
+  xml_noex cached_tokens      excluded=4
+  xml_noex reasoning_tokens   excluded=4
+  xml_noex errored calls: 4/4
+  native   prompt_tokens      excluded=4
+  native   completion_tokens  excluded=4
+  native   cached_tokens      excluded=4
+  native   reasoning_tokens   excluded=4
+  native   errored calls: 4/4
+
+Note: the system prompt and tool definitions are re-sent on every turn, so the prompt delta is a per-turn overhead.
+
+Results written to .planning/quick/260924-ofn-rework-tool-overhead-benchmark-to-run-on/results/google_gemma-4-26b-a4b-it_free_noex.json

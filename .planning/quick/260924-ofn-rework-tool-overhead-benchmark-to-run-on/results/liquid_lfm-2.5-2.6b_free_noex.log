@@ -1,0 +1,69 @@
+Model: openrouter/liquid/lfm-2.5-2.6b:free  repeats=1  arms=['xml', 'xml_noex', 'native']  output=.planning/quick/260924-ofn-rework-tool-overhead-benchmark-to-run-on/results/liquid_lfm-2.5-2.6b_free_noex.json
+  arm=xml    task=shell_task       rep=1 prompt=1106 completion=50 cached=0 provider=Liquid status=200
+  arm=xml_noex task=shell_task       rep=1 prompt=845 completion=61 cached=0 provider=Liquid status=200
+  arm=native task=shell_task       rep=1 prompt=976 completion=357 cached=0 provider=Liquid status=200
+  arm=xml_noex task=file_read_task   rep=1 prompt=850 completion=46 cached=816 provider=Liquid status=200
+  arm=native task=file_read_task   rep=1 prompt=981 completion=40 cached=112 provider=Liquid status=200
+  arm=xml    task=file_read_task   rep=1 prompt=1111 completion=45 cached=816 provider=Liquid status=200
+  arm=native task=file_write_task  rep=1 prompt=979 completion=59 cached=944 provider=Liquid status=200
+  arm=xml    task=file_write_task  rep=1 prompt=1109 completion=54 cached=1088 provider=Liquid status=200
+  arm=xml_noex task=file_write_task  rep=1 prompt=848 completion=60 cached=816 provider=Liquid status=200
+  arm=native task=multi_step_task  rep=1 prompt=991 completion=59 cached=944 provider=Liquid status=200
+  arm=xml_noex task=multi_step_task  rep=1 prompt=860 completion=66 cached=816 provider=Liquid status=200
+  arm=xml    task=multi_step_task  rep=1 prompt=1121 completion=61 cached=1088 provider=Liquid status=200
+
+Per-(arm, task) means:
+  arm      task                prompt  completion  valid
+  xml      shell_task          1106.0        50.0   1/1
+  xml      file_read_task      1111.0        45.0   1/1
+  xml      file_write_task     1109.0        54.0   1/1
+  xml      multi_step_task     1121.0        61.0   1/1
+  xml_noex shell_task           845.0        61.0   1/1
+  xml_noex file_read_task       850.0        46.0   1/1
+  xml_noex file_write_task      848.0        60.0   1/1
+  xml_noex multi_step_task      860.0        66.0   1/1
+  native   shell_task           976.0       357.0   1/1
+  native   file_read_task       981.0        40.0   1/1
+  native   file_write_task      979.0        59.0   1/1
+  native   multi_step_task      991.0        59.0   1/1
+
+HEADLINE: mean prompt_tokens per turn
+  xml      1111.75
+  xml_noex 850.75
+  native   981.75
+  xml vs native: +13.24%  ((xml - native) / native * 100)
+  xml_noex vs native: -13.34%  ((xml_noex - native) / native * 100)
+
+Completion tokens (reported separately, NOT part of the headline):
+  xml      mean 52.50
+  xml_noex mean 58.25
+  native   mean 128.75
+  xml vs native: -59.22%
+  xml_noex vs native: -54.76%
+  Caveat: the xml arms send stop at the closing args tag. If the model does not honor stop, xml completion tokens include the text after it. Prompt tokens (the headline) are unaffected.
+
+Cached and reasoning tokens (totals over valid values):
+  xml      cached=2992 reasoning=147
+  xml_noex cached=2448 reasoning=170
+  native   cached=2000 reasoning=459
+
+Missing counts (excluded from every mean and total, never counted as 0):
+  xml      prompt_tokens      excluded=0
+  xml      completion_tokens  excluded=0
+  xml      cached_tokens      excluded=0
+  xml      reasoning_tokens   excluded=0
+  xml      errored calls: 0/4
+  xml_noex prompt_tokens      excluded=0
+  xml_noex completion_tokens  excluded=0
+  xml_noex cached_tokens      excluded=0
+  xml_noex reasoning_tokens   excluded=0
+  xml_noex errored calls: 0/4
+  native   prompt_tokens      excluded=0
+  native   completion_tokens  excluded=0
+  native   cached_tokens      excluded=0
+  native   reasoning_tokens   excluded=0
+  native   errored calls: 0/4
+
+Note: the system prompt and tool definitions are re-sent on every turn, so the prompt delta is a per-turn overhead.
+
+Results written to .planning/quick/260924-ofn-rework-tool-overhead-benchmark-to-run-on/results/liquid_lfm-2.5-2.6b_free_noex.json

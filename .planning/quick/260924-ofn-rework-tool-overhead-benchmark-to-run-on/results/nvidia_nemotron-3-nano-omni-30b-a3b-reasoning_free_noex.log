@@ -1,0 +1,72 @@
+Model: openrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free  repeats=1  arms=['xml', 'xml_noex', 'native']  output=.planning/quick/260924-ofn-rework-tool-overhead-benchmark-to-run-on/results/nvidia_nemotron-3-nano-omni-30b-a3b-reasoning_free_noex.json
+  arm=xml    task=shell_task       rep=1 prompt=1094 completion=88 cached=0 provider=Nvidia status=200
+  arm=xml_noex task=shell_task       rep=1 prompt=832 completion=346 cached=0 provider=Nvidia status=200
+  arm=native task=shell_task       rep=1 prompt=1264 completion=127 cached=0 provider=Nvidia status=200
+  arm=xml_noex task=file_read_task   rep=1 prompt=836 completion=36 cached=0 provider=Nvidia status=200
+  arm=native task=file_read_task   rep=1 prompt=1268 completion=241 cached=0 provider=Nvidia status=200
+  arm=xml    task=file_read_task   rep=1 prompt=None completion=None cached=None provider=None status=200 error={"message": "Upstream error from Nvidia: ResourceExhausted: Worker local total request limit reached (16/16)", "code": 5
+  arm=native task=file_write_task  rep=1 prompt=None completion=None cached=None provider=None status=200 error={"message": "Upstream error from Nvidia: ResourceExhausted: Worker local total request limit reached (16/16)", "code": 5
+  arm=xml    task=file_write_task  rep=1 prompt=1097 completion=91 cached=0 provider=Nvidia status=200
+  arm=xml_noex task=file_write_task  rep=1 prompt=835 completion=195 cached=0 provider=Nvidia status=200
+  arm=native task=multi_step_task  rep=1 prompt=1279 completion=376 cached=0 provider=Nvidia status=200
+  arm=xml_noex task=multi_step_task  rep=1 prompt=847 completion=120 cached=0 provider=Nvidia status=200
+  arm=xml    task=multi_step_task  rep=1 prompt=1109 completion=202 cached=0 provider=Nvidia status=200
+
+Per-(arm, task) means:
+  arm      task                prompt  completion  valid
+  xml      shell_task          1094.0        88.0   1/1
+  xml      file_read_task         n/a         n/a   0/1
+  xml      file_write_task     1097.0        91.0   1/1
+  xml      multi_step_task     1109.0       202.0   1/1
+  xml_noex shell_task           832.0       346.0   1/1
+  xml_noex file_read_task       836.0        36.0   1/1
+  xml_noex file_write_task      835.0       195.0   1/1
+  xml_noex multi_step_task      847.0       120.0   1/1
+  native   shell_task          1264.0       127.0   1/1
+  native   file_read_task      1268.0       241.0   1/1
+  native   file_write_task        n/a         n/a   0/1
+  native   multi_step_task     1279.0       376.0   1/1
+
+HEADLINE: mean prompt_tokens per turn
+  xml      1100.00
+  xml_noex 837.50
+  native   1270.33
+  xml vs native: -13.41%  ((xml - native) / native * 100)
+  xml_noex vs native: -34.07%  ((xml_noex - native) / native * 100)
+
+Completion tokens (reported separately, NOT part of the headline):
+  xml      mean 127.00
+  xml_noex mean 174.25
+  native   mean 248.00
+  xml vs native: -48.79%
+  xml_noex vs native: -29.74%
+  Caveat: the xml arms send stop at the closing args tag. If the model does not honor stop, xml completion tokens include the text after it. Prompt tokens (the headline) are unaffected.
+
+Cached and reasoning tokens (totals over valid values):
+  xml      cached=0 reasoning=318
+  xml_noex cached=0 reasoning=672
+  native   cached=0 reasoning=758
+
+Missing counts (excluded from every mean and total, never counted as 0):
+  xml      prompt_tokens      excluded=1
+  xml      completion_tokens  excluded=1
+  xml      cached_tokens      excluded=1
+  xml      reasoning_tokens   excluded=1
+  xml      errored calls: 1/4
+  xml_noex prompt_tokens      excluded=0
+  xml_noex completion_tokens  excluded=0
+  xml_noex cached_tokens      excluded=0
+  xml_noex reasoning_tokens   excluded=0
+  xml_noex errored calls: 0/4
+  native   prompt_tokens      excluded=1
+  native   completion_tokens  excluded=1
+  native   cached_tokens      excluded=1
+  native   reasoning_tokens   excluded=1
+  native   errored calls: 1/4
+WARNING: task file_read_task has 0 valid xml calls but 1 valid native calls; the per-arm means cover different task mixes.
+WARNING: task file_write_task has 1 valid xml calls but 0 valid native calls; the per-arm means cover different task mixes.
+WARNING: task file_write_task has 1 valid xml_noex calls but 0 valid native calls; the per-arm means cover different task mixes.
+
+Note: the system prompt and tool definitions are re-sent on every turn, so the prompt delta is a per-turn overhead.
+
+Results written to .planning/quick/260924-ofn-rework-tool-overhead-benchmark-to-run-on/results/nvidia_nemotron-3-nano-omni-30b-a3b-reasoning_free_noex.json
