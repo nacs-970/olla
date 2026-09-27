@@ -3382,8 +3382,9 @@ def test_run_loop_write_file_history_round_trips_args_raw(tmp_path, mocker, caps
 )
 def test_prepare_action_tag_free_prose_is_final(content, expected_text):
     """Regression (260924-nbw): plain prose with no protocol tags is a direct
-    answer, not a format error that costs a nudge round-trip."""
-    action = _prepare_action(content)
+    answer, not a format error that costs a nudge round-trip, once a tool step
+    has run in this run_loop call (quick 260928-403)."""
+    action = _prepare_action(content, allow_prose_final=True)
     assert action.kind == "final"
     assert action.text == expected_text
 
@@ -3402,12 +3403,30 @@ def test_prepare_action_tagged_or_empty_prose_stays_none(content):
     """Any protocol tag (any case), a partial tag, or empty content keeps the
     `none` path so malformed tool attempts still get the harness nudge."""
     assert _prepare_action(content).kind == "none"
+    assert _prepare_action(content, allow_prose_final=True).kind == "none"
 
 
-def test_run_loop_tag_free_prose_ends_turn_in_one_call(mocker, capsys):
+def test_run_loop_tag_free_prose_ends_turn_in_one_call(tmp_path, mocker, capsys):
+    """Calculator scenario: after a refused write and a read_file step, tag-free
+    prose ends the run on that call without a nudge (260924-nbw, narrowed by
+    quick 260928-403 to apply only after a tool step)."""
+    target = tmp_path / "calculator.py"
+    target.write_text("def add(a, b):\n    return a + b\n")
     prose = "The file calculator.py already exists and is complete."
-    mock_chat = mocker.patch("olla.loop.ollama.chat")
-    mock_chat.return_value = {"message": {"content": prose}}
+    mock_model = mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            f"<tool>write_file</tool><args>{target}\nprint('new')\n</args>",
+            "<tool>read_file</tool><args>calculator.py</args>",
+            prose,
+        ],
+    )
+    mock_read_file = mocker.patch("olla.loop.read_file")
+    mock_read_file.return_value = {
+        "path": "calculator.py",
+        "content": "def add(a, b):\n    return a + b\n",
+    }
+    mock_write_file = mocker.patch("olla.loop.write_file")
     session = SessionState(messages=[], scratchpad=Scratchpad(), read_snapshots={})
 
     run_loop(
@@ -3419,8 +3438,11 @@ def test_run_loop_tag_free_prose_ends_turn_in_one_call(mocker, capsys):
     )
 
     captured = capsys.readouterr().out
+    assert "must be shown completely" in captured
+    mock_write_file.assert_not_called()
+    mock_read_file.assert_called_once()
     assert captured.count(f"* {prose}") == 1
-    assert mock_chat.call_count == 1
+    assert mock_model.call_count == 3
     assert not any(
         m["content"].startswith("[olla harness:") for m in session.messages
     )
@@ -3475,7 +3497,8 @@ def test_run_loop_double_empty_stream_records_no_blank_assistant(mocker, capsys)
         for m in session.messages
     )
     nudges = [m for m in session.messages if m["content"].startswith("[olla harness:")]
-    assert len(nudges) == 1
+    assert len(nudges) == 0
+    _assert_no_adjacent_user_messages(session.messages)
     assert mock_provider.stream_chat.call_count == 3
     assert "* ok" in capsys.readouterr().out
 
@@ -3486,4 +3509,255 @@ def test_unclosed_think_is_not_accepted_as_prose_final():
 
     assert _prepare_action("<think>still reasoning about the task...").kind == "none"
     assert _prepare_action("partial answer</think>").kind == "none"
-    assert _prepare_action("<think>done</think>The answer is 4.").kind == "final"
+    assert (
+        _prepare_action("<think>done</think>The answer is 4.", allow_prose_final=True).kind
+        == "final"
+    )
+
+
+# --- quick 260928-403: narrowed prose-as-final, final-only reasoning fallback,
+# --- empty-reply skip ---------------------------------------------------------
+
+_NUDGE_PREFIX = "[olla harness:"
+_FENCED_BASH = "```bash\nls\n```"
+_TILDE_FENCED = "~~~\nls\n~~~"
+
+
+def _assert_no_adjacent_user_messages(messages):
+    for first, second in zip(messages, messages[1:]):
+        assert not (first["role"] == "user" and second["role"] == "user"), messages
+
+
+def _nudges(messages):
+    return [m for m in messages if m["content"].startswith(_NUDGE_PREFIX)]
+
+
+def test_prepare_action_prose_is_none_by_default():
+    assert _prepare_action("Let me check the files first.").kind == "none"
+
+
+@pytest.mark.parametrize(
+    "content",
+    ["Let me check the files first.", "use a < b to compare", "x<3 holds"],
+)
+def test_prepare_action_prose_is_final_when_allowed(content):
+    action = _prepare_action(content, allow_prose_final=True)
+    assert action.kind == "final"
+    assert action.text == content
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '<tool_call>{"name":"shell","arguments":{"command":"ls"}}</tool_call>',
+        "<function=shell>ls</function>",
+        _FENCED_BASH,
+        _TILDE_FENCED,
+        '{"a":1}',
+        "[1, 2]",
+        "  \n\t ",
+    ],
+)
+def test_prepare_action_non_protocol_syntax_is_never_prose_final(content):
+    assert _prepare_action(content, allow_prose_final=True).kind == "none"
+
+
+def test_run_loop_step_one_narration_is_nudged(mocker, capsys):
+    mock_model = mocker.patch(
+        "olla.loop.call_model",
+        side_effect=["Let me check the files first.", "<final>ok</final>"],
+    )
+    session = SessionState(messages=[], scratchpad=Scratchpad(), read_snapshots={})
+
+    run_loop(
+        task="look around",
+        model="test-model",
+        max_steps=5,
+        system_prompt="sys",
+        session=session,
+    )
+
+    captured = capsys.readouterr().out
+    assert len(_nudges(session.messages)) == 1
+    assert captured.count("* ok") == 1
+    assert "* Let me check" not in captured
+    assert mock_model.call_count == 2
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        '<tool_call>{"name":"shell","arguments":{"command":"ls"}}</tool_call>',
+        "<function=shell>ls</function>",
+        _FENCED_BASH,
+        '{"a":1}',
+    ],
+)
+def test_run_loop_non_protocol_reply_after_tool_step_is_nudged(reply, mocker, capsys):
+    mock_model = mocker.patch(
+        "olla.loop.call_model",
+        side_effect=[
+            "<tool>read_file</tool><args>notes.md</args>",
+            reply,
+            "<final>ok</final>",
+        ],
+    )
+    mocker.patch(
+        "olla.loop.read_file", return_value={"path": "notes.md", "content": "hi\n"}
+    )
+    mock_shell = mocker.patch("olla.loop.run_shell")
+    session = SessionState(messages=[], scratchpad=Scratchpad(), read_snapshots={})
+
+    run_loop(
+        task="read notes",
+        model="test-model",
+        max_steps=5,
+        system_prompt="sys",
+        session=session,
+    )
+
+    captured = capsys.readouterr().out
+    assert len(_nudges(session.messages)) == 1
+    assert captured.count("* ok") == 1
+    assert mock_model.call_count == 3
+    mock_shell.assert_not_called()
+
+
+def test_run_loop_step_one_prose_with_tool_only_in_reasoning_is_nudged(
+    mocker, capsys
+):
+    """Fix 4: 'Sure.' content with a tool call only in reasoning gets a nudge and
+    nothing is executed. Only get_provider is patched so streaming runs."""
+    from olla.providers import StreamChunk
+
+    mock_provider = mocker.MagicMock()
+    mock_provider.get_context_length.return_value = 8192
+    mock_provider.stream_chat.side_effect = [
+        [
+            StreamChunk(text="<tool>shell</tool><args>ls</args>", is_thought=True),
+            StreamChunk(text="Sure.", is_thought=False),
+        ],
+        [StreamChunk(text="<final>ok</final>", is_thought=False)],
+    ]
+    mocker.patch("olla.loop.get_provider", return_value=(mock_provider, "test-model"))
+    mock_shell = mocker.patch("olla.loop.run_shell")
+    session = SessionState(messages=[], scratchpad=Scratchpad(), read_snapshots={})
+
+    run_loop(
+        task="list files",
+        model="test-model",
+        max_steps=5,
+        system_prompt="sys",
+        session=session,
+    )
+
+    mock_shell.assert_not_called()
+    assert len(_nudges(session.messages)) == 1
+    assert capsys.readouterr().out.count("* ok") == 1
+
+
+_RISKY_REASONING = (
+    "I could run <tool>shell</tool><args>rm -rf build</args> but that seems risky"
+)
+
+
+@pytest.mark.parametrize("content_chunks", [[], ["  ", "\n"]])
+def test_stream_model_turn_tool_in_reasoning_is_not_returned(
+    mocker, capsys, content_chunks
+):
+    """Fix 3: a tool call the model only considered in reasoning is never
+    returned as the reply; only a final in reasoning may be."""
+    from olla.loop import _stream_model_turn
+    from olla.providers import StreamChunk
+
+    mock_provider = mocker.MagicMock()
+    mock_provider.get_context_length.return_value = 8192
+    mock_provider.stream_chat.return_value = [
+        StreamChunk(text=_RISKY_REASONING, is_thought=True),
+        *(StreamChunk(text=text, is_thought=False) for text in content_chunks),
+    ]
+
+    result = _stream_model_turn(mock_provider, [{"role": "user", "content": "hi"}], model="test")
+
+    assert result == "".join(content_chunks)
+    assert "rm -rf" not in result
+
+
+def test_run_loop_tool_in_reasoning_with_empty_content_never_executes(
+    mocker, capsys
+):
+    """Fix 3 on the real streaming path. Reasoning is non-empty, so the
+    empty-stream retry does not fire: one stream call per step. The empty reply
+    then takes the fix-5 path, so no nudge and no blank assistant turn."""
+    from olla.providers import StreamChunk
+
+    mock_provider = mocker.MagicMock()
+    mock_provider.get_context_length.return_value = 8192
+    mock_provider.stream_chat.side_effect = [
+        [StreamChunk(text=_RISKY_REASONING, is_thought=True)],
+        [StreamChunk(text="<final>ok</final>", is_thought=False)],
+    ]
+    mocker.patch("olla.loop.get_provider", return_value=(mock_provider, "test-model"))
+    mock_shell = mocker.patch("olla.loop.run_shell")
+    session = SessionState(messages=[], scratchpad=Scratchpad(), read_snapshots={})
+
+    run_loop(
+        task="clean build",
+        model="test-model",
+        max_steps=5,
+        system_prompt="sys",
+        session=session,
+    )
+
+    mock_shell.assert_not_called()
+    assert _nudges(session.messages) == []
+    assert not any(
+        m["role"] == "assistant" and not m["content"].strip()
+        for m in session.messages
+    )
+    _assert_no_adjacent_user_messages(session.messages)
+    assert capsys.readouterr().out.count("* ok") == 1
+    assert mock_provider.stream_chat.call_count == 2
+
+
+def test_run_loop_empty_replies_add_no_history(mocker, capsys):
+    mock_model = mocker.patch(
+        "olla.loop.call_model", side_effect=["", "", "<final>ok</final>"]
+    )
+    session = SessionState(messages=[], scratchpad=Scratchpad(), read_snapshots={})
+
+    run_loop(
+        task="hi",
+        model="test-model",
+        max_steps=5,
+        system_prompt="sys",
+        session=session,
+    )
+
+    assert capsys.readouterr().out.count("* ok") == 1
+    assert mock_model.call_count == 3
+    assert _nudges(session.messages) == []
+    _assert_no_adjacent_user_messages(session.messages)
+
+
+def test_run_loop_three_empty_replies_hit_repetition_stop(mocker, capsys):
+    mock_model = mocker.patch(
+        "olla.loop.call_model", side_effect=["", "", "", "<final>never</final>"]
+    )
+    session = SessionState(messages=[], scratchpad=Scratchpad(), read_snapshots={})
+
+    run_loop(
+        task="hi",
+        model="test-model",
+        max_steps=10,
+        system_prompt="sys",
+        session=session,
+    )
+
+    captured = capsys.readouterr().out
+    assert (
+        "olla stopped: same response call repeated 3x — model likely stuck" in captured
+    )
+    assert "never" not in captured
+    assert mock_model.call_count == 3
+    _assert_no_adjacent_user_messages(session.messages)

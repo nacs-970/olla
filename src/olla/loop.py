@@ -242,6 +242,10 @@ _PROTOCOL_TAG_RES = (
     FINAL_CLOSE_RE,
     re.compile(r"</?think>", re.IGNORECASE),
 )
+# Non-protocol tool syntax (<tool_call>, <function=shell>) but not "a < b" or "x<3".
+_TAG_LIKE_RE = re.compile(r"</?[A-Za-z_][\w:-]*(?:[\s=>/]|$)")
+# A line opening a backtick or tilde code fence.
+_CODE_FENCE_RE = re.compile(r"^[ \t]*(?:`{3}|~{3})", re.MULTILINE)
 
 
 def _strip_thinking(content: str) -> str:
@@ -254,7 +258,7 @@ def _is_mocked(obj: object) -> bool:
     return isinstance(obj, Mock) or hasattr(obj, "mock_calls")
 
 
-def _prepare_action(content: str) -> _Action:
+def _prepare_action(content: str, *, allow_prose_final: bool = False) -> _Action:
     """Parse once and normalize signatures before any handler can exit early."""
     stripped = _strip_thinking(content)
     parsed = parse_response(stripped)
@@ -262,9 +266,20 @@ def _prepare_action(content: str) -> _Action:
         return _Action("final", "final", None, text=parsed["text"])
     if parsed["type"] == "none":
         # Tag-free prose is the model answering directly: accept it as final
-        # instead of spending a full-context round-trip on a format nudge.
+        # instead of spending a full-context round-trip on a format nudge, but
+        # only after a tool step has run in this run_loop call (step-1
+        # narration gets the nudge) and only when it carries no protocol tag,
+        # no tag-like token (<tool_call>, <function=...>), no code fence, and
+        # does not start with { or [ (a JSON tool attempt).
         prose = stripped.strip()
-        if prose and not any(regex.search(prose) for regex in _PROTOCOL_TAG_RES):
+        if (
+            allow_prose_final
+            and prose
+            and not any(regex.search(prose) for regex in _PROTOCOL_TAG_RES)
+            and _TAG_LIKE_RE.search(prose) is None
+            and _CODE_FENCE_RE.search(prose) is None
+            and not prose.startswith(("{", "["))
+        ):
             return _Action("final", "final", None, text=prose)
         return _Action("none", "response", ("none", content), text=content)
 
@@ -631,7 +646,7 @@ def _stream_model_turn(
         if (
             not content.strip()
             and thought_text.strip()
-            and parse_response(_strip_thinking(thought_text))["type"] != "none"
+            and parse_response(_strip_thinking(thought_text))["type"] == "final"
         ):
             debug_log("Empty content; using reasoning fallback", thought_text[:500])
             return thought_text
@@ -1150,13 +1165,16 @@ def run_loop(
         )
         if content is None:
             return
-        action = _prepare_action(content)
+        action = _prepare_action(content, allow_prose_final=False)
         debug_log("Dry run action parsed", {"kind": action.kind, "tool": action.tool})
         _preview_action(action, yes=yes)
         return
 
     previous_signature: tuple | None = None
     repeat_count = 0
+    # Scoped to this run_loop call: tag-free prose ends the run only after a
+    # tool action has been dispatched in this call.
+    tool_step_done = False
 
     step_iter = range(1, max_steps + 1) if max_steps > 0 else itertools.count(1)
     for step in step_iter:
@@ -1193,7 +1211,7 @@ def run_loop(
             debug_log(f"Step {step} - Model turn returned None")
             return
         debug_log(f"Step {step} - Raw model response", content)
-        action = _prepare_action(content)
+        action = _prepare_action(content, allow_prose_final=tool_step_done)
         debug_log(
             f"Step {step} - Action parsed",
             {
@@ -1215,7 +1233,8 @@ def run_loop(
         else:
             history_content = f"<tool>{action.tool}</tool><args>{action.args_raw}</args>"
         # An empty reply (even after the stream retry) is never recorded as an
-        # assistant turn; the format nudge below still follows it.
+        # assistant turn, and no nudge follows it either, so history never holds
+        # two adjacent user messages from this path; the next step is a plain retry.
         if not (action.kind == "none" and not content.strip()):
             session.messages.append({"role": "assistant", "content": history_content})
 
@@ -1233,6 +1252,8 @@ def run_loop(
         if stop is not None:
             _display(stop)
             return
+        if action.kind != "none":
+            tool_step_done = True
 
         if action.kind == "shell":
             session.untrusted_observation_seen = (
@@ -1296,7 +1317,7 @@ def run_loop(
             )
         elif action.kind == "unknown":
             _record_observation(session.messages, f"unknown tool '{action.tool}'")
-        else:
+        elif content.strip():
             session.messages.append(
                 {
                     "role": "user",
