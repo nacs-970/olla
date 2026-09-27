@@ -4,14 +4,17 @@ Goal
 ----
 olla claims its XML-tag tool protocol cuts per-turn prompt overhead. This
 script produces a defensible per-turn prompt-token number for that claim by
-sending the same first-turn requests to ONE OpenRouter model through two arms.
-Because both arms hit the same model, they share one tokenizer and one chat
-template, so their prompt-token counts are directly comparable.
+sending the same first-turn requests to ONE OpenRouter model through three
+arms. Because all arms hit the same model, they share one tokenizer and one
+chat template, so their prompt-token counts are directly comparable.
 
 Arms
 ----
 - ``xml``: olla's production ``SYSTEM_PROMPT`` (imported from ``olla.prompts``,
   never retyped) with the production stop sequence ``["</args>"]``.
+- ``xml_noex``: ``SYSTEM_PROMPT`` truncated before its first ``Example:`` line
+  (derived by ``derive_noex_prompt``), same stop. It isolates how much of the
+  xml-vs-native gap the few-shot examples account for.
 - ``native``: ``NATIVE_SYSTEM_PROMPT`` plus the same 9 tools as OpenAI-format
   JSON function schemas (``NATIVE_TOOLS``), sent with ``tools``.
 
@@ -32,11 +35,14 @@ full prompt count even when part of the prompt is served from cache;
 ``cached_tokens`` is recorded separately. Missing counts are stored as None,
 excluded from every mean, and the excluded count is reported. A failing call
 is recorded as an error and the run continues; the output JSON is rewritten
-after every call. Arm order is ABBA-balanced within each task.
+after every call. Arm order follows a balanced cycle (rotations, then
+reversed rotations; ABBA for two arms). A 429 for OpenRouter's daily free-model
+limit (``free-models-per-day``) is not retried and stops the run, because it
+cannot succeed before the daily reset.
 
 Caveats (also printed in the report)
 ------------------------------------
-- Only the xml arm sends the production stop sequence. If an upstream ignores
+- Only the xml arms send the production stop sequence. If an upstream ignores
   ``stop``, xml completion tokens include the text after the closing args tag.
   Prompt tokens, the headline, are unaffected.
 - ``provider.require_parameters`` is sent on the native arm only, to guarantee
@@ -177,6 +183,19 @@ def derive_native_prompt(xml_prompt: str) -> str:
 NATIVE_SYSTEM_PROMPT = derive_native_prompt(SYSTEM_PROMPT)
 
 
+def derive_noex_prompt(xml_prompt: str) -> str:
+    """Return ``xml_prompt`` truncated before its first "Example:" line."""
+    lines = xml_prompt.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip() == "Example:":
+            lines = lines[:index]
+            break
+    return "\n".join(lines).rstrip() + "\n"
+
+
+XML_NOEX_SYSTEM_PROMPT = derive_noex_prompt(SYSTEM_PROMPT)
+
+
 def _tool(name: str, description: str, properties: dict, required: list[str]) -> dict:
     return {
         "type": "function",
@@ -267,18 +286,20 @@ NATIVE_TOOLS: list[dict] = [
 # Arms and request bodies
 # ---------------------------------------------------------------------------
 
-ARMS = ("xml", "native")
+ARMS = ("xml", "xml_noex", "native")
+XML_ARMS = ("xml", "xml_noex")
 XML_STOP = ["</args>"]
 NATIVE_PROVIDER_PREFS = {"require_parameters": True}
 
 
 def build_body(arm: str, model_id: str, task_text: str) -> dict:
     """Build the /chat/completions body for one arm. No temperature, ever."""
-    if arm == "xml":
+    if arm in XML_ARMS:
+        system = SYSTEM_PROMPT if arm == "xml" else XML_NOEX_SYSTEM_PROMPT
         return {
             "model": model_id,
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system},
                 {"role": "user", "content": task_text},
             ],
             "stop": list(XML_STOP),
@@ -313,20 +334,35 @@ def build_headers(api_key: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def build_schedule(repeats: int) -> list[tuple[str, str, int, tuple[str, str]]]:
-    """Return (task_name, task_text, repeat, order) entries in ABBA order.
+def arm_cycle(arms: tuple[str, ...]) -> list[tuple[str, ...]]:
+    """Rotations of ``arms`` followed by rotations of the reversed arms.
 
-    Task-major: k = task_idx * repeats + repeat, and the order is xml-first
-    when k % 4 is 0 or 3. Do NOT use k = repeat * len(TASKS) + task_idx: with
-    4 tasks, k % 4 would equal task_idx and every task would get the same
-    first arm on every repeat.
+    Over one full cycle every arm holds every position equally often. For two
+    arms this is ABBA.
     """
+    forward = list(arms)
+    backward = forward[::-1]
+    n = len(forward)
+    rotations = [tuple(forward[i:] + forward[:i]) for i in range(n)]
+    reversed_rotations = [tuple(backward[i:] + backward[:i]) for i in range(n)]
+    return rotations + reversed_rotations
+
+
+def build_schedule(
+    repeats: int, arms: tuple[str, ...] = ARMS
+) -> list[tuple[str, str, int, tuple[str, ...]]]:
+    """Return (task_name, task_text, repeat, order) entries in balanced order.
+
+    Task-major: k = task_idx * repeats + repeat indexes ``arm_cycle(arms)``.
+    Do NOT use k = repeat * len(TASKS) + task_idx: with 4 tasks and a 4-long
+    cycle, every task would get the same first arm on every repeat.
+    """
+    cycle = arm_cycle(arms)
     schedule = []
     for task_idx, (task_name, task_text) in enumerate(TASKS):
         for repeat in range(repeats):
             k = task_idx * repeats + repeat
-            order = ("xml", "native") if k % 4 in (0, 3) else ("native", "xml")
-            schedule.append((task_name, task_text, repeat + 1, order))
+            schedule.append((task_name, task_text, repeat + 1, cycle[k % len(cycle)]))
     return schedule
 
 
@@ -364,6 +400,7 @@ def signed_pct(xml_mean: float | None, native_mean: float | None) -> float | Non
 RETRY_DELAYS = (2, 4, 8)
 REQUEST_TIMEOUT = 120.0
 ERROR_BODY_LIMIT = 300
+DAILY_LIMIT_MARKER = "free-models-per-day"
 
 
 def post_with_retry(client, url: str, headers: dict, body: dict, sleep=None):
@@ -387,6 +424,8 @@ def post_with_retry(client, url: str, headers: dict, body: dict, sleep=None):
                 if isinstance(data, dict) and "error" in data:
                     return status, data, json.dumps(data["error"])[:ERROR_BODY_LIMIT]
                 return status, data, None
+            if status == 429 and DAILY_LIMIT_MARKER in resp.text:
+                return status, None, f"HTTP {status}: {resp.text[:ERROR_BODY_LIMIT]}"
             retryable = status == 429 or 500 <= status < 600
             if retryable and attempt < len(RETRY_DELAYS):
                 sleep(RETRY_DELAYS[attempt])
@@ -476,16 +515,26 @@ def summarize(records: list[dict]) -> dict:
                 "reasoning_tokens": reasoning_excl,
             },
         }
+    prompt_by_arm = {
+        arm: signed_pct(
+            per_arm[arm]["mean_prompt_tokens"], per_arm["native"]["mean_prompt_tokens"]
+        )
+        for arm in XML_ARMS
+    }
+    completion_by_arm = {
+        arm: signed_pct(
+            per_arm[arm]["mean_completion_tokens"],
+            per_arm["native"]["mean_completion_tokens"],
+        )
+        for arm in XML_ARMS
+    }
     return {
         "per_arm_task": per_arm_task,
         "per_arm": per_arm,
-        "prompt_signed_pct": signed_pct(
-            per_arm["xml"]["mean_prompt_tokens"], per_arm["native"]["mean_prompt_tokens"]
-        ),
-        "completion_signed_pct": signed_pct(
-            per_arm["xml"]["mean_completion_tokens"],
-            per_arm["native"]["mean_completion_tokens"],
-        ),
+        "prompt_signed_pct": prompt_by_arm["xml"],
+        "completion_signed_pct": completion_by_arm["xml"],
+        "prompt_signed_pct_by_arm": prompt_by_arm,
+        "completion_signed_pct_by_arm": completion_by_arm,
     }
 
 
@@ -496,11 +545,11 @@ def print_report(summary: dict) -> None:
 
     echo("")
     echo("Per-(arm, task) means:")
-    echo(f"  {'arm':<7} {'task':<16} {'prompt':>9} {'completion':>11} {'valid':>6}")
+    echo(f"  {'arm':<8} {'task':<16} {'prompt':>9} {'completion':>11} {'valid':>6}")
     for arm in ARMS:
         for task, row in per_arm_task[arm].items():
             echo(
-                f"  {arm:<7} {task:<16} {_fmt(row['mean_prompt_tokens']):>9} "
+                f"  {arm:<8} {task:<16} {_fmt(row['mean_prompt_tokens']):>9} "
                 f"{_fmt(row['mean_completion_tokens']):>11} "
                 f"{row['valid_prompt_calls']:>3}/{row['calls']}"
             )
@@ -508,21 +557,21 @@ def print_report(summary: dict) -> None:
     echo("")
     echo("HEADLINE: mean prompt_tokens per turn")
     for arm in ARMS:
-        echo(f"  {arm:<7} {_fmt(per_arm[arm]['mean_prompt_tokens'], 2)}")
-    pct = summary["prompt_signed_pct"]
-    if pct is None:
-        echo("  xml vs native: cannot be computed (a mean is missing or native is 0)")
-    else:
-        echo(f"  xml vs native: {pct:+.2f}%  ((xml - native) / native * 100)")
+        echo(f"  {arm:<8} {_fmt(per_arm[arm]['mean_prompt_tokens'], 2)}")
+    for arm, pct in summary["prompt_signed_pct_by_arm"].items():
+        if pct is None:
+            echo(f"  {arm} vs native: cannot be computed (a mean is missing or native is 0)")
+        else:
+            echo(f"  {arm} vs native: {pct:+.2f}%  (({arm} - native) / native * 100)")
 
     echo("")
     echo("Completion tokens (reported separately, NOT part of the headline):")
     for arm in ARMS:
-        echo(f"  {arm:<7} mean {_fmt(per_arm[arm]['mean_completion_tokens'], 2)}")
-    cpct = summary["completion_signed_pct"]
-    echo(f"  xml vs native: {'n/a' if cpct is None else f'{cpct:+.2f}%'}")
+        echo(f"  {arm:<8} mean {_fmt(per_arm[arm]['mean_completion_tokens'], 2)}")
+    for arm, cpct in summary["completion_signed_pct_by_arm"].items():
+        echo(f"  {arm} vs native: {'n/a' if cpct is None else f'{cpct:+.2f}%'}")
     echo(
-        "  Caveat: the xml arm sends stop at the closing args tag. If the model "
+        "  Caveat: the xml arms send stop at the closing args tag. If the model "
         "does not honor stop, xml completion tokens include the text after it. "
         "Prompt tokens (the headline) are unaffected."
     )
@@ -532,7 +581,7 @@ def print_report(summary: dict) -> None:
     for arm in ARMS:
         row = per_arm[arm]
         echo(
-            f"  {arm:<7} cached={row['total_cached_tokens']} "
+            f"  {arm:<8} cached={row['total_cached_tokens']} "
             f"reasoning={row['total_reasoning_tokens']}"
         )
 
@@ -541,27 +590,28 @@ def print_report(summary: dict) -> None:
     for arm in ARMS:
         row = per_arm[arm]
         for metric, count in row["excluded"].items():
-            echo(f"  {arm:<7} {metric:<18} excluded={count}")
-        echo(f"  {arm:<7} errored calls: {row['errors']}/{row['calls']}")
+            echo(f"  {arm:<8} {metric:<18} excluded={count}")
+        echo(f"  {arm:<8} errored calls: {row['errors']}/{row['calls']}")
 
-    tasks = list(per_arm_task["xml"])
-    for task in tasks:
-        xml_row = per_arm_task["xml"][task]
-        native_row = per_arm_task["native"][task]
-        if xml_row["valid_prompt_calls"] != native_row["valid_prompt_calls"]:
-            echo(
-                f"WARNING: task {task} has {xml_row['valid_prompt_calls']} valid xml "
-                f"calls but {native_row['valid_prompt_calls']} valid native calls; "
-                "the per-arm means cover different task mixes."
-            )
-    for task in tasks:
-        xml_prov = set(per_arm_task["xml"][task]["providers"])
-        native_prov = set(per_arm_task["native"][task]["providers"])
-        if xml_prov and native_prov and xml_prov != native_prov:
-            echo(
-                f"WARNING: task {task} was served by different upstream providers "
-                f"(xml: {sorted(xml_prov)}, native: {sorted(native_prov)})."
-            )
+    tasks = list(per_arm_task["native"])
+    for arm in XML_ARMS:
+        for task in tasks:
+            arm_row = per_arm_task[arm][task]
+            native_row = per_arm_task["native"][task]
+            if arm_row["valid_prompt_calls"] != native_row["valid_prompt_calls"]:
+                echo(
+                    f"WARNING: task {task} has {arm_row['valid_prompt_calls']} valid {arm} "
+                    f"calls but {native_row['valid_prompt_calls']} valid native calls; "
+                    "the per-arm means cover different task mixes."
+                )
+        for task in tasks:
+            arm_prov = set(per_arm_task[arm][task]["providers"])
+            native_prov = set(per_arm_task["native"][task]["providers"])
+            if arm_prov and native_prov and arm_prov != native_prov:
+                echo(
+                    f"WARNING: task {task} was served by different upstream providers "
+                    f"({arm}: {sorted(arm_prov)}, native: {sorted(native_prov)})."
+                )
 
     echo("")
     echo(
@@ -580,9 +630,10 @@ def print_prompts() -> None:
     tools_chars = len(json.dumps(NATIVE_TOOLS))
     native_sys = len(NATIVE_SYSTEM_PROMPT)
     click.echo("=== Character counts (characters, not tokens) ===")
-    click.echo(f"xml arm:    system={len(SYSTEM_PROMPT)} chars")
+    click.echo(f"xml arm:      system={len(SYSTEM_PROMPT)} chars")
+    click.echo(f"xml_noex arm: system={len(XML_NOEX_SYSTEM_PROMPT)} chars")
     click.echo(
-        f"native arm: system={native_sys} chars, tools JSON (compact)={tools_chars} "
+        f"native arm:   system={native_sys} chars, tools JSON (compact)={tools_chars} "
         f"chars, sum={native_sys + tools_chars} chars"
     )
 
@@ -595,7 +646,7 @@ def print_prompts() -> None:
 @click.command()
 @click.option("--model", type=str, default=None, help="OpenRouter model, as openrouter/<id>.")
 @click.option("--repeats", type=click.IntRange(min=1), default=3, show_default=True,
-              help="Repeats per task (each repeat calls both arms).")
+              help="Repeats per task (each repeat calls every arm).")
 @click.option("--output", type=click.Path(path_type=Path), default=None,
               help="JSON results path (required for live runs; rewritten after every call).")
 @click.option("--print-prompts", "print_prompts_flag", is_flag=True,
@@ -633,6 +684,7 @@ def main(model: str | None, repeats: int, output: Path | None, print_prompts_fla
         "repeats": repeats,
         "arms": list(ARMS),
         "tasks": [{"name": name, "text": text} for name, text in TASKS],
+        "xml_noex_system_prompt": XML_NOEX_SYSTEM_PROMPT,
         "native_system_prompt": NATIVE_SYSTEM_PROMPT,
         "native_tools": NATIVE_TOOLS,
         "xml_stop": XML_STOP,
@@ -643,8 +695,11 @@ def main(model: str | None, repeats: int, output: Path | None, print_prompts_fla
     _write_json(output, {"config": config, "records": records})
 
     click.echo(f"Model: {model}  repeats={repeats}  arms={list(ARMS)}  output={output}")
+    daily_limit_hit = False
     with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
         for task_name, task_text, repeat, order in build_schedule(repeats):
+            if daily_limit_hit:
+                break
             for arm in order:
                 try:
                     body = build_body(arm, model_id, task_text)
@@ -663,6 +718,13 @@ def main(model: str | None, repeats: int, output: Path | None, print_prompts_fla
                     + (f" error={record['error'][:120]}" if record["error"] else "")
                 )
                 _write_json(output, {"config": config, "records": records})
+                if record["error"] and DAILY_LIMIT_MARKER in record["error"]:
+                    click.echo(
+                        "OpenRouter daily free-model limit reached; stopping. "
+                        "It resets at 00:00 UTC."
+                    )
+                    daily_limit_hit = True
+                    break
 
     summary = summarize(records)
     print_report(summary)

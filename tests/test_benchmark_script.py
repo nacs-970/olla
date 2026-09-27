@@ -148,9 +148,12 @@ def test_native_tools_match_system_prompt_names(bench):
 # ---------------------------------------------------------------------------
 
 
+TWO_ARMS = ("xml", "native")
+
+
 @pytest.mark.parametrize("repeats", [1, 2, 3, 4])
 def test_schedule_abba_balanced(bench, repeats):
-    schedule = bench.build_schedule(repeats)
+    schedule = bench.build_schedule(repeats, TWO_ARMS)
     assert len(schedule) == len(bench.TASKS) * repeats
     xml_first = sum(1 for entry in schedule if entry[3][0] == "xml")
     native_first = sum(1 for entry in schedule if entry[3][0] == "native")
@@ -159,10 +162,41 @@ def test_schedule_abba_balanced(bench, repeats):
 
 @pytest.mark.parametrize("repeats", [2, 3, 4])
 def test_schedule_varies_first_arm_per_task(bench, repeats):
-    schedule = bench.build_schedule(repeats)
+    schedule = bench.build_schedule(repeats, TWO_ARMS)
     for task_name, _ in bench.TASKS:
         firsts = {entry[3][0] for entry in schedule if entry[0] == task_name}
         assert len(firsts) == 2, task_name
+
+
+def test_arm_cycle_two_arms_is_abba(bench):
+    assert bench.arm_cycle(TWO_ARMS) == [
+        ("xml", "native"),
+        ("native", "xml"),
+        ("native", "xml"),
+        ("xml", "native"),
+    ]
+
+
+def test_schedule_three_arms_position_balanced(bench):
+    schedule = bench.build_schedule(3)
+    assert len(schedule) == len(bench.TASKS) * 3
+    for position in range(3):
+        counts = {arm: 0 for arm in bench.ARMS}
+        for entry in schedule:
+            counts[entry[3][position]] += 1
+        assert set(counts.values()) == {4}, (position, counts)
+    for entry in schedule:
+        assert sorted(entry[3]) == sorted(bench.ARMS)
+
+
+def test_noex_prompt_is_system_prompt_before_first_example(bench):
+    noex = bench.XML_NOEX_SYSTEM_PROMPT
+    assert "Example:" not in noex
+    assert "Observation:" not in noex
+    assert SYSTEM_PROMPT.startswith(noex.rstrip())
+    assert "<tool>shell</tool><args>the raw shell command to run</args>" in noex
+    assert "<final>your answer text here</final>" in noex
+    assert len(noex) < len(SYSTEM_PROMPT)
 
 
 def test_mean_excluding_none(bench):
@@ -186,7 +220,11 @@ def test_signed_pct(bench):
 
 def test_build_body_arms(bench):
     xml = bench.build_body("xml", "m", "task")
+    noex = bench.build_body("xml_noex", "m", "task")
     native = bench.build_body("native", "m", "task")
+    assert noex["stop"] == ["</args>"]
+    assert "provider" not in noex and "tools" not in noex
+    assert noex["messages"][0]["content"] == bench.XML_NOEX_SYSTEM_PROMPT
     assert xml["stop"] == ["</args>"]
     assert "provider" not in xml and "tools" not in xml
     assert xml["messages"][0]["content"] == SYSTEM_PROMPT
@@ -194,7 +232,7 @@ def test_build_body_arms(bench):
     assert native["provider"] == {"require_parameters": True}
     assert "stop" not in native
     assert native["messages"][0]["content"] == bench.NATIVE_SYSTEM_PROMPT
-    for body in (xml, native):
+    for body in (xml, noex, native):
         assert "temperature" not in body
         assert body.get("stream") is not True
 
@@ -256,6 +294,18 @@ def test_retry_exhausted_truncates_body(bench):
     assert error.count("x") <= 300
     assert sleeps == [2, 4, 8]
     assert client.posts == 4
+
+
+def test_daily_free_limit_not_retried(bench):
+    sleeps: list[float] = []
+    body = '{"error":{"message":"Rate limit exceeded: free-models-per-day. Add 10 credits"}}'
+    client = ScriptedClient([FakeResponse(429, text=body), FakeResponse(200, OK_BODY)])
+    status, data, error = bench.post_with_retry(client, "u", {}, {}, sleep=sleeps.append)
+    assert status == 429
+    assert data is None
+    assert "free-models-per-day" in error
+    assert sleeps == []
+    assert client.posts == 1
 
 
 def test_client_error_not_retried(bench):
@@ -377,10 +427,10 @@ def test_cli_end_to_end_with_fake_client(bench, monkeypatch, tmp_path):
 
     data = json.loads(out.read_text())
     records = data["records"]
-    assert len(records) == 8
+    assert len(records) == 12
     native = [r for r in records if r["arm"] == "native"]
-    xml = [r for r in records if r["arm"] == "xml"]
-    assert len(native) == 4 and len(xml) == 4
+    xml = [r for r in records if r["arm"] in ("xml", "xml_noex")]
+    assert len(native) == 4 and len(xml) == 8
     for rec in native:
         assert rec["error"]
         assert rec["prompt_tokens"] is None
@@ -390,9 +440,9 @@ def test_cli_end_to_end_with_fake_client(bench, monkeypatch, tmp_path):
         assert rec["error"] is None
 
     # Native calls retry on 500, so there are more posts than records; the
-    # first post sees the config-only file and the last sees 7 records.
+    # first post sees the config-only file and the last sees 11 records.
     assert snapshots[0] == 0
-    assert snapshots[-1] == 7
+    assert snapshots[-1] == 11
 
     for body in bodies:
         assert "temperature" not in body
@@ -424,3 +474,39 @@ def test_print_prompts_offline(bench, monkeypatch):
     assert "When you have the final answer for the user, reply with plain text." in result.output
     assert "grep_files" in result.output
     assert calls == []
+
+
+def test_cli_stops_on_daily_free_limit(bench, monkeypatch, tmp_path):
+    out = tmp_path / "r.json"
+    provider = OpenAICompatProvider(model="m", api_key="sk-test", base_url="http://fake")
+    monkeypatch.setattr(bench, "get_provider", lambda *a, **k: (provider, "m"))
+    monkeypatch.setattr(bench.time, "sleep", lambda s: None)
+    posts: list[int] = []
+    limit_body = '{"error":{"message":"Rate limit exceeded: free-models-per-day"}}'
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def post(self, url, headers=None, json=None):
+            posts.append(1)
+            if len(posts) == 1:
+                return FakeResponse(200, OK_BODY)
+            return FakeResponse(429, text=limit_body)
+
+    monkeypatch.setattr(bench.httpx, "Client", FakeClient)
+    result = CliRunner().invoke(
+        bench.main, ["--model", "openrouter/m", "--repeats", "1", "--output", str(out)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "daily free-model limit reached" in result.output
+    assert len(posts) == 2
+    data = json.loads(out.read_text())
+    assert len(data["records"]) == 2
+    assert "summary" in data
